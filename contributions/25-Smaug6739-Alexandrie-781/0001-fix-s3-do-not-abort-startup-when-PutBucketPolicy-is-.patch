@@ -1,0 +1,117 @@
+From f90f1e196dba96bfdd52c955c88f66eb75c97d0f Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:00:31 +0000
+Subject: [PATCH] fix(s3): do not abort startup when PutBucketPolicy is
+ unsupported
+
+S3-compatible stores such as Garage do not implement PutBucketPolicy, so
+the backend exited with "Unimplemented action: PutBucketPolicy" on start.
+Log a warning instead (like the backup lifecycle rule) and ask the admin
+to make the bucket publicly readable on the provider side.
+
+Closes #781
+---
+ backend/app/minio.go      |  8 +++--
+ backend/app/minio_test.go | 69 +++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 75 insertions(+), 2 deletions(-)
+ create mode 100644 backend/app/minio_test.go
+
+diff --git a/backend/app/minio.go b/backend/app/minio.go
+index 30dff08..2800f56 100644
+--- a/backend/app/minio.go
++++ b/backend/app/minio.go
+@@ -143,10 +143,14 @@ func setupPublicBucket(ctx context.Context, minioClient *minio.Client, bucketNam
+   ]
+ }`, bucketName)
+ 
++	// Some S3-compatible providers (e.g. Garage) do not implement PutBucketPolicy.
++	// Public read access can be configured on the provider side instead, so this
++	// is not fatal: warn and keep the backend running.
+ 	err = minioClient.SetBucketPolicy(ctx, bucketName, policy)
+ 	if err != nil {
+-		logger.Error("s3", fmt.Sprintf("Failed to set bucket policy: %v", err))
+-		os.Exit(1)
++		logger.Warn("s3", fmt.Sprintf("Failed to set public bucket policy for %s: %v", bucketName, err))
++		logger.Warn("s3", "Make sure objects in this bucket are publicly readable (configure it in your S3 provider), otherwise uploaded files will not be accessible.")
++		return
+ 	}
+ 	logger.Success("s3", "Successfully set public bucket policy for "+bucketName)
+ }
+diff --git a/backend/app/minio_test.go b/backend/app/minio_test.go
+new file mode 100644
+index 0000000..39370eb
+--- /dev/null
++++ b/backend/app/minio_test.go
+@@ -0,0 +1,69 @@
++package app
++
++import (
++	"context"
++	"net/http"
++	"net/http/httptest"
++	"net/url"
++	"sync"
++	"testing"
++
++	"github.com/minio/minio-go/v7"
++	"github.com/minio/minio-go/v7/pkg/credentials"
++)
++
++// newFakeS3 starts an S3-compatible server that accepts bucket creation but,
++// like Garage, does not implement PutBucketPolicy.
++func newFakeS3(t *testing.T) (*minio.Client, *[]string) {
++	t.Helper()
++
++	var mu sync.Mutex
++	var requests []string
++
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		mu.Lock()
++		requests = append(requests, r.Method+" "+r.URL.Path+"?"+r.URL.RawQuery)
++		mu.Unlock()
++
++		if r.Method == http.MethodPut && r.URL.Query().Has("policy") {
++			w.Header().Set("Content-Type", "application/xml")
++			w.WriteHeader(http.StatusNotImplemented)
++			_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?>
++<Error><Code>NotImplemented</Code><Message>Unimplemented action: PutBucketPolicy</Message><Resource>` + r.URL.Path + `</Resource></Error>`))
++			return
++		}
++		w.WriteHeader(http.StatusOK)
++	}))
++	t.Cleanup(server.Close)
++
++	u, err := url.Parse(server.URL)
++	if err != nil {
++		t.Fatalf("failed to parse fake S3 URL: %v", err)
++	}
++	client, err := minio.New(u.Host, &minio.Options{
++		Creds:  credentials.NewStaticV4("access", "secret", ""),
++		Secure: false,
++		Region: "us-east-1",
++	})
++	if err != nil {
++		t.Fatalf("failed to create client: %v", err)
++	}
++	return client, &requests
++}
++
++func TestSetupPublicBucketWithoutPutBucketPolicySupport(t *testing.T) {
++	client, requests := newFakeS3(t)
++
++	// Before the fix this called os.Exit(1), killing the test binary.
++	setupPublicBucket(context.Background(), client, "alexandrie")
++
++	sawPolicy := false
++	for _, r := range *requests {
++		if r == "PUT /alexandrie/?policy=" {
++			sawPolicy = true
++		}
++	}
++	if !sawPolicy {
++		t.Fatalf("expected a PutBucketPolicy request, got %v", *requests)
++	}
++}
+-- 
+2.43.0
+
