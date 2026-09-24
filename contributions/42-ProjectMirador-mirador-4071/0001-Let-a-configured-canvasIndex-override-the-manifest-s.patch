@@ -1,0 +1,126 @@
+From 26e205e32c775af1d5356a33a26ed1902b4ee0de Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 19:02:53 +0000
+Subject: [PATCH] Let a configured canvasIndex override the manifest start
+ canvas
+
+Previously the manifest's startCanvas (IIIF v2) / start (IIIF v3) always won,
+so a window configured with canvasIndex could not open on any other canvas.
+An explicit integer canvasIndex (including 0) now takes precedence; if it is
+out of range we fall back to the manifest start canvas, then the first canvas.
+
+Closes #4071
+---
+ __tests__/src/sagas/windows.test.js | 75 +++++++++++++++++++++++++++++
+ src/state/sagas/windows.js          |  7 ++-
+ 2 files changed, 80 insertions(+), 2 deletions(-)
+
+diff --git a/__tests__/src/sagas/windows.test.js b/__tests__/src/sagas/windows.test.js
+index da740a9..8044f63 100644
+--- a/__tests__/src/sagas/windows.test.js
++++ b/__tests__/src/sagas/windows.test.js
+@@ -198,6 +198,81 @@ describe('window-level sagas', () => {
+         .put({ type: 'setCanvasThunk' })
+         .run();
+     });
++
++    it('prefers an explicitly configured canvasIndex over the manifest start canvas', () => {
++      const action = {
++        window: {
++          canvasIndex: 2,
++          id: 'x',
++          manifestId: 'manifest.json',
++        },
++      };
++
++      const manifest = Utils.parseManifest({
++        ...fixture,
++        start: { id: 'https://purl.stanford.edu/fr426cg9537/iiif/canvas/fr426cg9537_1' },
++      });
++
++      return expectSaga(fetchWindowManifest, action)
++        .provide([
++          [select(getManifests), { 'manifest.json': {} }],
++          [select(getManifestoInstance, { manifestId: 'manifest.json' }), manifest],
++          [call(setCanvas, 'x', 'https://purl.stanford.edu/rz176rt6531/iiif/canvas/rz176rt6531_1'), { type: 'setCanvasThunk' }],
++        ])
++        .put({ type: 'setCanvasThunk' })
++        .run();
++    });
++
++    it('treats a canvasIndex of 0 as an explicit override of the manifest start canvas', () => {
++      const action = {
++        window: {
++          canvasIndex: 0,
++          id: 'x',
++          manifestId: 'manifest.json',
++        },
++      };
++
++      const manifest = Utils.parseManifest({
++        ...fixture,
++        start: { id: 'https://purl.stanford.edu/fr426cg9537/iiif/canvas/fr426cg9537_1' },
++      });
++
++      return expectSaga(fetchWindowManifest, action)
++        .provide([
++          [select(getManifests), { 'manifest.json': {} }],
++          [select(getManifestoInstance, { manifestId: 'manifest.json' }), manifest],
++          [
++            call(setCanvas, 'x', 'http://iiif.io/api/presentation/2.0/example/fixtures/canvas/24/c1.json'),
++            { type: 'setCanvasThunk' },
++          ],
++        ])
++        .put({ type: 'setCanvasThunk' })
++        .run();
++    });
++
++    it('falls back to the manifest start canvas when canvasIndex is out of range', () => {
++      const action = {
++        window: {
++          canvasIndex: 99,
++          id: 'x',
++          manifestId: 'manifest.json',
++        },
++      };
++
++      const manifest = Utils.parseManifest({
++        ...fixture,
++        start: { id: 'https://purl.stanford.edu/fr426cg9537/iiif/canvas/fr426cg9537_1' },
++      });
++
++      return expectSaga(fetchWindowManifest, action)
++        .provide([
++          [select(getManifests), { 'manifest.json': {} }],
++          [select(getManifestoInstance, { manifestId: 'manifest.json' }), manifest],
++          [call(setCanvas, 'x', 'https://purl.stanford.edu/fr426cg9537/iiif/canvas/fr426cg9537_1'), { type: 'setCanvasThunk' }],
++        ])
++        .put({ type: 'setCanvasThunk' })
++        .run();
++    });
+   });
+ 
+   describe('setWindowDefaultSearchQuery', () => {
+diff --git a/src/state/sagas/windows.js b/src/state/sagas/windows.js
+index bb34756..e6f0c53 100644
+--- a/src/state/sagas/windows.js
++++ b/src/state/sagas/windows.js
+@@ -104,10 +104,13 @@ export function* setWindowStartingCanvas(action) {
+     const getMiradorManifest = yield select(getMiradorManifestWrapper);
+     const manifestoInstance = yield select(getManifestoInstance, { manifestId });
+     if (manifestoInstance) {
+-      // set the startCanvas
++      // set the startCanvas; an explicitly configured canvasIndex takes precedence
++      // over the manifest's own start canvas
+       const miradorManifest = getMiradorManifest(manifestoInstance);
+       const startCanvas =
+-        miradorManifest.startCanvas || miradorManifest.canvasAt(canvasIndex || 0) || miradorManifest.canvasAt(0);
++        (Number.isInteger(canvasIndex) && miradorManifest.canvasAt(canvasIndex)) ||
++        miradorManifest.startCanvas ||
++        miradorManifest.canvasAt(0);
+       if (startCanvas) {
+         const preserveViewport = !!action.payload || !!action.window?.initialViewerConfig;
+         // When canvas is calculated, only pass preserveViewport when true
+-- 
+2.43.0
+

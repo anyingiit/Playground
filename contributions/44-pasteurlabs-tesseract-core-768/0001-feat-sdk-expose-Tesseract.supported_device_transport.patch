@@ -1,0 +1,126 @@
+From 50adfcf35f6f7801a3eec4bccb91090c62f8e3cd Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 19:05:05 +0000
+Subject: [PATCH] feat(sdk): expose `Tesseract.supported_device_transports`
+
+Add a public, per-client accessor reporting which device (GPU) transports
+a Tesseract client uses, so wrappers such as tesseract-torch and
+tesseract-jax no longer need to duck-type the private `_gpu_transport`
+attribute or hardcode transport names.
+
+`HTTPClient` reports its configured `gpu_transport` (empty for `none`),
+`LocalClient` always reports none since in-process Tesseracts share memory
+with the caller, and `Tesseract.supported_device_transports` delegates to
+its client.
+
+Closes #768
+---
+ tesseract_core/sdk/tesseract.py   | 32 +++++++++++++++++++++++++++++
+ tests/sdk_tests/test_tesseract.py | 34 +++++++++++++++++++++++++++++++
+ 2 files changed, 66 insertions(+)
+
+diff --git a/tesseract_core/sdk/tesseract.py b/tesseract_core/sdk/tesseract.py
+index efc113a..d1206cd 100644
+--- a/tesseract_core/sdk/tesseract.py
++++ b/tesseract_core/sdk/tesseract.py
+@@ -657,6 +657,22 @@ class Tesseract:
+         """
+         return [endpoint.lstrip("/") for endpoint in self.openapi_schema["paths"]]
+ 
++    @property
++    @requires_client
++    def supported_device_transports(self) -> tuple[str, ...]:
++        """Device transports that can be used to exchange arrays with this Tesseract.
++
++        These are the ``gpu_transport`` values (e.g. ``cuda_ipc``) this client
++        uses to pass GPU arrays by reference instead of copying them to the host.
++        Tesseracts served without a GPU transport, and in-process Tesseracts
++        created via :meth:`from_tesseract_api` (which share memory with the
++        caller), support none.
++
++        Returns:
++            a tuple of supported device transport names, empty if none.
++        """
++        return self._client.supported_device_transports
++
+     def container_info(self) -> Container:
+         """Retrieve information on the Docker container serving this Tesseract.
+ 
+@@ -1293,6 +1309,13 @@ class HTTPClient:
+         """(Sanitized) URL to connect to."""
+         return self._url
+ 
++    @property
++    def supported_device_transports(self) -> tuple[str, ...]:
++        """Device transports this client uses for GPU arrays (empty if none)."""
++        if self._gpu_transport == "none":
++            return ()
++        return (self._gpu_transport,)
++
+     def _send(
+         self, url: str, method: str, data: bytes, params: dict
+     ) -> requests.Response:
+@@ -1531,6 +1554,15 @@ class LocalClient:
+         # Allows external clients (e.g. tesseract-jax) to access module directly
+         self.api_module = tesseract_api
+ 
++    @property
++    def supported_device_transports(self) -> tuple[str, ...]:
++        """Device transports this client supports.
++
++        Always empty: in-process Tesseracts share memory with the caller, so
++        arrays never need to be transported.
++        """
++        return ()
++
+     def run_tesseract(
+         self,
+         endpoint: str,
+diff --git a/tests/sdk_tests/test_tesseract.py b/tests/sdk_tests/test_tesseract.py
+index ff9c17f..5558560 100644
+--- a/tests/sdk_tests/test_tesseract.py
++++ b/tests/sdk_tests/test_tesseract.py
+@@ -505,6 +505,40 @@ def test_serve_lifecycle(mock_serving, mock_clients):
+                 pass
+ 
+ 
++@pytest.mark.parametrize(
++    ("kwargs", "expected"),
++    [
++        ({}, ()),
++        ({"gpu_transport": "none"}, ()),
++        ({"gpu_transport": "cuda_ipc"}, ("cuda_ipc",)),
++        ({"runtime_config": {"gpu_transport": "cuda_ipc"}}, ("cuda_ipc",)),
++    ],
++)
++def test_supported_device_transports_served(
++    mock_serving, mock_clients, kwargs, expected
++):
++    t = Tesseract.from_image("sometesseract:0.2.3", **kwargs)
++
++    # The transport is a property of the client, which only exists once served
++    with pytest.raises(RuntimeError, match="context manager"):
++        t.supported_device_transports
++
++    with t:
++        assert t.supported_device_transports == expected
++
++
++def test_supported_device_transports_unserved(dummy_tesseract_module):
++    # A remote Tesseract is reached without any device transport configured
++    assert Tesseract.from_url("localhost").supported_device_transports == ()
++
++    # In-process Tesseracts share memory with the caller, so there is nothing to
++    # transport -- even when a GPU transport is configured.
++    local = Tesseract.from_tesseract_api(
++        dummy_tesseract_module, gpu_transport="cuda_ipc"
++    )
++    assert local.supported_device_transports == ()
++
++
+ @pytest.mark.parametrize(
+     "run_id",
+     [None, "fizzbuzz"],
+-- 
+2.43.0
+

@@ -1,0 +1,408 @@
+From c4bcae99f492e382b1935f0d6d116857e9e0021e Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 19:03:43 +0000
+Subject: [PATCH] fix: config-only CLI commands see KBs added with `pyrite kb
+ add` (#363)
+
+`search -k`, `kb validate`, `kb schema show|add-type|remove-type|set` and
+`schema validate -k` built their config with a bare `load_config()`, which
+only knows the KBs in config.yaml, so a KB registered with `pyrite kb add`
+answered KB_NOT_FOUND there while `get`, `index sync` and `link` accepted it.
+
+Add `with_registered_kbs()` to `pyrite/cli/context.py`, which merges the
+database registry into a loaded config (config.yaml still wins on a name
+clash) and closes the index again, and route those commands through it.
+`kb validate` and `search --files` without a KB name now enumerate
+`config.all_kbs()` so they cover registered KBs as well.
+
+Fixes #363
+
+Co-authored-by: Claude <noreply@anthropic.com>
+---
+ .../kb-add-config-only-commands.fixed.md      |   1 +
+ pyrite/cli/context.py                         |  21 ++
+ pyrite/cli/kb_commands.py                     |  14 +-
+ pyrite/cli/schema_commands.py                 |   4 +-
+ pyrite/cli/search_commands.py                 |   5 +-
+ ...config_only_commands_see_registered_kbs.py | 210 ++++++++++++++++++
+ 6 files changed, 244 insertions(+), 11 deletions(-)
+ create mode 100644 changelog.d/kb-add-config-only-commands.fixed.md
+ create mode 100644 tests/test_config_only_commands_see_registered_kbs.py
+
+diff --git a/changelog.d/kb-add-config-only-commands.fixed.md b/changelog.d/kb-add-config-only-commands.fixed.md
+new file mode 100644
+index 0000000..35a1eb0
+--- /dev/null
++++ b/changelog.d/kb-add-config-only-commands.fixed.md
+@@ -0,0 +1 @@
++- **`pyrite search -k`, `kb validate`, `kb schema show|add-type|remove-type|set` and `schema validate -k` now find a KB added with `pyrite kb add` (#363).** They built their config from `config.yaml` alone and answered `KB_NOT_FOUND` for a KB that `get` and `index sync` accept; they now merge the database registry through one shared helper, `with_registered_kbs()`, with `config.yaml` still winning on a name clash. `kb validate` and `search --files` without a KB name also cover `kb add` KBs now.
+diff --git a/pyrite/cli/context.py b/pyrite/cli/context.py
+index 9a6ff7f..f8569e8 100644
+--- a/pyrite/cli/context.py
++++ b/pyrite/cli/context.py
+@@ -59,6 +59,27 @@ def cli_db_context() -> Generator[tuple[PyriteConfig, PyriteDB], None, None]:
+         db.close()
+ 
+ 
++def with_registered_kbs(config: PyriteConfig) -> PyriteConfig:
++    """Merge DB-registered KBs (added via ``pyrite kb add``) into ``config``.
++
++    For commands that need only the config, not a db or service: they load it
++    with ``load_config()``, which knows only the KBs in ``config.yaml``, and
++    pass it through here so a KB added with ``pyrite kb add`` resolves the same
++    way it does for ``get``, ``index sync`` and the other commands built on
++    ``_init_base()`` (#363). config.yaml KBs keep precedence on a name clash.
++
++    The index database is opened only for the merge and closed again.
++    Returns ``config`` (mutated in place) so callers can write
++    ``config = with_registered_kbs(load_config())``.
++    """
++    db = PyriteDB(config.settings.index_path)
++    try:
++        db.merge_registered_kbs(config)
++    finally:
++        db.close()
++    return config
++
++
+ def get_config_and_db() -> tuple[PyriteConfig, PyriteDB]:
+     """Get config and db without a context manager.
+ 
+diff --git a/pyrite/cli/kb_commands.py b/pyrite/cli/kb_commands.py
+index b262fa6..f7449d3 100644
+--- a/pyrite/cli/kb_commands.py
++++ b/pyrite/cli/kb_commands.py
+@@ -16,7 +16,7 @@ from ..config import (
+     load_config,
+ )
+ from ..exceptions import PyriteError
+-from .context import cli_context, cli_registry_context
++from .context import cli_context, cli_registry_context, with_registered_kbs
+ 
+ kb_app = typer.Typer(help="Knowledge base management")
+ console = Console()
+@@ -252,7 +252,7 @@ def kb_validate(
+     && deploy` blocks on structural errors; scripts that want to gate on
+     drift too can check for exit code 2.
+     """
+-    config = load_config()
++    config = with_registered_kbs(load_config())
+ 
+     if name:
+         kb = config.get_kb(name)
+@@ -267,7 +267,7 @@ def kb_validate(
+             )
+         kbs = [kb]
+     else:
+-        kbs = config.knowledge_bases
++        kbs = config.all_kbs()
+ 
+     # Run content-drift checks once (check_health walks all KBs internally),
+     # then bucket results by kb name.
+@@ -577,7 +577,7 @@ def schema_show(
+     """Show the current schema for a KB."""
+     from ..services.schema_service import SchemaService
+ 
+-    config = load_config()
++    config = with_registered_kbs(load_config())
+     try:
+         svc = SchemaService(config)
+         result = svc.show_schema(kb_name)
+@@ -631,7 +631,7 @@ def schema_add_type(
+     """Add a type definition to a KB's schema."""
+     from ..services.schema_service import SchemaService
+ 
+-    config = load_config()
++    config = with_registered_kbs(load_config())
+     type_def: dict[str, Any] = {}
+     if description:
+         type_def["description"] = description
+@@ -670,7 +670,7 @@ def schema_remove_type(
+     """Remove a type definition from a KB's schema."""
+     from ..services.schema_service import SchemaService
+ 
+-    config = load_config()
++    config = with_registered_kbs(load_config())
+     try:
+         svc = SchemaService(config)
+         result = svc.remove_type(kb_name, type_name)
+@@ -700,7 +700,7 @@ def schema_set(
+     from ..services.schema_service import SchemaService
+     from ..utils.yaml import load_yaml_file as load_yaml
+ 
+-    config = load_config()
++    config = with_registered_kbs(load_config())
+ 
+     if not schema_file.exists():
+         from ..utils.errors import cli_error
+diff --git a/pyrite/cli/schema_commands.py b/pyrite/cli/schema_commands.py
+index 58e38af..9b48de3 100644
+--- a/pyrite/cli/schema_commands.py
++++ b/pyrite/cli/schema_commands.py
+@@ -11,7 +11,7 @@ from rich.console import Console
+ from rich.table import Table
+ 
+ from ..utils.errors import cli_error
+-from .context import cli_context
++from .context import cli_context, with_registered_kbs
+ 
+ logger = logging.getLogger(__name__)
+ console = Console()
+@@ -470,7 +470,7 @@ def schema_validate(
+     """
+     from ..config import load_config
+ 
+-    config = load_config()
++    config = with_registered_kbs(load_config())
+     schema = None
+ 
+     # Resolve files to validate
+diff --git a/pyrite/cli/search_commands.py b/pyrite/cli/search_commands.py
+index 4becdc0..349144d 100644
+--- a/pyrite/cli/search_commands.py
++++ b/pyrite/cli/search_commands.py
+@@ -14,6 +14,7 @@ from ..config import load_config
+ from ..exceptions import QuerySyntaxError
+ from ..services.read_shaping import parse_fields_param, project_fields
+ from ..storage.repository import KBRepository
++from .context import with_registered_kbs
+ 
+ logger = logging.getLogger(__name__)
+ 
+@@ -116,7 +117,7 @@ def register_search_command(app: typer.Typer):
+         as the NOT operator, not a literal exclude — matching Bannon
+         entries, not excluding them).
+         """
+-        config = load_config()
++        config = with_registered_kbs(load_config())
+ 
+         # A search scoped to an unregistered KB used to return an empty result
+         # set (exit 0), which looks like a query miss rather than a wrong KB.
+@@ -310,7 +311,7 @@ def _search_files(config, query, kb_name, entry_type, limit):
+             )
+         kbs = [kb]
+     else:
+-        kbs = config.knowledge_bases
++        kbs = config.all_kbs()
+ 
+     if not kbs:
+         console.print("[yellow]No knowledge bases configured.[/yellow]")
+diff --git a/tests/test_config_only_commands_see_registered_kbs.py b/tests/test_config_only_commands_see_registered_kbs.py
+new file mode 100644
+index 0000000..af8bcfd
+--- /dev/null
++++ b/tests/test_config_only_commands_see_registered_kbs.py
+@@ -0,0 +1,210 @@
++"""A KB added with `pyrite kb add` is visible to the config-only commands (#363).
++
++`kb add` registers a KB in the index database. `get`, `index sync`, `link` and
++the task commands merge that registry into the config before use, but
++`search`, `kb validate`, `kb schema ...` and `schema validate` built their
++config with a bare `load_config()`, which knows only config.yaml. They answered
++KB_NOT_FOUND for a KB that `kb list`, `get` and `index sync` all accept.
++
++Each test patches the `load_config` name the command reads with a config that
++lists no KBs, and registers the KB only in the database, which is the state
++`pyrite kb add` leaves behind.
++"""
++
++import json
++from pathlib import Path
++from unittest.mock import patch
++
++import pytest
++from typer.testing import CliRunner
++
++from pyrite.cli import app
++from pyrite.config import KBConfig, PyriteConfig, Settings
++from pyrite.storage.database import PyriteDB
++
++runner = CliRunner()
++
++KB_NAME = "reg-kb"
++
++
++@pytest.fixture
++def registered_kb(tmp_path: Path):
++    """A config.yaml with no KBs, plus one KB registered only in the database."""
++    kb_path = tmp_path / KB_NAME
++    kb_path.mkdir()
++    (kb_path / "kb.yaml").write_text(
++        f"name: {KB_NAME}\nkb_type: generic\ntypes:\n  note:\n    description: A note\n",
++        encoding="utf-8",
++    )
++    (kb_path / "hello.md").write_text(
++        "---\nid: hello\ntitle: Hello\ntype: note\n---\n\nhello world\n", encoding="utf-8"
++    )
++
++    db_path = tmp_path / "index.db"
++    db = PyriteDB(db_path)
++    try:
++        db.register_kb(name=KB_NAME, kb_type="generic", path=str(kb_path), description="")
++    finally:
++        db.close()
++
++    config = PyriteConfig(knowledge_bases=[], settings=Settings(index_path=db_path))
++    return config, kb_path
++
++
++def _invoke(target: str, config: PyriteConfig, args: list[str]):
++    with patch(target, return_value=config):
++        return runner.invoke(app, args)
++
++
++def _kb_commands(config, args):
++    return _invoke("pyrite.cli.kb_commands.load_config", config, args)
++
++
++def test_search_scoped_to_a_registered_kb(registered_kb):
++    config, _ = registered_kb
++
++    result = _invoke(
++        "pyrite.cli.search_commands.load_config",
++        config,
++        ["search", "hello", "-k", KB_NAME, "--format", "json"],
++    )
++
++    assert result.exit_code == 0, result.output
++    assert "KB_NOT_FOUND" not in result.output
++    assert "hello" in result.output
++
++
++def test_search_files_scoped_to_a_registered_kb(registered_kb):
++    config, _ = registered_kb
++
++    result = _invoke(
++        "pyrite.cli.search_commands.load_config",
++        config,
++        ["search", "hello", "-k", KB_NAME, "--files"],
++    )
++
++    assert result.exit_code == 0, result.output
++    assert "not found" not in result.output
++    assert "Search Results (1)" in result.output
++
++
++def test_search_files_across_all_kbs_includes_registered_kbs(registered_kb):
++    config, _ = registered_kb
++
++    result = _invoke(
++        "pyrite.cli.search_commands.load_config", config, ["search", "hello", "--files"]
++    )
++
++    assert result.exit_code == 0, result.output
++    assert "No knowledge bases configured" not in result.output
++    assert "Search Results (1)" in result.output
++
++
++def test_kb_validate_a_registered_kb(registered_kb):
++    config, _ = registered_kb
++
++    result = _kb_commands(config, ["kb", "validate", KB_NAME, "--format", "json"])
++
++    assert "KB_NOT_FOUND" not in result.output
++    assert result.exit_code == 0, result.output
++    data = json.loads(result.output)
++    assert [kb["name"] for kb in data["kbs"]] == [KB_NAME]
++
++
++def test_kb_validate_without_a_name_includes_registered_kbs(registered_kb):
++    config, _ = registered_kb
++
++    result = _kb_commands(config, ["kb", "validate", "--format", "json"])
++
++    assert result.exit_code == 0, result.output
++    data = json.loads(result.output)
++    assert KB_NAME in [kb["name"] for kb in data["kbs"]]
++
++
++def test_kb_schema_show_a_registered_kb(registered_kb):
++    config, _ = registered_kb
++
++    result = _kb_commands(config, ["kb", "schema", "show", KB_NAME, "--format", "json"])
++
++    assert result.exit_code == 0, result.output
++    assert "KB_NOT_FOUND" not in result.output
++    assert "note" in json.loads(result.output)["types"]
++
++
++def test_kb_schema_add_and_remove_type_on_a_registered_kb(registered_kb):
++    config, kb_path = registered_kb
++
++    added = _kb_commands(
++        config,
++        ["kb", "schema", "add-type", KB_NAME, "--type", "memo", "--format", "json"],
++    )
++    assert added.exit_code == 0, added.output
++    assert "memo" in (kb_path / "kb.yaml").read_text(encoding="utf-8")
++
++    removed = _kb_commands(
++        config,
++        ["kb", "schema", "remove-type", KB_NAME, "--type", "memo", "--format", "json"],
++    )
++    assert removed.exit_code == 0, removed.output
++    assert "memo" not in (kb_path / "kb.yaml").read_text(encoding="utf-8")
++
++
++def test_kb_schema_set_on_a_registered_kb(registered_kb, tmp_path):
++    config, kb_path = registered_kb
++    schema_file = tmp_path / "schema.yaml"
++    schema_file.write_text("types:\n  memo:\n    description: A memo\n", encoding="utf-8")
++
++    result = _kb_commands(
++        config,
++        ["kb", "schema", "set", KB_NAME, "--schema-file", str(schema_file), "--format", "json"],
++    )
++
++    assert result.exit_code == 0, result.output
++    assert "memo" in (kb_path / "kb.yaml").read_text(encoding="utf-8")
++
++
++def test_schema_validate_a_registered_kb(registered_kb):
++    config, _ = registered_kb
++
++    # schema validate imports load_config from pyrite.config inside the command.
++    result = _invoke("pyrite.config.load_config", config, ["schema", "validate", "-k", KB_NAME])
++
++    assert "KB_NOT_FOUND" not in result.output
++    assert result.exit_code == 0, result.output
++
++
++def test_a_config_yaml_kb_wins_over_a_registered_kb_of_the_same_name(registered_kb, tmp_path):
++    _, _ = registered_kb
++    yaml_kb_path = tmp_path / "from-config-yaml"
++    yaml_kb_path.mkdir()
++    (yaml_kb_path / "kb.yaml").write_text(
++        f"name: {KB_NAME}\nkb_type: generic\ntypes:\n  memo:\n    description: A memo\n",
++        encoding="utf-8",
++    )
++    config = PyriteConfig(
++        knowledge_bases=[KBConfig(name=KB_NAME, path=yaml_kb_path, kb_type="generic")],
++        settings=Settings(index_path=tmp_path / "index.db"),
++    )
++
++    result = _kb_commands(config, ["kb", "schema", "show", KB_NAME, "--format", "json"])
++
++    assert result.exit_code == 0, result.output
++    types = json.loads(result.output)["types"]
++    assert "memo" in types
++    assert "note" not in types
++
++
++def test_an_unknown_kb_still_reports_kb_not_found(registered_kb):
++    config, _ = registered_kb
++
++    search = _invoke(
++        "pyrite.cli.search_commands.load_config",
++        config,
++        ["search", "hello", "-k", "nope", "--format", "json"],
++    )
++    validate = _kb_commands(config, ["kb", "validate", "nope", "--format", "json"])
++    schema_show = _kb_commands(config, ["kb", "schema", "show", "nope", "--format", "json"])
++
++    for result in (search, validate, schema_show):
++        assert result.exit_code != 0
++        assert "KB_NOT_FOUND" in result.output
+-- 
+2.43.0
+
