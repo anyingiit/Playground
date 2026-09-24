@@ -1,4 +1,4 @@
-From c4d0dc86aed5f36ef8fb792e4f724032736f6a41 Mon Sep 17 00:00:00 2001
+From 914dfbf3449f54521aa7c94b30f0fb2867288e40 Mon Sep 17 00:00:00 2001
 From: anyingiit <winshyon@gmail.com>
 Date: Thu, 24 Sep 2026 18:02:46 +0000
 Subject: [PATCH] feat(ts): add functionDeclarationStyles to stylisticStrict
@@ -15,8 +15,8 @@ Subject: [PATCH] feat(ts): add functionDeclarationStyles to stylisticStrict
  .../src/getPackagePropertiesOfNames.ts        |  4 +-
  packages/package-json/src/isBooleanNode.ts    |  5 +-
  .../package-json/src/rules/propertyOrder.ts   |  4 +-
- .../src/rules/repositoryShorthand.ts          |  5 +-
- .../src/utils/ruleCreatorHelpers.ts           | 12 ++-
+ .../src/rules/repositoryShorthand.ts          |  7 +-
+ .../src/utils/ruleCreatorHelpers.ts           | 24 +++---
  packages/rule-data/src/data.json              |  4 +-
  packages/rule-tester/src/RuleTester.test.ts   |  9 +-
  .../rules/ts/functionDeclarationStyles.mdx    | 47 +++++-----
@@ -28,10 +28,10 @@ Subject: [PATCH] feat(ts): add functionDeclarationStyles to stylisticStrict
  .../src/createTypeScriptServerHost.ts         |  1 +
  .../src/scope/scopeManager.test.ts            |  5 +-
  .../vitest/src/rules/conditionalExpects.ts    | 13 ++-
- .../vitest/src/utils/testCaseFunctions.ts     | 10 +--
+ .../vitest/src/utils/testCaseFunctions.ts     | 20 ++---
  packages/vue/src/rules/vForKeys.ts            | 22 ++---
  packages/yaml-language/src/language.ts        |  4 +-
- 27 files changed, 189 insertions(+), 120 deletions(-)
+ 27 files changed, 201 insertions(+), 132 deletions(-)
  create mode 100644 .changeset/function-declarations-strict.md
 
 diff --git a/.changeset/function-declarations-strict.md b/.changeset/function-declarations-strict.md
@@ -282,46 +282,69 @@ index e28f6d6..66c3841 100644
  					for (let i = 0; i < properties.length; i += 1) {
  						// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
 diff --git a/packages/package-json/src/rules/repositoryShorthand.ts b/packages/package-json/src/rules/repositoryShorthand.ts
-index 0d82dfa..4ec4eab 100644
+index 0d82dfa..631b2ef 100644
 --- a/packages/package-json/src/rules/repositoryShorthand.ts
 +++ b/packages/package-json/src/rules/repositoryShorthand.ts
-@@ -19,8 +19,9 @@ const providerUrls = {
+@@ -19,9 +19,6 @@ const providerUrls = {
  	gitlab: "https://gitlab.com/",
  } satisfies Record<Provider, string>;
  
 -const isProvider = (value: string): value is Provider =>
 -	value in providerRegexes;
+-
+ function createUrl(shorthand: string) {
+ 	if (!shorthand.includes(":")) {
+ 		// If this is definitely not a valid repository, bail out
+@@ -41,6 +38,10 @@ function createUrl(shorthand: string) {
+ 	}
+ }
+ 
 +function isProvider(value: string): value is Provider {
 +	return value in providerRegexes;
 +}
- 
- function createUrl(shorthand: string) {
- 	if (!shorthand.includes(":")) {
++
+ export default ruleCreator.createRule(jsonLanguage, {
+ 	about: {
+ 		description: `Enforces using an object locator for \`repository\`.`,
 diff --git a/packages/plugin-flint/src/utils/ruleCreatorHelpers.ts b/packages/plugin-flint/src/utils/ruleCreatorHelpers.ts
-index 518a837..afea857 100644
+index 518a837..e5e8ab1 100644
 --- a/packages/plugin-flint/src/utils/ruleCreatorHelpers.ts
 +++ b/packages/plugin-flint/src/utils/ruleCreatorHelpers.ts
-@@ -32,12 +32,16 @@ function isTypedMethodCall(
- 	return typeName === leftType && propertyAccess.name.text === rightCall;
+@@ -13,6 +13,20 @@ export function isLanguageCreateRule(
+ 	);
  }
  
--export const isRuleCreatorCreateRule = (
-+export function isRuleCreatorCreateRule(
- 	node: AST.CallExpression,
- 	typeChecker: Checker,
--): boolean => isTypedMethodCall(node, typeChecker, "RuleCreator", "createRule");
-+): boolean {
-+	return isTypedMethodCall(node, typeChecker, "RuleCreator", "createRule");
-+}
- 
--export const isRuleContextReport = (
 +export function isRuleContextReport(
- 	node: AST.CallExpression,
- 	typeChecker: Checker,
--): boolean => isTypedMethodCall(node, typeChecker, "RuleContext", "report");
++	node: AST.CallExpression,
++	typeChecker: Checker,
 +): boolean {
 +	return isTypedMethodCall(node, typeChecker, "RuleContext", "report");
 +}
++
++export function isRuleCreatorCreateRule(
++	node: AST.CallExpression,
++	typeChecker: Checker,
++): boolean {
++	return isTypedMethodCall(node, typeChecker, "RuleCreator", "createRule");
++}
++
+ function isTypedMethodCall(
+ 	node: AST.CallExpression,
+ 	typeChecker: Checker,
+@@ -31,13 +45,3 @@ function isTypedMethodCall(
+ 	// https://github.com/flint-fyi/flint/issues/152
+ 	return typeName === leftType && propertyAccess.name.text === rightCall;
+ }
+-
+-export const isRuleCreatorCreateRule = (
+-	node: AST.CallExpression,
+-	typeChecker: Checker,
+-): boolean => isTypedMethodCall(node, typeChecker, "RuleCreator", "createRule");
+-
+-export const isRuleContextReport = (
+-	node: AST.CallExpression,
+-	typeChecker: Checker,
+-): boolean => isTypedMethodCall(node, typeChecker, "RuleContext", "report");
 diff --git a/packages/rule-data/src/data.json b/packages/rule-data/src/data.json
 index 22c7e42..220a3bc 100644
 --- a/packages/rule-data/src/data.json
@@ -757,22 +780,20 @@ index 606a71c..cba341b 100644
  		return {
  			visitors: {
 diff --git a/packages/vitest/src/utils/testCaseFunctions.ts b/packages/vitest/src/utils/testCaseFunctions.ts
-index 2df9ab1..229348c 100644
+index 2df9ab1..18819b4 100644
 --- a/packages/vitest/src/utils/testCaseFunctions.ts
 +++ b/packages/vitest/src/utils/testCaseFunctions.ts
-@@ -13,16 +13,16 @@ const testCaseFunctionNamesSet = new Set([
+@@ -13,16 +13,9 @@ const testCaseFunctionNamesSet = new Set([
  	"xtest",
  ]);
  
 -export const isVitestTestFunction = (node: AST.CallExpression): boolean => {
-+export function isVitestTestFunction(node: AST.CallExpression): boolean {
- 	const vitestFunction = parseVitestFunctionCall(node);
- 	return (
- 		vitestFunction != null && testCaseFunctionNamesSet.has(vitestFunction.name)
- 	);
+-	const vitestFunction = parseVitestFunctionCall(node);
+-	return (
+-		vitestFunction != null && testCaseFunctionNamesSet.has(vitestFunction.name)
+-	);
 -};
-+}
- 
+-
 -export const getTestCallExpressionsFromDeclaredVariables = (
 +export function getTestCallExpressionsFromDeclaredVariables(
  	declaredVariables: readonly ScopeVariable[],
@@ -781,11 +802,18 @@ index 2df9ab1..229348c 100644
  	return declaredVariables.reduce<AST.CallExpression[]>(
  		(acc, { references }) =>
  			acc.concat(
-@@ -36,4 +36,4 @@ export const getTestCallExpressionsFromDeclaredVariables = (
+@@ -36,4 +29,11 @@ export const getTestCallExpressionsFromDeclaredVariables = (
  			),
  		[],
  	);
 -};
++}
++
++export function isVitestTestFunction(node: AST.CallExpression): boolean {
++	const vitestFunction = parseVitestFunctionCall(node);
++	return (
++		vitestFunction != null && testCaseFunctionNamesSet.has(vitestFunction.name)
++	);
 +}
 diff --git a/packages/vue/src/rules/vForKeys.ts b/packages/vue/src/rules/vForKeys.ts
 index ceb0f7d..0f24062 100644
