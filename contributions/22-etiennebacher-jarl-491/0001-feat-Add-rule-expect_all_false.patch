@@ -1,4 +1,4 @@
-From 2419de309da25840556bd5c38b8fe3f273ab3811 Mon Sep 17 00:00:00 2001
+From c74d8ea8640e1874651c03ffee72756e5a96ac0d Mon Sep 17 00:00:00 2001
 From: anyingiit <winshyon@gmail.com>
 Date: Thu, 24 Sep 2026 17:55:43 +0000
 Subject: [PATCH] feat: Add rule `expect_all_false`
@@ -11,7 +11,6 @@ Report `expect_true(all(!x))` and suggest `expect_all_false(x)`
 Closes #491
 ---
  crates/jarl-core/src/analyze/call.rs          |   4 +
- .../expect_all_false/.mod.rs.pending-snap     |   1 +
  .../expect_all_false/expect_all_false.rs      | 126 +++++++++++++++
  .../lints/testthat/expect_all_false/mod.rs    | 144 ++++++++++++++++++
  ...__expect_all_false__tests__fix_output.snap |  38 +++++
@@ -22,8 +21,7 @@ Closes #491
  docs/changelog.md                             |   1 +
  docs/rules.qmd                                |   1 +
  docs/rules/expect_all_false.md                |  46 ++++++
- 12 files changed, 400 insertions(+)
- create mode 100644 crates/jarl-core/src/lints/testthat/expect_all_false/.mod.rs.pending-snap
+ 11 files changed, 399 insertions(+)
  create mode 100644 crates/jarl-core/src/lints/testthat/expect_all_false/expect_all_false.rs
  create mode 100644 crates/jarl-core/src/lints/testthat/expect_all_false/mod.rs
  create mode 100644 crates/jarl-core/src/lints/testthat/expect_all_false/snapshots/jarl_core__lints__testthat__expect_all_false__tests__fix_output.snap
@@ -52,13 +50,6 @@ index d8df514..7759dc2 100644
          if checker.is_rule_enabled(Rule::TestthatExpectLength) {
              checker.report_diagnostic(expect_length(r_expr, fn_name)?);
          }
-diff --git a/crates/jarl-core/src/lints/testthat/expect_all_false/.mod.rs.pending-snap b/crates/jarl-core/src/lints/testthat/expect_all_false/.mod.rs.pending-snap
-new file mode 100644
-index 0000000..b12aece
---- /dev/null
-+++ b/crates/jarl-core/src/lints/testthat/expect_all_false/.mod.rs.pending-snap
-@@ -0,0 +1 @@
-+{"run_id":"1790272525-662609203","line":56,"new":{"module_name":"jarl_core__lints__testthat__expect_all_false__tests","snapshot_name":"lint_expect_all_false","metadata":{"source":"crates/jarl-core/src/lints/testthat/expect_all_false/mod.rs","assertion_line":56,"expression":"snapshot_lint(\"expect_true(all(!x))\")"},"snapshot":"All checks passed!"},"old":{"module_name":"jarl_core__lints__testthat__expect_all_false__tests","metadata":{},"snapshot":"warning: expect_all_false\n --> <test>:1:1\n  |\n1 | expect_true(all(!x))\n  | -------------------- `expect_true(all(!x))` is not as clear as `expect_all_false(x)`.\n  |\n  = help: Use `expect_all_false(x)` instead.\nFound 1 error."}}
 diff --git a/crates/jarl-core/src/lints/testthat/expect_all_false/expect_all_false.rs b/crates/jarl-core/src/lints/testthat/expect_all_false/expect_all_false.rs
 new file mode 100644
 index 0000000..90c6f5a

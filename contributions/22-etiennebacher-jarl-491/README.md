@@ -5,7 +5,7 @@
 | Issue | https://github.com/etiennebacher/jarl/issues/491 |
 | Tier | 新锐 |
 | Labels | good first issue, new-rule |
-| Status | 🚧 in progress — full suite + clippy running |
+| Status | ✅ ready |
 | Duplicate-PR check | GitHub PR search `is:pr expect_all` → 0 results (open or closed); issue has 0 comments, no assignee, no linked branch/PR (checked 2026-09-24, re-checked before finishing) |
 | Base | `main` @ 6ccdf00 (2026-09-23) |
 
@@ -46,7 +46,16 @@ Toolchain: rustc/cargo 1.98.1. `CARGO_TARGET_DIR` outside repo.
 - **Red** (rule body stubbed to always `return Ok(None)`, tests + wiring in place):
   `cargo test --locked -p jarl-core --lib expect_all_false` → `2 passed; 3 failed` (`test_lint_expect_all_false`, `test_expect_all_false_unsafe_fix`, `test_expect_all_false_with_comments_no_fix` fail; the two no-lint/no-safe-fix tests pass as expected).
 - **Green**: same command → `5 passed; 0 failed`.
-- (see below for full suite / clippy / fmt)
+- **Full suite** (as CI `cargo-test.yml`, which `cargo install`s jarl first so `jarl` is on PATH for the LSP integration tests; here the debug binary was put on PATH instead):
+  `cargo build --locked -p jarl && PATH=$CARGO_TARGET_DIR/debug:$PATH cargo test --locked --no-fail-fast` → all green: jarl integration **361 passed**, jarl-core **708 passed**, jarl-lsp **113 + 5 passed**, zed_jarl 1 passed, 0 failed.
+  (Without the binary on PATH, the 2 `jarl-lsp` integration tests `test_server_binary_exists_and_runs` / `test_server_startup_basic` fail with "No such file or directory" — environment-only, unrelated to this change.)
+- `cargo clippy --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro` → clean (exit 0).
+- `cargo fmt --all -- --check` → clean.
+- **CLI end-to-end** on a scratch file:
+  - `jarl check t.R --select expect_all_false` → 1 warning on `testthat::expect_true(all(!which_loop(g2)))`, none on `expect_true(all(!x, na.rm = TRUE))`; "1 fix is available with the `--fix --unsafe-fixes` option".
+  - `--fix` alone → file unchanged; `--fix --unsafe-fixes` → `testthat::expect_all_false(which_loop(g2))`, the `na.rm` line untouched.
+  - `jarl rule expect_all_false` → "Categories: TESTTHAT / Enabled by default: no / Fix: unsafe (requires `--unsafe-fixes`)".
+- Duplicate re-check before finishing (open PR list, 14 open PRs): none touches `expect_all_*` / #491. Note: several open rule PRs (#701, #694, #660, #606, #572, #563, #552) also edit `rule_set.rs`, `analyze/call.rs`, `docs/changelog.md`, `docs/rules.qmd`, `docs/_quarto.yml` — if one merges first, rebase (conflicts are alphabetical list insertions, trivial).
 
 ## 如何提交
 
@@ -93,7 +102,7 @@ Closes #491
 
 ## Checklist
 
-- [x] Tests pass locally (`cargo test --locked` — FULL_RESULT; `cargo clippy --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro` clean; `cargo fmt --all --check` clean)
+- [x] Tests pass locally (`cargo test --locked --no-fail-fast` with the jarl binary on PATH: 361 + 708 + 113 + 5 + 1 passed, 0 failed; new rule tests fail without the implementation; `cargo clippy --all-targets --all-features --locked -- -D warnings -D clippy::dbg_macro` clean; `cargo fmt --all --check` clean)
 - [x] `CHANGELOG.md` is updated (if applicable) — `docs/changelog.md`, "New rules"
 - [x] Documentation is updated (if applicable) — rule doc block, `docs/rules/expect_all_false.md`, `docs/rules.qmd`, `docs/_quarto.yml`
 ```
