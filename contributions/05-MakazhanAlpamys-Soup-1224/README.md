@@ -37,7 +37,7 @@ issue 由维护者本人撰写，附带可复现脚本、根因行号、修复�
 | `pytest tests/test_issue404_baseline_scorer_stamp.py tests/test_eval_gate.py tests/test_tracker.py tests/test_registry.py tests/test_ui.py tests/test_eval_platform.py` | 333 passed ✅ |
 | `ruff check src/soup_cli/ scripts/ tests/ benchmarks/` | All checks passed ✅ |
 | `pytest tests/test_issue487_changelog_fragments.py` | 用占位名 `PR_NUMBER.fixed.md` 时 **1 failed / 20 passed**（该测试要求片段名为数字 PR 号）；改成数字名后 **21 passed** ✅ —— 开 PR 后改名即可 |
-| 全量 `pytest tests/`（无 torch/`[train]` 环境） | FULL_SUITE_RESULT |
+| 全量 `pytest tests/ -o addopts="" -m "not smoke"`（无 GPU） | **24671 passed, 166 skipped, 3 failed**：① changelog 片段占位名（见上一行，改名后通过）；② `test_issue580_…real_venv_launcher` 与 ③ `test_v0714::…test_secrets_not_leaked_to_child` 在 `main` 上同样失败（本地环境相关），与本改动无关 |
 
 ## 如何提交
 ```bash
@@ -87,7 +87,8 @@ Closes #1224
 
 - [x] Tests pass locally — new file: 8 passed (7 of them fail without the fix); `test_issue404_baseline_scorer_stamp`,
       `test_eval_gate`, `test_tracker`, `test_registry`, `test_ui`, `test_eval_platform`: 333 passed;
-      `ruff check src/soup_cli/ scripts/ tests/ benchmarks/` clean
+      `ruff check src/soup_cli/ scripts/ tests/ benchmarks/` clean; full suite 24671 passed — the only other failures
+      (`test_issue580_…real_venv_launcher`, `test_v0714::…secrets_not_leaked_to_child`) fail identically on `main` here
 - [x] `CHANGELOG.md` is updated (if applicable) — via `changelog.d/0.75.1/<this PR>.fixed.md`
       (`test_issue487_changelog_fragments.py` passes once the fragment carries this PR's number)
 - [x] Documentation is updated (if applicable) — `docs/evaluation.md`
