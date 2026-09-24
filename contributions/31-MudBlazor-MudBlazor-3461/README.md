@@ -5,7 +5,7 @@
 | Issue | https://github.com/MudBlazor/MudBlazor/issues/3461 |
 | Tier | 高活跃高Star (MudBlazor ~10k★, commits daily, maintainers merge outside PRs) |
 | Labels | bug, good first issue |
-| Status | 🚧 in progress — full suite running |
+| Status | ✅ ready — patch + PR text done; submitter must add Before/After recording (see 需要提交者注意) |
 | Duplicate-PR check | 2026-09-24: `repo:MudBlazor/MudBlazor 3461` → only #12389 (closed without merge, author deleted fork, no maintainer review). `DatePicker MinDate MaxDate` → #4088 (2022, stale, about calendar display/navigation crash, not typed input) and #13159 (v10 generic refactor, unrelated). Issue unassigned; only comments are the reporter's bump ("still exists", Aug 2025). |
 | Base | `dev` @ 47584cb |
 
@@ -57,7 +57,10 @@ dotnet test --project src/MudBlazor.UnitTests/MudBlazor.UnitTests.csproj --no-re
   `Did not expect comp.Instance.Date to have a value, but found <2024-01-09>.` / `<2024-01-21>`
 - GREEN (with fix): total 6, failed 0, succeeded 6.
 - Formatting: `cd src && dotnet format whitespace --no-restore --include MudBlazor/Components/DatePicker/MudDatePicker.cs MudBlazor.UnitTests/Components/DatePickerTests.cs --verify-no-changes` → exit 0.
-- Full suite: FULL_SUITE_PLACEHOLDER
+- Full suite (with fix): `dotnet test --project src/MudBlazor.UnitTests/MudBlazor.UnitTests.csproj --no-restore /p:SkipBunCompile=true -- --output Normal --no-ansi --hangdump --hangdump-timeout 120s` → **Passed: total 6134, failed 0, succeeded 6132, skipped 2** (1m24s). No failures, so no base-branch comparison needed.
+- Library build for all TFMs: `dotnet build src/MudBlazor/MudBlazor.csproj --no-restore /p:SkipBunCompile=true` → net8.0/net9.0/net10.0 Build succeeded, 0 warnings (TreatWarningsAsErrors on).
+- Not run: Bun/TS asset build (no TS/SCSS touched), docs tests (`MudBlazor.UnitTests.Docs`, no docs/API changes), analyzer tests (untouched).
+- Duplicate re-check before finishing (2026-09-24): issue still open, unassigned, no linked PR; no new open DatePicker PRs since 09-01 (only #13884, unrelated adornment tooltips).
 
 ## 如何提交
 
@@ -111,7 +114,7 @@ Closes #3461
 - [x] I've read the [contribution guidelines](https://github.com/MudBlazor/MudBlazor/blob/dev/CONTRIBUTING.md)
 - [x] My code follows the style of this project (`dotnet format whitespace --verify-no-changes` on the changed files: clean)
 - [x] I've added or updated relevant unit tests — 3 new tests in `DatePickerTests` (6 cases); the regression test fails on `dev` and passes with the fix
-- [x] Tests pass locally (FULL_SUITE_CHECKLIST_PLACEHOLDER)
+- [x] Tests pass locally (`dotnet test --project src/MudBlazor.UnitTests/MudBlazor.UnitTests.csproj /p:SkipBunCompile=true`: 6134 total, 0 failed, 6132 passed, 2 skipped; `dotnet build src/MudBlazor/MudBlazor.csproj` net8/9/10: 0 warnings)
 - [ ] `CHANGELOG.md` is updated (if applicable) — n/a, release notes come from GitHub releases
 - [ ] Documentation is updated (if applicable) — n/a, `MinDate`/`MaxDate` are already documented as the min/max *selectable* date
 ```
