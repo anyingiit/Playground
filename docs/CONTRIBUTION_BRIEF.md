@@ -38,6 +38,17 @@ patch + a ready-to-paste PR description. The owner (anyingiit) submits them late
 7. **PR text in the chefs-pick-oss-starter format** (see below), including the
    motivation/disclosure paragraph.
 
+## Checkpointing (quota may run out at any moment)
+
+Work so that an interruption leaves something usable, not nothing:
+1. As soon as the issue is chosen, create the deliverables folder with a `README.md` stub:
+   issue link, tier, `Status: 🚧 in progress — <current step>`, and the notes gathered so far.
+2. Update the `Status:` line and notes after each milestone (audit done → implemented →
+   tests red/green → full checks → PR text written).
+3. As soon as a working commit exists, export `0001-*.patch` immediately; re-export after changes.
+4. Write `AUDIT.md` right after the audit, before building/testing.
+The coordinator commits the folder periodically, so partial progress survives.
+
 ## Deliverables — folder `contributions/NN-<owner>-<repo>-<issue>/`
 
 - `0001-*.patch` — from `git format-patch -1` (single commit on a branch off the default branch).
