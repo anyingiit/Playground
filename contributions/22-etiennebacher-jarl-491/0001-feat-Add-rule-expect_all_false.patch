@@ -1,0 +1,541 @@
+From 2419de309da25840556bd5c38b8fe3f273ab3811 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:55:43 +0000
+Subject: [PATCH] feat: Add rule `expect_all_false`
+
+Report `expect_true(all(!x))` and suggest `expect_all_false(x)`
+(testthat >= 3.3.0). The fix is marked unsafe because
+`expect_all_false()` errors on empty input and compares with
+`FALSE` via waldo.
+
+Closes #491
+---
+ crates/jarl-core/src/analyze/call.rs          |   4 +
+ .../expect_all_false/.mod.rs.pending-snap     |   1 +
+ .../expect_all_false/expect_all_false.rs      | 126 +++++++++++++++
+ .../lints/testthat/expect_all_false/mod.rs    | 144 ++++++++++++++++++
+ ...__expect_all_false__tests__fix_output.snap |  38 +++++
+ ...ll_false__tests__no_fix_with_comments.snap |  30 ++++
+ crates/jarl-core/src/lints/testthat/mod.rs    |   1 +
+ crates/jarl-core/src/rule_set.rs              |   7 +
+ docs/_quarto.yml                              |   1 +
+ docs/changelog.md                             |   1 +
+ docs/rules.qmd                                |   1 +
+ docs/rules/expect_all_false.md                |  46 ++++++
+ 12 files changed, 400 insertions(+)
+ create mode 100644 crates/jarl-core/src/lints/testthat/expect_all_false/.mod.rs.pending-snap
+ create mode 100644 crates/jarl-core/src/lints/testthat/expect_all_false/expect_all_false.rs
+ create mode 100644 crates/jarl-core/src/lints/testthat/expect_all_false/mod.rs
+ create mode 100644 crates/jarl-core/src/lints/testthat/expect_all_false/snapshots/jarl_core__lints__testthat__expect_all_false__tests__fix_output.snap
+ create mode 100644 crates/jarl-core/src/lints/testthat/expect_all_false/snapshots/jarl_core__lints__testthat__expect_all_false__tests__no_fix_with_comments.snap
+ create mode 100644 docs/rules/expect_all_false.md
+
+diff --git a/crates/jarl-core/src/analyze/call.rs b/crates/jarl-core/src/analyze/call.rs
+index d8df514..7759dc2 100644
+--- a/crates/jarl-core/src/analyze/call.rs
++++ b/crates/jarl-core/src/analyze/call.rs
+@@ -39,6 +39,7 @@ use crate::lints::base::which_grepl::which_grepl::which_grepl;
+ use crate::lints::dplyr::dplyr_filter_out::dplyr_filter_out::dplyr_filter_out;
+ use crate::lints::dplyr::dplyr_group_by_ungroup::dplyr_group_by_ungroup::dplyr_group_by_ungroup;
+ 
++use crate::lints::testthat::expect_all_false::expect_all_false::expect_all_false;
+ use crate::lints::testthat::expect_length::expect_length::expect_length;
+ use crate::lints::testthat::expect_match::expect_match::expect_match;
+ use crate::lints::testthat::expect_named::expect_named::expect_named;
+@@ -175,6 +176,9 @@ pub fn call(r_expr: &RCall, checker: &mut Checker) -> anyhow::Result<()> {
+     // ------------- TESTTHAT -------------
+     //
+     if ns_prefix == Some("testthat::") || checker.package_in_reach("testthat") {
++        if checker.is_rule_enabled(Rule::TestthatExpectAllFalse) {
++            checker.report_diagnostic(expect_all_false(r_expr, fn_name)?);
++        }
+         if checker.is_rule_enabled(Rule::TestthatExpectLength) {
+             checker.report_diagnostic(expect_length(r_expr, fn_name)?);
+         }
+diff --git a/crates/jarl-core/src/lints/testthat/expect_all_false/.mod.rs.pending-snap b/crates/jarl-core/src/lints/testthat/expect_all_false/.mod.rs.pending-snap
+new file mode 100644
+index 0000000..b12aece
+--- /dev/null
++++ b/crates/jarl-core/src/lints/testthat/expect_all_false/.mod.rs.pending-snap
+@@ -0,0 +1 @@
++{"run_id":"1790272525-662609203","line":56,"new":{"module_name":"jarl_core__lints__testthat__expect_all_false__tests","snapshot_name":"lint_expect_all_false","metadata":{"source":"crates/jarl-core/src/lints/testthat/expect_all_false/mod.rs","assertion_line":56,"expression":"snapshot_lint(\"expect_true(all(!x))\")"},"snapshot":"All checks passed!"},"old":{"module_name":"jarl_core__lints__testthat__expect_all_false__tests","metadata":{},"snapshot":"warning: expect_all_false\n --> <test>:1:1\n  |\n1 | expect_true(all(!x))\n  | -------------------- `expect_true(all(!x))` is not as clear as `expect_all_false(x)`.\n  |\n  = help: Use `expect_all_false(x)` instead.\nFound 1 error."}}
+diff --git a/crates/jarl-core/src/lints/testthat/expect_all_false/expect_all_false.rs b/crates/jarl-core/src/lints/testthat/expect_all_false/expect_all_false.rs
+new file mode 100644
+index 0000000..90c6f5a
+--- /dev/null
++++ b/crates/jarl-core/src/lints/testthat/expect_all_false/expect_all_false.rs
+@@ -0,0 +1,126 @@
++use crate::diagnostic::*;
++use crate::rule_set::Rule;
++use crate::utils::{
++    Formals, get_arg, get_function_name, get_function_namespace_prefix, node_contains_comments,
++};
++use air_r_syntax::*;
++use biome_rowan::{AstNode, AstSeparatedList};
++
++const FORMALS_EXPECT_TRUE: Formals = &["object", "info", "label"];
++
++/// <!-- docs: start -->
++/// Version added: 0.7.0
++///
++/// ## What it does
++///
++/// Checks for usage of `expect_true(all(!x))`.
++///
++/// ## Why is this bad?
++///
++/// `expect_all_false()` states the intent more directly than
++/// `expect_true(all(!x))`, and when the test fails it reports which elements
++/// are not `FALSE` instead of only saying that `all(!x)` is not `TRUE`.
++///
++/// `expect_all_false()` was added in testthat 3.3.0.
++///
++/// This rule is **disabled by default**. Select it either with the rule name
++/// `"expect_all_false"` or with the rule group `"TESTTHAT"`.
++///
++/// This rule doesn't report calls that pass `info` or `label` to
++/// `expect_true()`, or that pass several arguments (such as `na.rm`) to
++/// `all()`.
++///
++/// This rule has an automatic fix that is marked unsafe and therefore requires
++/// passing `--unsafe-fixes`. `expect_all_false()` is stricter than
++/// `expect_true(all(!x))`: it errors when `x` is empty and can fail when `x`
++/// isn't a logical vector (for example, `x <- c(0, 0)`), so a test that passes
++/// now could fail after the fix.
++///
++/// ## Example
++///
++/// ```r
++/// expect_true(all(!x))
++/// expect_true(all(!is.na(x)))
++/// ```
++///
++/// Use instead:
++/// ```r
++/// expect_all_false(x)
++/// expect_all_false(is.na(x))
++/// ```
++///
++/// ## References
++///
++/// See `?testthat::expect_all_false`
++/// <!-- docs: end -->
++pub fn expect_all_false(ast: &RCall, fn_name: &str) -> anyhow::Result<Option<Diagnostic>> {
++    if fn_name != "expect_true" {
++        return Ok(None);
++    }
++
++    // `expect_all_false()` has no `info` or `label` argument.
++    if ast.arguments()?.items().iter().count() != 1 {
++        return Ok(None);
++    }
++
++    let object = unwrap_or_return_none!(get_arg(ast, FORMALS_EXPECT_TRUE, "object"));
++    let object_value = unwrap_or_return_none!(object.value());
++    let all_call = unwrap_or_return_none!(object_value.as_r_call());
++
++    if get_function_name(all_call.function()?) != "all" {
++        return Ok(None);
++    }
++
++    // Only `all(!x)`: `all(!x, !y)` or `all(!x, na.rm = TRUE)` have no
++    // `expect_all_false()` equivalent.
++    let all_args = all_call.arguments()?.items();
++    if all_args.iter().count() != 1 {
++        return Ok(None);
++    }
++    let all_arg = unwrap_or_return_none!(all_args.iter().next().and_then(|arg| arg.ok()));
++    if all_arg.name_clause().is_some() {
++        return Ok(None);
++    }
++    let all_arg_value = unwrap_or_return_none!(all_arg.value());
++
++    let unary_expr = unwrap_or_return_none!(all_arg_value.as_r_unary_expression());
++    let operator = unwrap_or_return_none!(unary_expr.operator().ok());
++    if operator.kind() != RSyntaxKind::BANG {
++        return Ok(None);
++    }
++    let argument = unwrap_or_return_none!(unary_expr.argument().ok());
++
++    // Skip rlang's `!!` and `!!!`.
++    if let Some(inner_unary) = argument.as_r_unary_expression()
++        && let Ok(inner_op) = inner_unary.operator()
++        && inner_op.kind() == RSyntaxKind::BANG
++    {
++        return Ok(None);
++    }
++
++    // `all(!(x > 1))` -> `expect_all_false(x > 1)`
++    let inner_text = match argument
++        .as_r_parenthesized_expression()
++        .and_then(|paren| paren.body().ok())
++    {
++        Some(body) => body.to_trimmed_text(),
++        None => argument.to_trimmed_text(),
++    };
++
++    let namespace_prefix = get_function_namespace_prefix(ast.function()?).unwrap_or_default();
++    let range = ast.syntax().text_trimmed_range();
++
++    Ok(Some(Diagnostic::new(
++        ViolationData::new(
++            Rule::TestthatExpectAllFalse,
++            "`expect_true(all(!x))` is not as clear as `expect_all_false(x)`.".to_string(),
++            Some("Use `expect_all_false(x)` instead.".to_string()),
++        ),
++        range,
++        Fix::new(
++            range,
++            format!("{}expect_all_false({})", namespace_prefix, inner_text),
++            node_contains_comments(ast.syntax()),
++        ),
++    )))
++}
+diff --git a/crates/jarl-core/src/lints/testthat/expect_all_false/mod.rs b/crates/jarl-core/src/lints/testthat/expect_all_false/mod.rs
+new file mode 100644
+index 0000000..b01daba
+--- /dev/null
++++ b/crates/jarl-core/src/lints/testthat/expect_all_false/mod.rs
+@@ -0,0 +1,144 @@
++pub(crate) mod expect_all_false;
++
++#[cfg(test)]
++mod tests {
++    use crate::utils_test::*;
++    use insta::assert_snapshot;
++
++    fn snapshot_lint(code: &str) -> String {
++        format_diagnostics(code, "expect_all_false", None)
++    }
++
++    #[test]
++    fn test_no_lint_expect_all_false() {
++        expect_no_lint("expect_all_false(x)", "expect_all_false", None);
++        expect_no_lint("expect_true(all(x))", "expect_all_false", None);
++        expect_no_lint("expect_true(any(!x))", "expect_all_false", None);
++        expect_no_lint("expect_false(all(!x))", "expect_all_false", None);
++        expect_no_lint("expect_true(!all(x))", "expect_all_false", None);
++        expect_no_lint("expect_true(all(!x | y))", "expect_all_false", None);
++        expect_no_lint("all(!x)", "expect_all_false", None);
++
++        // `all()` with several arguments can't be expressed with `expect_all_false()`
++        expect_no_lint("expect_true(all(!x, !y))", "expect_all_false", None);
++        expect_no_lint(
++            "expect_true(all(!x, na.rm = TRUE))",
++            "expect_all_false",
++            None,
++        );
++
++        // `expect_all_false()` has no `info` or `label` argument
++        expect_no_lint(
++            "expect_true(all(!x), info = 'msg')",
++            "expect_all_false",
++            None,
++        );
++        expect_no_lint(
++            "expect_true(all(!x), label = 'x')",
++            "expect_all_false",
++            None,
++        );
++
++        // rlang "!!" and "!!!" operators should not be flagged
++        expect_no_lint("expect_true(all(!!x))", "expect_all_false", None);
++        expect_no_lint("expect_true(all(!!!x))", "expect_all_false", None);
++
++        // Wrong code but no panic
++        expect_no_lint("expect_true()", "expect_all_false", None);
++        expect_no_lint("expect_true(all())", "expect_all_false", None);
++        expect_no_lint("expect_true(all(!))", "expect_all_false", None);
++        expect_no_lint("expect_true(object =)", "expect_all_false", None);
++        expect_no_lint("expect_true(all(x =))", "expect_all_false", None);
++    }
++
++    #[test]
++    fn test_lint_expect_all_false() {
++        assert_snapshot!(
++            snapshot_lint("expect_true(all(!x))"),
++            @"
++        warning: expect_all_false
++         --> <test>:1:1
++          |
++        1 | expect_true(all(!x))
++          | -------------------- `expect_true(all(!x))` is not as clear as `expect_all_false(x)`.
++          |
++          = help: Use `expect_all_false(x)` instead.
++        Found 1 error.
++        "
++        );
++        assert_snapshot!(
++            snapshot_lint("testthat::expect_true(all(!which_loop(g2)))"),
++            @"
++        warning: expect_all_false
++         --> <test>:1:1
++          |
++        1 | testthat::expect_true(all(!which_loop(g2)))
++          | ------------------------------------------- `expect_true(all(!x))` is not as clear as `expect_all_false(x)`.
++          |
++          = help: Use `expect_all_false(x)` instead.
++        Found 1 error.
++        "
++        );
++        assert_snapshot!(
++            snapshot_lint("expect_true(object = all(!is.na(x)))"),
++            @"
++        warning: expect_all_false
++         --> <test>:1:1
++          |
++        1 | expect_true(object = all(!is.na(x)))
++          | ------------------------------------ `expect_true(all(!x))` is not as clear as `expect_all_false(x)`.
++          |
++          = help: Use `expect_all_false(x)` instead.
++        Found 1 error.
++        "
++        );
++    }
++
++    #[test]
++    fn test_expect_all_false_no_safe_fix() {
++        // The fix is unsafe, so nothing changes without `--unsafe-fixes`.
++        assert_snapshot!(
++            get_fixed_text(vec!["expect_true(all(!x))"], "expect_all_false", None),
++            @"
++        OLD:
++        ====
++        expect_true(all(!x))
++        NEW:
++        ====
++        expect_true(all(!x))
++        "
++        );
++    }
++
++    #[test]
++    fn test_expect_all_false_unsafe_fix() {
++        assert_snapshot!(
++            "fix_output",
++            get_unsafe_fixed_text(
++                vec![
++                    "expect_true(all(!x))",
++                    "expect_true(all(!which_loop(g2)))",
++                    "expect_true(all(!(x > 1)))",
++                    "expect_true(all(!(x & y)))",
++                    "testthat::expect_true(base::all(!x))",
++                ],
++                "expect_all_false",
++            )
++        );
++    }
++
++    #[test]
++    fn test_expect_all_false_with_comments_no_fix() {
++        assert_snapshot!(
++            "no_fix_with_comments",
++            get_unsafe_fixed_text(
++                vec![
++                    "# leading comment\nexpect_true(all(!x))",
++                    "expect_true(all(\n  # comment\n  !x))",
++                    "expect_true(all(!x)) # trailing comment",
++                ],
++                "expect_all_false",
++            )
++        );
++    }
++}
+diff --git a/crates/jarl-core/src/lints/testthat/expect_all_false/snapshots/jarl_core__lints__testthat__expect_all_false__tests__fix_output.snap b/crates/jarl-core/src/lints/testthat/expect_all_false/snapshots/jarl_core__lints__testthat__expect_all_false__tests__fix_output.snap
+new file mode 100644
+index 0000000..28799db
+--- /dev/null
++++ b/crates/jarl-core/src/lints/testthat/expect_all_false/snapshots/jarl_core__lints__testthat__expect_all_false__tests__fix_output.snap
+@@ -0,0 +1,38 @@
++---
++source: crates/jarl-core/src/lints/testthat/expect_all_false/mod.rs
++expression: "get_unsafe_fixed_text(vec![\"expect_true(all(!x))\",\n\"expect_true(all(!which_loop(g2)))\", \"expect_true(all(!(x > 1)))\",\n\"expect_true(all(!(x & y)))\", \"testthat::expect_true(base::all(!x))\",],\n\"expect_all_false\",)"
++---
++OLD:
++====
++expect_true(all(!x))
++NEW:
++====
++expect_all_false(x)
++
++OLD:
++====
++expect_true(all(!which_loop(g2)))
++NEW:
++====
++expect_all_false(which_loop(g2))
++
++OLD:
++====
++expect_true(all(!(x > 1)))
++NEW:
++====
++expect_all_false(x > 1)
++
++OLD:
++====
++expect_true(all(!(x & y)))
++NEW:
++====
++expect_all_false(x & y)
++
++OLD:
++====
++testthat::expect_true(base::all(!x))
++NEW:
++====
++testthat::expect_all_false(x)
+diff --git a/crates/jarl-core/src/lints/testthat/expect_all_false/snapshots/jarl_core__lints__testthat__expect_all_false__tests__no_fix_with_comments.snap b/crates/jarl-core/src/lints/testthat/expect_all_false/snapshots/jarl_core__lints__testthat__expect_all_false__tests__no_fix_with_comments.snap
+new file mode 100644
+index 0000000..2142d40
+--- /dev/null
++++ b/crates/jarl-core/src/lints/testthat/expect_all_false/snapshots/jarl_core__lints__testthat__expect_all_false__tests__no_fix_with_comments.snap
+@@ -0,0 +1,30 @@
++---
++source: crates/jarl-core/src/lints/testthat/expect_all_false/mod.rs
++expression: "get_unsafe_fixed_text(vec![\"# leading comment\\nexpect_true(all(!x))\",\n\"expect_true(all(\\n  # comment\\n  !x))\",\n\"expect_true(all(!x)) # trailing comment\",], \"expect_all_false\",)"
++---
++OLD:
++====
++# leading comment
++expect_true(all(!x))
++NEW:
++====
++# leading comment
++expect_all_false(x)
++
++OLD:
++====
++expect_true(all(
++  # comment
++  !x))
++NEW:
++====
++expect_true(all(
++  # comment
++  !x))
++
++OLD:
++====
++expect_true(all(!x)) # trailing comment
++NEW:
++====
++expect_all_false(x) # trailing comment
+diff --git a/crates/jarl-core/src/lints/testthat/mod.rs b/crates/jarl-core/src/lints/testthat/mod.rs
+index 397bfa4..486cd46 100644
+--- a/crates/jarl-core/src/lints/testthat/mod.rs
++++ b/crates/jarl-core/src/lints/testthat/mod.rs
+@@ -1,3 +1,4 @@
++pub(crate) mod expect_all_false;
+ pub(crate) mod expect_length;
+ pub(crate) mod expect_match;
+ pub(crate) mod expect_named;
+diff --git a/crates/jarl-core/src/rule_set.rs b/crates/jarl-core/src/rule_set.rs
+index 54560c4..39976b3 100644
+--- a/crates/jarl-core/src/rule_set.rs
++++ b/crates/jarl-core/src/rule_set.rs
+@@ -790,6 +790,13 @@ declare_rules! {
+     //
+     // ------------- TESTTHAT -------------
+     //
++    TestthatExpectAllFalse => {
++        name: "expect_all_false",
++        categories: [Testthat],
++        default: Disabled,
++        fix: Unsafe,
++        min_r_version: None,
++    },
+     TestthatExpectLength => {
+         name: "expect_length",
+         categories: [Testthat],
+diff --git a/docs/_quarto.yml b/docs/_quarto.yml
+index f81a68f..26a2c61 100644
+--- a/docs/_quarto.yml
++++ b/docs/_quarto.yml
+@@ -104,6 +104,7 @@ website:
+             - rules/equals_na.md
+             - rules/equals_nan.md
+             - rules/equals_null.md
++            - rules/expect_all_false.md
+             - rules/expect_length.md
+             - rules/expect_match.md
+             - rules/expect_named.md
+diff --git a/docs/changelog.md b/docs/changelog.md
+index 62af353..d46f5cc 100644
+--- a/docs/changelog.md
++++ b/docs/changelog.md
+@@ -23,6 +23,7 @@
+ 
+ * New rules:
+ 
++  * `expect_all_false` (#491)
+   * `undesirable_operator` (#657, @christopherkenny)
+ 
+ * The config file can be named `.jarl.toml` as well as `jarl.toml`. Both names
+diff --git a/docs/rules.qmd b/docs/rules.qmd
+index 2680238..1f7d663 100644
+--- a/docs/rules.qmd
++++ b/docs/rules.qmd
+@@ -76,6 +76,7 @@ dat <- as.data.frame(
+     c("equals_na", "correctness", "✅", ""),
+     c("equals_nan", "correctness", "✅", ""),
+     c("equals_null", "correctness", "✅", ""),
++    c("expect_all_false", "testthat", "❗", "Disabled by default"),
+     c("expect_length", "testthat", "✅", "Disabled by default"),
+     c("expect_match", "testthat", "✅", "Disabled by default"),
+     c("expect_named", "testthat", "✅", "Disabled by default"),
+diff --git a/docs/rules/expect_all_false.md b/docs/rules/expect_all_false.md
+new file mode 100644
+index 0000000..a74ce15
+--- /dev/null
++++ b/docs/rules/expect_all_false.md
+@@ -0,0 +1,46 @@
++# expect_all_false
++
++::: {.callout-note title="Added in 0.7.0" .low-opacity}
++:::
++
++## What it does
++
++Checks for usage of `expect_true(all(!x))`.
++
++## Why is this bad?
++
++`expect_all_false()` states the intent more directly than
++`expect_true(all(!x))`, and when the test fails it reports which elements
++are not `FALSE` instead of only saying that `all(!x)` is not `TRUE`.
++
++`expect_all_false()` was added in testthat 3.3.0.
++
++This rule is **disabled by default**. Select it either with the rule name
++`"expect_all_false"` or with the rule group `"TESTTHAT"`.
++
++This rule doesn't report calls that pass `info` or `label` to
++`expect_true()`, or that pass several arguments (such as `na.rm`) to
++`all()`.
++
++This rule has an automatic fix that is marked unsafe and therefore requires
++passing `--unsafe-fixes`. `expect_all_false()` is stricter than
++`expect_true(all(!x))`: it errors when `x` is empty and can fail when `x`
++isn't a logical vector (for example, `x <- c(0, 0)`), so a test that passes
++now could fail after the fix.
++
++## Example
++
++```r
++expect_true(all(!x))
++expect_true(all(!is.na(x)))
++```
++
++Use instead:
++```r
++expect_all_false(x)
++expect_all_false(is.na(x))
++```
++
++## References
++
++See `?testthat::expect_all_false`
+-- 
+2.43.0
+

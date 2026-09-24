@@ -5,7 +5,7 @@
 | Issue | https://github.com/BfArM-MVH/grz-tools/issues/622 |
 | Tier | 自由 |
 | Labels | good first issue, priority: low, type: bug |
-| Status | 🚧 in progress — issue chosen, audit next |
+| Status | 🚧 in progress — fix + test committed (red→green), running full checks |
 | Duplicate-PR check | open PR heads #624–#694 checked: none touch the alembic URL line |
 
 ## Notes

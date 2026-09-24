@@ -1,0 +1,76 @@
+From 3c1726f758198c0ccc5a2c672604b62f5a93a2e9 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:55:04 +0000
+Subject: [PATCH] fix(grz-db): pass the unmasked database URL to alembic
+
+SubmissionDb._get_alembic_config handed str(self.engine.url) to Alembic.
+SQLAlchemy renders the password of a URL as "***" in str(), so every
+migration command (db init / db upgrade / schema check) connected with the
+literal password "***" and failed to authenticate against a
+password-protected database.
+
+Render the URL with hide_password=False instead, and escape "%" as "%%"
+because Alembic's config is a ConfigParser with interpolation: a
+URL-encoded password (e.g. one containing "%" -> "%25") would otherwise
+raise "invalid interpolation syntax".
+
+Closes #622
+---
+ .../src/grz_db/models/submission/__init__.py  |  4 +++-
+ packages/grz-db/tests/test_submission.py      | 21 +++++++++++++++++++
+ 2 files changed, 24 insertions(+), 1 deletion(-)
+
+diff --git a/packages/grz-db/src/grz_db/models/submission/__init__.py b/packages/grz-db/src/grz_db/models/submission/__init__.py
+index f5e0b69..71c992e 100644
+--- a/packages/grz-db/src/grz_db/models/submission/__init__.py
++++ b/packages/grz-db/src/grz_db/models/submission/__init__.py
+@@ -1065,7 +1065,9 @@ class SubmissionDb:
+         """
+         alembic_cfg = AlembicConfig()
+         alembic_cfg.set_main_option("script_location", "grz_db:migrations")
+-        alembic_cfg.set_main_option("sqlalchemy.url", str(self.engine.url))
++        # str() on a URL masks the password as "***", and the config reads "%" as interpolation.
++        db_url = self.engine.url.render_as_string(hide_password=False)
++        alembic_cfg.set_main_option("sqlalchemy.url", db_url.replace("%", "%%"))
+         return alembic_cfg
+ 
+     def _confirm_schema(self) -> None:
+diff --git a/packages/grz-db/tests/test_submission.py b/packages/grz-db/tests/test_submission.py
+index 2829e11..429431d 100644
+--- a/packages/grz-db/tests/test_submission.py
++++ b/packages/grz-db/tests/test_submission.py
+@@ -18,6 +18,7 @@ from grz_pydantic_models.submission.metadata import (
+     GrzSubmissionMetadata,
+     Relation,
+ )
++from sqlalchemy.engine import URL, make_url
+ from sqlmodel import Session
+ 
+ TWO_TB = 2 * 1024**4  # 2,199,023,255,552 bytes
+@@ -345,3 +346,23 @@ def test_a_database_that_is_behind_is_asked_again(db: SubmissionDb, monkeypatch:
+ 
+     behind = False
+     assert db.get_submission(SUBMISSION_ID) is None, "the upgrade must be picked up"
++
++
++@pytest.mark.parametrize("password", ["s3cret", "s3cr%et"])
++def test_alembic_config_keeps_the_database_password(password: str) -> None:
++    """Alembic connects with the URL it is handed, so the password must not be masked.
++
++    ``str()`` on a SQLAlchemy URL replaces the password with ``***``, and a ``%`` in the
++    password would be read as configparser interpolation unless it is escaped.
++    """
++    url = URL.create(
++        "postgresql+psycopg", username="grz", password=password, host="db.example", port=5432, database="grz"
++    )
++    submission_db = SubmissionDb(db_url=url.render_as_string(hide_password=False), author=None)
++    try:
++        alembic_url = submission_db._get_alembic_config().get_main_option("sqlalchemy.url")
++    finally:
++        submission_db.engine.dispose()
++
++    assert alembic_url is not None
++    assert make_url(alembic_url).password == password
+-- 
+2.43.0
+
