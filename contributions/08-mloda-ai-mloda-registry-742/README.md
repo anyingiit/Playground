@@ -5,7 +5,7 @@
 | Issue | https://github.com/mloda-ai/mloda-registry/issues/742 |
 | Tier | 新锐 |
 | Labels | bug, good first issue, help wanted |
-| Status | 🚧 in progress — audit done (benign), implementing |
+| Status | 🚧 in progress — implemented + committed, patch exported; running full tox |
 | Duplicate-PR check | `742 repo:mloda-ai/mloda-registry` → 0 PRs; `bandit worktrees` → 0 PRs; issue has 0 comments, no assignee (2026-09-24) |
 
 ## 问题理解

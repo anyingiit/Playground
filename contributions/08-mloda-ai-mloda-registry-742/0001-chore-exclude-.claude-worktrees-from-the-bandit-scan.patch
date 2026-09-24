@@ -1,0 +1,47 @@
+From 00391e500c1dc600a3966fdbe2a3707116522348 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:23:57 +0000
+Subject: [PATCH] chore: exclude .claude/worktrees from the bandit scan
+
+bandit does not read .gitignore or git's exclude file, so a git worktree
+checked out under .claude/worktrees/ was scanned as part of the repository
+and its findings failed the local tox gate. Add anchored globs for it to
+both the tox bandit -x list and [tool.bandit] exclude_dirs.
+
+Closes #742
+---
+ pyproject.toml | 4 +++-
+ tox.ini        | 2 +-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/pyproject.toml b/pyproject.toml
+index 9913e88..34be841 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -119,7 +119,9 @@ exclude_dirs = [
+     "*.egg-info/*",
+     "*/*.egg-info/*",
+     "site-packages/*",
+-    "*/site-packages/*"
++    "*/site-packages/*",
++    ".claude/worktrees/*",
++    "*/.claude/worktrees/*"
+ ]
+ skips = [
+     "B101", # Use of assert detected. The enclosed code will be removed when compiling to optimised byte code.
+diff --git a/tox.ini b/tox.ini
+index a675a02..42b64ec 100644
+--- a/tox.ini
++++ b/tox.ini
+@@ -38,7 +38,7 @@ commands =
+     ruff format --check --line-length 120 .
+     ruff check .
+     mypy --strict --ignore-missing-imports .
+-    bandit -c pyproject.toml -r -q -x .svn/*,*/.svn/*,CVS/*,*/CVS/*,.bzr/*,*/.bzr/*,.hg/*,*/.hg/*,.git/*,*/.git/*,__pycache__/*,*/__pycache__/*,.tox/*,*/.tox/*,.eggs/*,*/.eggs/*,*.egg,*.egg/* .
++    bandit -c pyproject.toml -r -q -x .svn/*,*/.svn/*,CVS/*,*/CVS/*,.bzr/*,*/.bzr/*,.hg/*,*/.hg/*,.git/*,*/.git/*,__pycache__/*,*/__pycache__/*,.tox/*,*/.tox/*,.eggs/*,*/.eggs/*,*.egg,*.egg/*,.claude/worktrees/*,*/.claude/worktrees/* .
+ 
+ [testenv:testing]
+ description = Run only mloda-testing tests
+-- 
+2.43.0
+
