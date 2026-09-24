@@ -5,8 +5,8 @@
 | Issue | https://github.com/pasteurlabs/tesseract-core/issues/768 |
 | Tier | 新锐 |
 | Labels | good first issue |
-| Status | 🚧 in progress — implemented, patch exported, full fast suite running |
-| 重复 PR 检查 | 2026-09-24: issue 无 assignee、0 comments、无 linked branch/PR；PR 搜索 `transport repo:pasteurlabs/tesseract-core` 仅见已合并的 #737/#781 和无关的 open #726 (cuda_vmm) / #723 (NIXL) / #748 (Ref)，无人实现本 issue |
+| Status | ✅ ready — patch + PR text done (2026-09-24) |
+| 重复 PR 检查 | 2026-09-24（开始时及完成前复查两次）: issue 无 assignee、0 comments、无 linked branch/PR；PR 搜索 `transport repo:pasteurlabs/tesseract-core` 仅见已合并的 #737/#781 和无关的 open #726 (cuda_vmm) / #723 (NIXL) / #748 (Ref)，无人实现本 issue |
 
 ## 为什么是 新锐
 
@@ -60,8 +60,9 @@ issue 要求提供一个公开的 per-client 访问器，例如 `Tesseract.suppo
   `pytest -q --skip-endtoend tests/sdk_tests/test_tesseract.py -k supported_device_transports`
   → `5 failed` (`AttributeError: 'Tesseract' object has no attribute 'supported_device_transports'`)
 - Green（应用补丁后）：同命令 → `5 passed`
-- `tests/sdk_tests/test_tesseract.py` 全文件：基线 `65 passed`；补丁后见下
-- 全部快速测试 `pytest --skip-endtoend tests`：见下
+- `tests/sdk_tests/test_tesseract.py` 全文件：基线 `65 passed`；补丁后 `70 passed`
+- 全部快速测试 `pytest --skip-endtoend tests`（补丁后）：`901 passed, 167 skipped, 2 failed`（10m35s）。2 个失败为 `tests/runtime_tests/test_runtime_cli.py::test_stdout_redirect_subprocess[file|stderr]`，在未打补丁的 `main` 上同样失败（stderr 中混入一行带时间戳的环境日志，与本改动无关；PR #732 作者也报告过这两个用例在 main 上本地失败）
+- 未运行：end-to-end（需 Docker）与 `-m gpu` 测试
 - Lint：`uvx ruff@0.15.22 check tesseract_core tests` → All checks passed；`ruff format --check` → 94 files already formatted（与 pre-commit 中 ruff 版本一致；prettier 钩子只涉及 json/yaml/md/toml，本改动未触及）
 
 ## 如何提交
@@ -110,7 +111,7 @@ Scope note: this is client-side only. For `from_url` the client can't know the s
 #### Testing done
 
 - New tests in `tests/sdk_tests/test_tesseract.py`: `test_supported_device_transports_served` (default / `none` / `cuda_ipc` kwarg / `cuda_ipc` via `runtime_config`, plus the unserved error) and `test_supported_device_transports_unserved` (`from_url`, `from_tesseract_api` with `gpu_transport="cuda_ipc"`). They fail on `main` with `AttributeError` (5 failed) and pass with this change (5 passed).
-- `pytest --skip-endtoend tests`: FULL_SUITE_RESULT
+- `pytest --skip-endtoend tests`: 901 passed, 167 skipped, 2 failed — the 2 failures (`test_runtime_cli.py::test_stdout_redirect_subprocess[file|stderr]`) fail identically on unmodified `main` in my environment (an extra timestamped log line on stderr), unrelated to this change.
 - `ruff check` / `ruff format --check` (v0.15.22, as pinned in pre-commit): clean.
 - `CHANGELOG.md` not touched (auto-generated). No docs page covers GPU transports yet; the property is documented via its docstring.
 - End-to-end (Docker) and GPU tests not run locally (no Docker/GPU here); the change doesn't touch the serving or transport paths.
