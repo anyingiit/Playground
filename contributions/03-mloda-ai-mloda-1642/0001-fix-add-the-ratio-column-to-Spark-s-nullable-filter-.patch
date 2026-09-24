@@ -1,0 +1,42 @@
+From 550b891bd0245bf5837105d773d6e10523e9d56e Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 16:50:19 +0000
+Subject: [PATCH] fix: add the ratio column to Spark's nullable filter fixture
+
+FilterEngineTestMixin.nullable_category_sample_data documents a float
+`ratio` column ([1.0, NaN, 2.0, None, 3.0]) that several mixin tests filter
+on, but the Spark consumer only built id, category and score, so four Spark
+filter tests failed with PySparkKeyError under `tox -e spark`.
+
+Closes #1642
+---
+ .../spark/test_spark_filter_engine.py                | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/tests/test_plugins/compute_framework/base_implementations/spark/test_spark_filter_engine.py b/tests/test_plugins/compute_framework/base_implementations/spark/test_spark_filter_engine.py
+index 4e440e4..242ec68 100644
+--- a/tests/test_plugins/compute_framework/base_implementations/spark/test_spark_filter_engine.py
++++ b/tests/test_plugins/compute_framework/base_implementations/spark/test_spark_filter_engine.py
+@@ -74,13 +74,13 @@ class TestSparkFilterEngine(FilterEngineTestMixin):
+     def nullable_category_sample_data(self, spark_session: Any) -> Any:
+         return spark_session.createDataFrame(
+             [
+-                (1, "A", 1),
+-                (2, None, None),
+-                (3, "B", 2),
+-                (4, None, None),
+-                (5, "C", 3),
++                (1, "A", 1, 1.0),
++                (2, None, None, float("nan")),
++                (3, "B", 2, 2.0),
++                (4, None, None, None),
++                (5, "C", 3, 3.0),
+             ],
+-            "id bigint, category string, score bigint",
++            "id bigint, category string, score bigint, ratio double",
+         )
+ 
+     @pytest.fixture
+-- 
+2.43.0
+
