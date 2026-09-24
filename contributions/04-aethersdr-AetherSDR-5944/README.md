@@ -34,7 +34,7 @@
 | `g++ -std=c++20 -Wall -Wextra` 独立编译 `hl2_bandscope_headroom_test` | all checks passed，无警告 ✅ |
 | CMake（Qt 6.8.3 via aqtinstall，`-DAETHER_GPU_SPECTRUM=OFF -DENABLE_RADE=OFF`）构建 `aethercore` 全库 + `hl2_ep4_ingest_test` | 构建成功 ✅ |
 | `ctest -R "hl2_ep4_ingest_test\|hl2_bandscope_headroom_test"` | 2/2 passed ✅（`hl2_ep4_ingest_test` 覆盖 “首个 block 前 Converter 行 ABSENT” 的既有断言） |
-| 全部 49 个 `hl2_*` ctest 目标 | HL2_RESULT |
+| 全部 49 个 `hl2_*` ctest 目标 | **48/49 passed** ✅；`hl2_tci_signaling_test` 未能链接（`TciServer`↔`TciClient` 的 moc 符号未定义，本地构建中途才加 Qt WebSockets 所致，与本改动无关，改动未触及 TCI） |
 | `tools/check_engine_boundary.py --strict`、`gen_touchpoint_manifest.py --check`、`check_test_registration.py --strict`、`check_capability_records.py --strict`、`check_command_plane.py --strict`、`check_ci_test_gate.py --strict`、`check_network_timeouts.py --strict`、`check_theme_seed.py --strict`、`check_shader_dialects.py --strict`（static-checks.yml 中的门） | 全部 exit 0 ✅ |
 
 未做：真实 Hermes-Lite 2 硬件验证（CONTRIBUTING：“Test against a real radio if possible”）；后端级 “超过 3 s 变空” 的测试需要新增 friend seam 和 3 s sleep，故以纯谓词测试 + 一致性断言锁定两者共用同一个门。
@@ -87,7 +87,7 @@ Fixes #5944
 
 ## Checklist
 
-- [x] Tests pass locally — Linux, Qt 6.8.3: `aethercore` builds; `ctest -R hl2_` → HL2_SHORT;
+- [x] Tests pass locally — Linux, Qt 6.8.3: `aethercore` builds; `ctest -R hl2_` → 48/49 passed (the 49th, `hl2_tci_signaling_test`, failed to link locally in TCI code this change does not touch);
       `hl2_bandscope_headroom_test` also clean under `g++ -Wall -Wextra`; static-check tools (`tools/check_*.py --strict`) pass
 - [ ] Behavior verified on a real radio — not done (no HL2 hardware available)
 - [ ] `CHANGELOG.md` is updated (if applicable) — n/a, release-prep file per AGENTS.md
