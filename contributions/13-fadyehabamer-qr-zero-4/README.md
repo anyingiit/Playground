@@ -5,7 +5,7 @@
 | Issue | https://github.com/fadyehabamer/qr-zero/issues/4 |
 | Tier | 自由 |
 | Labels | enhancement, good first issue, help wanted |
-| Status | 🚧 in progress — audit done (benign), implementing |
+| Status | 🚧 in progress — implemented + committed, running full checks |
 | Duplicate-PR check | 无相关 PR（仅 #1/#2/#3 为 owner 的发布/杂务 PR），无 assignee、无评论 |
 
 ## 候选评估

@@ -5,7 +5,7 @@
 | Issue | https://github.com/uutils/coreutils/issues/9060 |
 | Tier | 高活跃高Star |
 | Labels | U - who, good first issue |
-| Status | 🚧 in progress — audit done, implementing |
+| Status | 🚧 in progress — audit ✅, commit + patch exported, running full checks |
 | Duplicate-PR check | 无 assignee、无评论、无 linked PR；`who repo:uutils/coreutils is:open` 的 open PR 为 #14495(Windows 实现)/#9092(pid header)/#13389(stdout 写错误)/#11039(PID 存活)，均非覆盖率测试 |
 
 ## 选题过程（原目标被跳过）

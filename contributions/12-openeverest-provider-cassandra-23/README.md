@@ -1,6 +1,6 @@
 # openeverest/provider-cassandra#23 — softPodAntiAffinity for dev/test clusters
 
-Status: 🚧 in progress — implementing (audit done)
+Status: 🚧 in progress — implemented + unit tests green; running full checks (lint/verify)
 
 | Item | Value |
 |---|---|

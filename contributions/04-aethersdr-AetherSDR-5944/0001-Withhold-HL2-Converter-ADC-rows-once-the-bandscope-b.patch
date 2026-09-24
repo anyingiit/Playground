@@ -1,0 +1,154 @@
+From 44930f80e580bf0d0926edcd804f9b7291901b00 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:30:14 +0000
+Subject: [PATCH] Withhold HL2 Converter ADC rows once the bandscope block goes
+ stale
+
+healthSnapshot() published adcPeakDbfs, adcRmsDbfs, adcCrestDb and
+adcClippedPerBlock from m_bandscopeBlock with no age check, so after the
+gate stopped delivering they kept showing the frozen block as current,
+next to a headroom row from the same block that had already gone absent
+past kHeadroomMaxAgeMs.
+
+Factor the freshness test out of bandscopeHeadroom() into
+bandscopeBlockIsCurrent() and gate the Converter rows on it, so every
+reading from the block goes quiet at the same moment. adcObservedAgoMs
+keeps reporting the age, which is what explains the blank rows.
+
+Principle VIII: a frozen reading is no longer presented as a current one.
+
+Fixes #5944
+---
+ src/core/backends/hl2/Hl2Backend.cpp         | 25 ++++++++++++-----
+ src/core/backends/hl2/Hl2BandscopeHeadroom.h | 18 ++++++++++++-
+ tests/hl2_bandscope_headroom_test.cpp        | 28 ++++++++++++++++++++
+ 3 files changed, 63 insertions(+), 8 deletions(-)
+
+diff --git a/src/core/backends/hl2/Hl2Backend.cpp b/src/core/backends/hl2/Hl2Backend.cpp
+index 3faaa72..43309a8 100644
+--- a/src/core/backends/hl2/Hl2Backend.cpp
++++ b/src/core/backends/hl2/Hl2Backend.cpp
+@@ -6357,10 +6357,21 @@ IRadioBackend::HealthSnapshot Hl2Backend::healthSnapshot() const
+     // ends of the dialog. (PR #5650 review round 3.)
+     section("adcPeakDbfs", QStringLiteral("Converter"));
+     const bool haveBlock = m_bandscopeBlock.samples > 0;
+-    const double peak = haveBlock ? m_bandscopeBlock.peakDbfs() : 0.0;
+-    const double rms  = haveBlock ? m_bandscopeBlock.rmsDbfs()  : 0.0;
+-    auto dbfs = [haveBlock](double v) {
+-        return haveBlock ? QVariant(QString::number(v, 'f', 2)) : QVariant();
++    // THE SAME AGE GATE THE HEADROOM ROW USES, applied to every reading taken
++    // from the block. Once the gate stops delivering, m_bandscopeBlock keeps
++    // its last contents forever; without this the peak, RMS, crest and rail
++    // count went on publishing that frozen block as if it were current, beside
++    // a headroom row from the same block that had already gone absent (#5944).
++    // Past kHeadroomMaxAgeMs they render as "not known" -- the same invalid
++    // variant as before the first block -- and adcObservedAgoMs below keeps
++    // reporting the age, which is what says why they are blank.
++    const bool currentBlock = AetherSDR::hl2::bandscopeBlockIsCurrent(
++        m_bandscopeBlock,
++        m_bandscopeBlockClock.isValid() ? m_bandscopeBlockClock.elapsed() : -1);
++    const double peak = currentBlock ? m_bandscopeBlock.peakDbfs() : 0.0;
++    const double rms  = currentBlock ? m_bandscopeBlock.rmsDbfs()  : 0.0;
++    auto dbfs = [currentBlock](double v) {
++        return currentBlock ? QVariant(QString::number(v, 'f', 2)) : QVariant();
+     };
+     put("adcPeakDbfs", QStringLiteral("ADC peak (uncalibrated pre-DDC dBFS)"),
+         dbfs(peak));
+@@ -6400,7 +6411,7 @@ IRadioBackend::HealthSnapshot Hl2Backend::healthSnapshot() const
+     // review round 3). On the bridge it lands as a JSON null, exactly as the
+     // pre-block case does, and not as a fabricated number.
+     const std::optional<double> crest =
+-        haveBlock ? m_bandscopeBlock.crestDb() : std::nullopt;
++        currentBlock ? m_bandscopeBlock.crestDb() : std::nullopt;
+     put("adcCrestDb", QStringLiteral("ADC crest factor (dB)"),
+         crest ? QVariant(QString::number(*crest, 'f', 2)) : QVariant());
+     // Counted with ad9866.v's OWN two thresholds — rxclipp at +2047 and
+@@ -6408,8 +6419,8 @@ IRadioBackend::HealthSnapshot Hl2Backend::healthSnapshot() const
+     // never fire on a positive clip because +2048 is not a code a 12-bit
+     // two's-complement converter can produce.
+     put("adcClippedPerBlock", QStringLiteral("ADC samples at the rail (per 2048)"),
+-        haveBlock ? QVariant(static_cast<qulonglong>(m_bandscopeBlock.clippedSamples))
+-                  : QVariant());
++        currentBlock ? QVariant(static_cast<qulonglong>(m_bandscopeBlock.clippedSamples))
++                     : QVariant());
+     // How old the reading is. A gated sensor's number is a snapshot, and a
+     // snapshot with no age on it invites being read as current.
+     put("adcObservedAgoMs", QStringLiteral("ADC level observed (ms ago)"),
+diff --git a/src/core/backends/hl2/Hl2BandscopeHeadroom.h b/src/core/backends/hl2/Hl2BandscopeHeadroom.h
+index 1420547..081e7c0 100644
+--- a/src/core/backends/hl2/Hl2BandscopeHeadroom.h
++++ b/src/core/backends/hl2/Hl2BandscopeHeadroom.h
+@@ -120,6 +120,22 @@ namespace AetherSDR::hl2 {
+ // never as "no room". The two are opposite instructions.
+ inline constexpr std::int64_t kHeadroomMaxAgeMs = 3000;
+ 
++// Does this block still describe "now"? It carried samples, it was observed
++// (a negative age means "never"), and it is no older than `maxAgeMs`.
++//
++// ONE PREDICATE FOR EVERY READING TAKEN FROM THE BLOCK. The headroom
++// classification below and the Converter rows in Hl2Backend::healthSnapshot()
++// read the same member; a frozen block must go quiet in all of them at the
++// same moment, or a stale peak sits beside an absent headroom and reads as
++// current (#5944).
++[[nodiscard]] inline bool bandscopeBlockIsCurrent(
++    const Ep4Stats& block,
++    std::int64_t ageMs,
++    std::int64_t maxAgeMs = kHeadroomMaxAgeMs) noexcept
++{
++    return block.samples > 0 && ageMs >= 0 && ageMs <= maxAgeMs;
++}
++
+ // ---- the observation, classified ------------------------------------------
+ 
+ enum class BandscopeHeadroom {
+@@ -195,7 +211,7 @@ inline const double kGoodLevelKneeHeadroomDb =
+ {
+     HeadroomObservation out;
+     out.ageMs = ageMs;
+-    if (block.samples <= 0 || ageMs < 0 || ageMs > maxAgeMs) {
++    if (!bandscopeBlockIsCurrent(block, ageMs, maxAgeMs)) {
+         return out;                       // Absent
+     }
+     out.clippedSamples = block.clippedSamples;
+diff --git a/tests/hl2_bandscope_headroom_test.cpp b/tests/hl2_bandscope_headroom_test.cpp
+index d368e7d..b5108e3 100644
+--- a/tests/hl2_bandscope_headroom_test.cpp
++++ b/tests/hl2_bandscope_headroom_test.cpp
+@@ -103,6 +103,34 @@ int main()
+               "an expired observation licenses nothing, however quiet it was");
+     }
+ 
++    // ---- 2b · one freshness rule for every reading from the block ----
++    //
++    // healthSnapshot()'s Converter rows (peak, RMS, crest, rail count) gate on
++    // bandscopeBlockIsCurrent(); the headroom row gates on bandscopeHeadroom().
++    // They read the same block and must go quiet at the same moment, or a
++    // frozen peak sits beside an absent headroom and reads as current (#5944).
++    {
++        check(!bandscopeBlockIsCurrent(Ep4Stats{}, 0),
++              "a block with no samples is not current");
++        check(!bandscopeBlockIsCurrent(block(100), -1),
++              "a never-observed block is not current");
++        check(bandscopeBlockIsCurrent(block(100), 0), "a fresh block is current");
++        check(bandscopeBlockIsCurrent(block(100), kHeadroomMaxAgeMs),
++              "a block exactly at the age limit is still current");
++        check(!bandscopeBlockIsCurrent(block(100), kHeadroomMaxAgeMs + 1),
++              "one millisecond past the limit is not current");
++        // Agreement with the headroom classification at every boundary, so the
++        // two gates cannot drift apart.
++        const std::int64_t ages[] = {-1, 0, kHeadroomMaxAgeMs, kHeadroomMaxAgeMs + 1};
++        for (const std::int64_t age : ages) {
++            for (const Ep4Stats& b : {Ep4Stats{}, block(100), block(kEp4FullScale, 3)}) {
++                check(bandscopeBlockIsCurrent(b, age)
++                          == (bandscopeHeadroom(b, age).state != BandscopeHeadroom::Absent),
++                      "Converter rows and the headroom row share one staleness gate");
++            }
++        }
++    }
++
+     // ---- 3 · a railed block has no magnitude, and says so ----
+     {
+         const auto railed = bandscopeHeadroom(block(kEp4FullScale, 7), 0);
+-- 
+2.43.0
+

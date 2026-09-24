@@ -1,0 +1,616 @@
+From 595689532dcbb252ab49f6f47678962d62734454 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:30:14 +0000
+Subject: [PATCH] fix(data): soup data forge stops writing empty-answer rows
+ for failed judge calls (#1221)
+
+`soup data forge --judge-provider` built its judge without
+`raise_on_error`, so every transport, HTTP or parse failure came back as
+empty text. `score_uncertainty` rates an empty reply 1.0, so no
+`--uncertainty-threshold` could prune it: the command wrote one
+empty-assistant row per failed call, printed "synth complete" and
+exited 0.
+
+Build the forge judge with `raise_on_error=True` (as `soup data recipe`
+does since #969). `synthesise_forge_rows` now takes an optional
+`ForgeJudgeStats` and counts every call that raises, returns a malformed
+reply or returns empty text as a failure instead of a row, whatever the
+threshold. The CLI reports `N of M judge calls failed` with the
+provider, endpoint and first error; it exits 1 without writing files when
+no usable row was produced, and keeps the successful rows (with a
+warning) on a partial outage.
+
+Closes #1221
+---
+ changelog.d/0.75.1/PR_NUMBER.fixed.md        |   1 +
+ docs/data.md                                 |   2 +-
+ src/soup_cli/commands/data_forge.py          |  43 ++-
+ src/soup_cli/utils/data_forge.py             |  57 ++-
+ tests/test_issue1221_forge_judge_failures.py | 347 +++++++++++++++++++
+ 5 files changed, 445 insertions(+), 5 deletions(-)
+ create mode 100644 changelog.d/0.75.1/PR_NUMBER.fixed.md
+ create mode 100644 tests/test_issue1221_forge_judge_failures.py
+
+diff --git a/changelog.d/0.75.1/PR_NUMBER.fixed.md b/changelog.d/0.75.1/PR_NUMBER.fixed.md
+new file mode 100644
+index 0000000..6a94405
+--- /dev/null
++++ b/changelog.d/0.75.1/PR_NUMBER.fixed.md
+@@ -0,0 +1 @@
++- **`soup data forge --judge-provider` wrote an empty-answer row for every failed judge call and still reported "synth complete" (#1221 in #PR_NUMBER).** The forge judge was built without `raise_on_error`, so a connection error, HTTP 404/429/500 or malformed response came back as empty text; `score_uncertainty` rates an empty reply 1.0, so no `--uncertainty-threshold` could prune it, and the command exited 0 with a dataset that teaches a model to answer with nothing. The forge judge is now built with `raise_on_error=True` (as `soup data recipe` has been since #969); a call that fails, returns a malformed reply or returns empty text is counted and never becomes a row, whatever the threshold. The summary reports `N of M judge calls failed` with the provider, endpoint and first error; a run whose judge produced no usable row exits 1 without writing the dataset or provenance files, and a partial outage keeps the successful rows under a yellow "synth complete with judge failures" panel.
+diff --git a/docs/data.md b/docs/data.md
+index 403de54..0a6680a 100644
+--- a/docs/data.md
++++ b/docs/data.md
+@@ -914,7 +914,7 @@ soup data forge \
+ 
+ Three tasks supported: `sft` (Q&A pairs), `preference` (chosen/rejected), `tool` (tool-call hypotheses). Active learning prunes rows whose judge reply is too close to the source chunk (low Jaccard distance), keeping only uncertain / informative samples. The provenance manifest is a separate JSON file mapping every row id to `{source_doc, judge_id, chunk_id, filter_score}` so you have a complete audit trail for compliance.
+ 
+-Document discovery is one level deep over `.txt` / `.md` / `.json` / `.jsonl`; dotfiles + symlinked directories are skipped. All paths are cwd-contained, all writes are atomic via staged-tempfile + `os.replace`, and write targets are rejected if they're symlinks. **Judge providers are live**: `--judge-provider ollama` (localhost-only), `--judge-provider anthropic` (env-only API key), `--judge-provider vllm` (scheme-validated). Per-call judge exceptions logged at DEBUG.
++Document discovery is one level deep over `.txt` / `.md` / `.json` / `.jsonl`; dotfiles + symlinked directories are skipped. All paths are cwd-contained, all writes are atomic via staged-tempfile + `os.replace`, and write targets are rejected if they're symlinks. **Judge providers are live**: `--judge-provider ollama` (localhost-only), `--judge-provider anthropic` (env-only API key), `--judge-provider vllm` (scheme-validated). A judge call that fails (transport error, non-200 status, malformed response) or returns an empty reply never becomes a row, whatever `--uncertainty-threshold` is. The summary reports `N of M judge calls failed` with the first error, and the command exits 1 without writing files when no usable row was produced.
+ 
+ **Alternative teacher hubs (v0.71.5).** `--hub modelscope|modelers` pre-fetches the `--teacher` from that hub when the teacher is a routable repo id (`owner/name`); `--hub hf` (default) is a no-op and leaves the teacher as a provenance label. If `--hub` is non-HF but `--teacher` is not a repo id (e.g. the default `local-judge`), Soup prints a loud yellow warning rather than silently dropping the flag.
+ 
+diff --git a/src/soup_cli/commands/data_forge.py b/src/soup_cli/commands/data_forge.py
+index 797cdba..c970eac 100644
+--- a/src/soup_cli/commands/data_forge.py
++++ b/src/soup_cli/commands/data_forge.py
+@@ -95,6 +95,7 @@ def forge(
+     """
+     from soup_cli.utils.data_forge import (
+         JUDGE_PROVIDERS,
++        ForgeJudgeStats,
+         build_forge_plan,
+         discover_documents,
+         make_judge_provider_fn,
+@@ -150,10 +151,13 @@ def forge(
+             )
+             raise typer.Exit(2)
+         try:
++            # #1221: fail each broken call loudly so it is counted and
++            # reported, instead of turning into an empty-answer row.
+             judge_fn = make_judge_provider_fn(
+                 canonical,
+                 model=judge_model,
+                 base_url=judge_base_url,
++                raise_on_error=True,
+             )
+         except (TypeError, ValueError, ImportError) as exc:
+             console.print(
+@@ -177,6 +181,7 @@ def forge(
+         console.print(f"[red]Plan failed:[/] {escape(str(exc))}")
+         raise typer.Exit(1) from exc
+ 
++    judge_stats = ForgeJudgeStats()
+     rows = synthesise_forge_rows(
+         doc_paths,
+         task=plan.task,
+@@ -185,8 +190,32 @@ def forge(
+         teacher=plan.teacher,
+         uncertainty_threshold=plan.uncertainty_threshold,
+         max_chunk_chars=max_chunk_chars,
++        stats=judge_stats,
+     )
+ 
++    failure_summary = ""
++    if judge_stats.failures:
++        if judge_provider is not None:
++            from soup_cli.utils.recipe_run import _provider_endpoint_label
++
++            provider_name = judge_provider.strip().lower()
++            endpoint = _provider_endpoint_label(provider_name, judge_base_url)
++            backend = f"--judge-provider {provider_name} ({endpoint})"
++        else:
++            backend = "the offline judge"
++        failure_summary = (
++            f"{judge_stats.failures} of {judge_stats.calls} judge calls failed "
++            f"for {backend}; first error: {judge_stats.first_error}"
++        )
++
++    if not rows and judge_stats.failures:
++        # #1221: a judge that produced nothing usable must fail loudly
++        # rather than write a dataset (of empty answers or otherwise).
++        console.print(
++            f"[red]No usable rows produced:[/] {escape(failure_summary)}"
++        )
++        raise typer.Exit(1)
++
+     if not rows:
+         console.print(
+             "[yellow]No rows produced.[/] Try a lower --uncertainty-threshold "
+@@ -201,18 +230,30 @@ def forge(
+         console.print(f"[red]Write failed:[/] {escape(str(exc))}")
+         raise typer.Exit(1) from exc
+ 
++    judge_line = ""
++    if judge_stats.failures:
++        judge_line = (
++            f"Judge calls: [bold yellow]{judge_stats.failures} of "
++            f"{judge_stats.calls} failed[/]\n"
++        )
++        title = "[bold yellow]Data Forge — synth complete with judge failures[/]"
++    else:
++        title = "[bold green]Data Forge — synth complete[/]"
+     console.print(
+         Panel(
+             f"Task:        [bold]{escape(plan.task)}[/]\n"
+             f"Docs scanned:[bold] {plan.num_docs}[/]\n"
+             f"Rows kept:   [bold]{len(rows)}[/] / target {plan.target_rows}\n"
++            f"{judge_line}"
+             f"Teacher:     [bold]{escape(plan.teacher)}[/]\n"
+             f"Threshold:   [bold]{plan.uncertainty_threshold:.2f}[/]\n"
+             f"Dataset:     [bold]{escape(dataset_path)}[/]\n"
+             f"Provenance:  [bold]{escape(manifest_path)}[/]",
+-            title="[bold green]Data Forge — synth complete[/]",
++            title=title,
+         )
+     )
++    if failure_summary:
++        console.print(f"[yellow]Warning:[/] {escape(failure_summary)}")
+     if judge_provider is None:
+         console.print(
+             "[dim]The built-in judge is the deterministic offline stub. "
+diff --git a/src/soup_cli/utils/data_forge.py b/src/soup_cli/utils/data_forge.py
+index eb4eef6..8d788bf 100644
+--- a/src/soup_cli/utils/data_forge.py
++++ b/src/soup_cli/utils/data_forge.py
+@@ -318,6 +318,38 @@ def build_forge_plan(
+ 
+ JudgeFn = Callable[[str], Mapping[str, Any]]
+ 
++_MAX_ERROR_DETAIL = 200
++
++
++@dataclass
++class ForgeJudgeStats:
++    """Judge-call accounting filled in by :func:`synthesise_forge_rows` (#1221).
++
++    ``failures`` counts every call that produced no usable answer: the judge
++    raised (e.g. :class:`ProviderCallError` from a live backend), returned a
++    malformed reply, or returned empty/whitespace-only text. None of those
++    become rows. ``first_error`` describes the first such failure.
++    """
++
++    calls: int = 0
++    failures: int = 0
++    first_error: Optional[str] = None
++
++    def record_failure(self, detail: str) -> None:
++        self.failures += 1
++        if self.first_error is None:
++            self.first_error = detail[:_MAX_ERROR_DETAIL]
++
++
++def _describe_judge_error(exc: BaseException) -> str:
++    """One-line description of a judge exception, including its cause."""
++    text = str(exc) or type(exc).__name__
++    cause = exc.__cause__
++    if cause is not None:
++        cause_text = str(cause) or type(cause).__name__
++        text = f"{text} ({type(cause).__name__}: {cause_text})"
++    return text
++
+ 
+ def _read_doc_text(path: str) -> str:
+     try:
+@@ -352,12 +384,17 @@ def synthesise_forge_rows(
+     teacher: str = "local-judge",
+     uncertainty_threshold: float = 0.0,
+     max_chunk_chars: int = 1000,
++    stats: Optional[ForgeJudgeStats] = None,
+ ) -> List[ForgeRow]:
+     """Run the pipeline: chunk → judge → active-prune → ForgeRow rows.
+ 
+-    The ``judge`` callable is invoked once per chunk; failures are swallowed
+-    at DEBUG (mirrors v0.33.0 #47 CrossDocCollator policy — single bad call
+-    must not crash the run).
++    The ``judge`` callable is invoked once per chunk. A single bad call must
++    not crash the run (v0.33.0 #47 policy), but it must not become a row
++    either: a call that raises, returns a malformed reply, or returns empty
++    text is skipped whatever ``uncertainty_threshold`` is (an empty answer is
++    no answer, not a "maximally uncertain" one — #1221). Pass ``stats`` to
++    receive the call / failure counts and the first error so the caller can
++    report them.
+     """
+     task = _validate_task(task)
+     target_rows = _validate_int(
+@@ -369,6 +406,10 @@ def synthesise_forge_rows(
+     )
+     if not callable(judge):
+         raise TypeError("judge must be a callable")
++    if stats is None:
++        stats = ForgeJudgeStats()
++    elif not isinstance(stats, ForgeJudgeStats):
++        raise TypeError("stats must be a ForgeJudgeStats")
+ 
+     rows: List[ForgeRow] = []
+     for doc_idx, doc_path in enumerate(docs):
+@@ -387,15 +428,24 @@ def synthesise_forge_rows(
+             if len(rows) >= target_rows:
+                 break
+             prompt = _make_prompt(chunk, task)
++            stats.calls += 1
+             try:
+                 reply = judge(prompt)
+             except Exception as exc:  # noqa: BLE001 — judge backends vary
+                 _LOG.debug("judge raised on %s#%d: %s", doc_path, chunk_idx, exc)
++                stats.record_failure(_describe_judge_error(exc))
+                 continue
+             if not isinstance(reply, Mapping):
++                stats.record_failure("judge returned a malformed reply")
+                 continue
+             reply_text = reply.get("text") or ""
+             if not isinstance(reply_text, str):
++                stats.record_failure("judge returned non-string text")
++                continue
++            if not reply_text.strip():
++                # #1221: never keep an empty answer — score_uncertainty rates
++                # it 1.0, so no threshold could prune it.
++                stats.record_failure("judge returned an empty reply")
+                 continue
+             try:
+                 # Active pruning — Jaccard distance between chunk and reply.
+@@ -737,6 +787,7 @@ def make_judge_provider_fn(
+ 
+ __all__ = [
+     "VALID_TASKS",
++    "ForgeJudgeStats",
+     "ForgePlan",
+     "ForgeRow",
+     "JUDGE_PROVIDERS",
+diff --git a/tests/test_issue1221_forge_judge_failures.py b/tests/test_issue1221_forge_judge_failures.py
+new file mode 100644
+index 0000000..ae56854
+--- /dev/null
++++ b/tests/test_issue1221_forge_judge_failures.py
+@@ -0,0 +1,347 @@
++"""#1221 — ``soup data forge --judge-provider`` must not turn failed judge calls into rows.
++
++Before the fix the forge judge was built without ``raise_on_error``, so every
++transport / HTTP / parse failure came back as ``{"text": ""}``.
++``score_uncertainty`` rates an empty reply 1.0, so no ``--uncertainty-threshold``
++could prune it: the command wrote one empty-assistant row per failed call,
++printed the green "synth complete" panel and exited 0.
++"""
++
++from __future__ import annotations
++
++import json
++import re
++import threading
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++from pathlib import Path
++from typing import Iterator, List
++
++import pytest
++from typer.testing import CliRunner
++
++from tests.conftest import strip_ansi
++
++_HEALTHY_ANSWER = "Customers receive refunds within five business days."
++
++
++def _terminal_text(result) -> str:
++    return re.sub(r"\s+", " ", strip_ansi(result.output))
++
++
++def _write_docs(tmp_path: Path) -> None:
++    """3 documents x 2 paragraphs = 6 chunks (6 judge calls)."""
++    docs = tmp_path / "docs"
++    docs.mkdir()
++    for name in ("a", "b", "c"):
++        (docs / f"{name}.txt").write_text(
++            f"Refunds for {name} take five days.\n\nShipping for {name} takes two days.\n",
++            encoding="utf-8",
++        )
++
++
++def _run_forge(tmp_path: Path, monkeypatch, *extra: str):
++    from soup_cli.cli import app
++
++    monkeypatch.chdir(tmp_path)
++    _write_docs(tmp_path)
++    return CliRunner().invoke(
++        app,
++        ["data", "forge", "--docs", "docs", "--target-rows", "10", *extra],
++    )
++
++
++def _dataset_rows(tmp_path: Path) -> List[dict]:
++    path = tmp_path / "forge_dataset.jsonl"
++    if not path.exists():
++        return []
++    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
++
++
++def _empty_answer_rows(rows: List[dict]) -> List[dict]:
++    return [r for r in rows if not r["messages"][-1]["content"].strip()]
++
++
++# --------------------------------------------------------------------------- stub judge
++
++
++class _StubJudge:
++    def __init__(self) -> None:
++        self.mode = "healthy"
++        self.calls = 0
++        self._lock = threading.Lock()
++
++    def respond(self) -> tuple[int, bytes]:
++        with self._lock:
++            self.calls += 1
++            n = self.calls
++        mode = self.mode
++        if mode == "alternate":
++            mode = "healthy" if n % 2 else "500"
++        if mode in {"404", "429", "500"}:
++            return int(mode), b'{"error": "stub"}'
++        if mode == "malformed":
++            return 200, b"this is not json"
++        content = "" if mode == "empty" else _HEALTHY_ANSWER
++        body = {"choices": [{"message": {"role": "assistant", "content": content}}]}
++        return 200, json.dumps(body).encode("utf-8")
++
++
++@pytest.fixture
++def stub_judge() -> Iterator[tuple[_StubJudge, str]]:
++    stub = _StubJudge()
++
++    class Handler(BaseHTTPRequestHandler):
++        def do_POST(self) -> None:  # noqa: N802 — http.server API
++            length = int(self.headers.get("Content-Length") or 0)
++            self.rfile.read(length)
++            status, payload = stub.respond()
++            self.send_response(status)
++            self.send_header("Content-Type", "application/json")
++            self.send_header("Content-Length", str(len(payload)))
++            self.end_headers()
++            self.wfile.write(payload)
++
++        def log_message(self, *_args) -> None:
++            return
++
++    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
++    thread = threading.Thread(target=server.serve_forever, daemon=True)
++    thread.start()
++    try:
++        yield stub, f"http://127.0.0.1:{server.server_address[1]}"
++    finally:
++        server.shutdown()
++        server.server_close()
++
++
++# --------------------------------------------------------------------------- tests
++
++
++def test_unreachable_judge_exits_nonzero_and_writes_no_rows(tmp_path, monkeypatch) -> None:
++    # Nothing listens on port 9: every call fails with "connection refused".
++    result = _run_forge(
++        tmp_path, monkeypatch,
++        "--judge-provider", "ollama", "--judge-base-url", "http://127.0.0.1:9",
++    )
++    output = _terminal_text(result)
++
++    assert result.exit_code != 0, output
++    assert _empty_answer_rows(_dataset_rows(tmp_path)) == []
++    assert not (tmp_path / "forge_dataset.jsonl").exists()
++    assert not (tmp_path / "forge_provenance.json").exists()
++    assert "synth complete" not in output
++    assert "6 of 6 judge calls failed" in output
++    assert "--judge-provider ollama (http://127.0.0.1:9)" in output
++    assert "ollama provider request failed" in output
++
++
++_FAILURES = [
++    ("404", "provider returned HTTP 404"),
++    ("429", "provider returned HTTP 429"),
++    ("500", "provider returned HTTP 500"),
++    ("empty", "judge returned an empty reply"),
++    ("malformed", "provider returned a malformed response"),
++]
++
++
++@pytest.mark.parametrize("provider", ["ollama", "vllm"])
++@pytest.mark.parametrize(("mode", "first_error"), _FAILURES)
++def test_failing_stub_judge_exits_nonzero(
++    tmp_path, monkeypatch, stub_judge, provider: str, mode: str, first_error: str
++) -> None:
++    stub, url = stub_judge
++    stub.mode = mode
++    result = _run_forge(
++        tmp_path, monkeypatch,
++        "--judge-provider", provider, "--judge-base-url", url,
++    )
++    output = _terminal_text(result)
++
++    assert stub.calls == 6
++    assert result.exit_code == 1, output
++    assert _dataset_rows(tmp_path) == []
++    assert "synth complete" not in output
++    assert f"6 of 6 judge calls failed for --judge-provider {provider}" in output
++    assert first_error in output
++
++
++@pytest.mark.parametrize("provider", ["ollama", "vllm"])
++def test_partial_outage_keeps_only_successful_rows(
++    tmp_path, monkeypatch, stub_judge, provider: str
++) -> None:
++    stub, url = stub_judge
++    stub.mode = "alternate"
++    result = _run_forge(
++        tmp_path, monkeypatch,
++        "--judge-provider", provider, "--judge-base-url", url,
++    )
++    output = _terminal_text(result)
++
++    assert result.exit_code == 0, output
++    rows = _dataset_rows(tmp_path)
++    assert len(rows) == 3
++    assert all(r["messages"][-1]["content"] == _HEALTHY_ANSWER for r in rows)
++    assert "Judge calls: 3 of 6 failed" in output
++    assert "3 of 6 judge calls failed" in output
++    assert "HTTP 500" in output
++
++
++@pytest.mark.parametrize("threshold", ["0.0", "1.0"])
++def test_empty_replies_pruned_at_any_threshold_cli(
++    tmp_path, monkeypatch, stub_judge, threshold: str
++) -> None:
++    stub, url = stub_judge
++    stub.mode = "empty"
++    result = _run_forge(
++        tmp_path, monkeypatch,
++        "--judge-provider", "ollama", "--judge-base-url", url,
++        "--uncertainty-threshold", threshold,
++    )
++    assert result.exit_code == 1, _terminal_text(result)
++    assert _dataset_rows(tmp_path) == []
++
++
++@pytest.mark.parametrize("threshold", [0.0, 1.0])
++@pytest.mark.parametrize("reply", ["", "   \n", None])
++def test_synthesise_never_keeps_empty_reply(tmp_path, monkeypatch, threshold, reply) -> None:
++    from soup_cli.utils.data_forge import (
++        ForgeJudgeStats,
++        discover_documents,
++        synthesise_forge_rows,
++    )
++
++    monkeypatch.chdir(tmp_path)
++    _write_docs(tmp_path)
++    stats = ForgeJudgeStats()
++    rows = synthesise_forge_rows(
++        discover_documents("docs"),
++        task="sft",
++        target_rows=10,
++        judge=lambda _prompt: {"text": reply},
++        uncertainty_threshold=threshold,
++        stats=stats,
++    )
++    assert rows == []
++    assert (stats.calls, stats.failures) == (6, 6)
++    assert stats.first_error == "judge returned an empty reply"
++
++
++def test_synthesise_counts_raising_judge(tmp_path, monkeypatch) -> None:
++    from soup_cli.utils.data_forge import (
++        ForgeJudgeStats,
++        discover_documents,
++        synthesise_forge_rows,
++    )
++
++    monkeypatch.chdir(tmp_path)
++    _write_docs(tmp_path)
++    calls = {"n": 0}
++
++    def judge(_prompt: str) -> dict:
++        calls["n"] += 1
++        if calls["n"] % 2 == 0:
++            raise RuntimeError("boom")
++        return {"text": _HEALTHY_ANSWER}
++
++    stats = ForgeJudgeStats()
++    rows = synthesise_forge_rows(
++        discover_documents("docs"), task="sft", target_rows=10, judge=judge, stats=stats
++    )
++    assert len(rows) == 3
++    assert (stats.calls, stats.failures, stats.first_error) == (6, 3, "boom")
++
++
++def test_synthesise_rejects_wrong_stats_type(tmp_path, monkeypatch) -> None:
++    from soup_cli.utils.data_forge import discover_documents, synthesise_forge_rows
++
++    monkeypatch.chdir(tmp_path)
++    _write_docs(tmp_path)
++    with pytest.raises(TypeError, match="stats"):
++        synthesise_forge_rows(
++            discover_documents("docs"), task="sft", target_rows=1,
++            judge=lambda _p: {"text": "x"}, stats={},  # type: ignore[arg-type]
++        )
++
++
++class _AnthropicResponse:
++    def __init__(self, status_code: int, text: str = _HEALTHY_ANSWER) -> None:
++        self.status_code = status_code
++        self._text = text
++
++    def json(self) -> dict:
++        return {"content": [{"type": "text", "text": self._text}]}
++
++
++@pytest.mark.parametrize(
++    ("status", "text", "first_error"),
++    [
++        (500, _HEALTHY_ANSWER, "anthropic provider returned HTTP 500"),
++        (200, "", "judge returned an empty reply"),
++    ],
++)
++def test_anthropic_failures_exit_nonzero(
++    tmp_path, monkeypatch, status: int, text: str, first_error: str
++) -> None:
++    import httpx
++
++    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-value")
++    monkeypatch.setattr(
++        httpx, "post", lambda *_a, **_k: _AnthropicResponse(status, text)
++    )
++    result = _run_forge(tmp_path, monkeypatch, "--judge-provider", "anthropic")
++    output = _terminal_text(result)
++
++    assert result.exit_code == 1, output
++    assert _dataset_rows(tmp_path) == []
++    assert "6 of 6 judge calls failed for --judge-provider anthropic" in output
++    assert first_error in output
++
++
++def test_anthropic_partial_outage_keeps_successful_rows(tmp_path, monkeypatch) -> None:
++    import httpx
++
++    monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-test-value")
++    calls = {"n": 0}
++
++    def post(*_a, **_k):
++        calls["n"] += 1
++        if calls["n"] % 2 == 0:
++            raise httpx.ConnectError("refused")
++        return _AnthropicResponse(200)
++
++    monkeypatch.setattr(httpx, "post", post)
++    result = _run_forge(tmp_path, monkeypatch, "--judge-provider", "anthropic")
++    output = _terminal_text(result)
++
++    assert result.exit_code == 0, output
++    rows = _dataset_rows(tmp_path)
++    assert len(rows) == 3
++    assert _empty_answer_rows(rows) == []
++    assert "3 of 6 judge calls failed" in output
++    assert "anthropic provider request failed" in output
++
++
++def test_healthy_judge_control(tmp_path, monkeypatch, stub_judge) -> None:
++    stub, url = stub_judge
++    result = _run_forge(
++        tmp_path, monkeypatch,
++        "--judge-provider", "ollama", "--judge-base-url", url,
++    )
++    output = _terminal_text(result)
++
++    assert result.exit_code == 0, output
++    assert len(_dataset_rows(tmp_path)) == 6
++    assert "Data Forge — synth complete" in output
++    assert "judge calls failed" not in output
++    assert "Judge calls:" not in output
++
++
++def test_offline_stub_unchanged(tmp_path, monkeypatch) -> None:
++    result = _run_forge(tmp_path, monkeypatch)
++    output = _terminal_text(result)
++
++    assert result.exit_code == 0, output
++    rows = _dataset_rows(tmp_path)
++    assert len(rows) == 6
++    assert all(r["messages"][-1]["content"].startswith("Synthesised answer") for r in rows)
++    assert "judge calls failed" not in output
+-- 
+2.43.0
+
