@@ -26,6 +26,10 @@ mixin 的 docstring 已声明 `ratio: [1.0, NaN, 2.0, None, 3.0]` 是 fixture �
 - 默认 `tox -e python311`（CONTRIBUTING 要求）：**11724 passed, 280 skipped（= EXPECTED_SKIP_COUNT，未变化）**，ruff format/check、`mypy --strict`、bandit 全部通过 ✅
 - 遵守规范：Conventional Commits（`fix:`）、从 `main` 开分支、无需文档改动
 
+## 需要提交者注意
+- mloda 的 `AGENTS.md`/`CLAUDE.md` 规定：**不得在提交信息、PR 描述或任何面向用户的文字里提及 agent**（包括 `Co-Authored-By` agent 行和 agent 名称）。
+  因此本 PR 文案的动机段落保留了“用多余额度帮忙、可以轻松拒绝”的意思，但去掉了具体工具名；补丁的提交信息也不含任何署名行。如需更明确的披露，请自行斟酌措辞。
+
 ## 如何提交
 ```bash
 git clone https://github.com/<you>/mloda && cd mloda
@@ -48,10 +52,9 @@ consumer's fixture only built `id`, `category` and `score`. Under `tox -e spark`
 This adds `ratio double` to the Spark fixture with `1.0, float("nan"), 2.0, None, 3.0` in id order,
 so the NaN sits at id 2 and the null at id 4, as the mixin docstring describes. Test-only change.
 
-**Motivation / disclosure:** I had some spare AI-assistant quota (Claude Code) and am using it to try to
-help projects with open good-first-issues. The change was prepared with Claude Code and verified as listed
-below. If it doesn't fit, isn't up to your bar, or you'd simply rather not take it — please feel free to
-close it, no hard feelings at all 🙂
+**Motivation:** I had some spare assistant quota today and am using it to try to help projects with open
+good-first-issues. The change was verified as listed below. If it doesn't fit, isn't up to your bar, or you'd simply
+rather not take it — please feel free to close it, no hard feelings at all 🙂
 
 ## Related issue
 
