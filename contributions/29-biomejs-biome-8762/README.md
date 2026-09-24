@@ -5,8 +5,8 @@
 | Issue | https://github.com/biomejs/biome/issues/8762 |
 | Tier | 高活跃高Star |
 | Labels | A-Analyzer, L-JavaScript, S-Feature, S-Help-wanted |
-| Status | 🚧 in progress — implemented, rule tests red→green; running full crate suite |
-| Duplicate-PR check | No open PR. One earlier PR **#9666** (same idea, "collect JSDoc references from every token") was **closed unmerged** on 2026-03-29 by ematipico after Conaclos labelled it `M-Likely Agent` ("automated PR without a human in the loop"); no technical objection was posted. |
+| Status | ✅ ready — red→green, full `biome_js_analyze` suite + clippy + fmt pass; PR prose must be written by the submitter (see below) |
+| Duplicate-PR check | No open PR (re-checked 2026-09-24 before finishing: issue open, 0 comments, unassigned, no linked PR; open-PR search for "jsdoc" shows nothing related). One earlier PR **#9666** (same idea, "collect JSDoc references from every token") was **closed unmerged** on 2026-03-29 by ematipico after Conaclos labelled it `M-Likely Agent` ("automated PR without a human in the loop"); no technical objection was posted. |
 | Base | `main` @ 8d0b990 (2026-09-24) |
 
 Earlier candidate #8185 (noUnusedPrivateClassMembers) was dropped: it no longer reproduces on `main` (a test with the
@@ -70,7 +70,16 @@ Green (with fix):
 
 `cargo fmt --all -- --check` → clean.
 
-(Full crate suite / clippy results: see below once finished.)
+Full crate suite: `cargo test -p biome_js_analyze` → all pass
+(spec_tests `3159 passed; 0 failed`, lib unit tests `313 passed; 1 ignored`, other test binaries 4/1/2/1/10 passed).
+
+`cargo clippy -p biome_js_analyze -- --deny warnings` → clean.
+`--all-targets` could not be used: it fails **before reaching this crate** on a pre-existing
+`unused import: Resource` warning in `crates/biome_service/src/diagnostics.rs:11` (a dev-dependency; file not touched by
+this patch, so the same happens on the unpatched base). Upstream CI runs `just l` on its own toolchain; nothing to do here.
+
+Not run: `just l` / whole-workspace clippy and the website doc checks (disk budget; the rule docs were not changed).
+Build cache (`biome-cache`, ~12 GB at the end incl. clippy) was deleted after verification.
 
 Note: running the spec tests locally rewrites three Svelte `.snap` files only to drop an `assertion_line: 149` metadata
 line (insta version noise, unrelated) — those were reverted and are not in the patch.
@@ -82,4 +91,45 @@ git clone https://github.com/biomejs/biome && cd biome
 git checkout -b fix/no-unused-imports-jsdoc-anywhere origin/main
 git am /path/to/0001-fix-noUnusedImports-count-JSDoc-references-anywhere-.patch
 git push <your-fork> fix/no-unused-imports-jsdoc-anywhere   # open PR against main
+```
+
+## PR title
+
+```
+fix(noUnusedImports): count JSDoc references anywhere in the file
+```
+(Optionally append ` 🤖🤖🤖` per biome's AGENTS.md if you want the agent-contribution track.)
+
+## PR body (DRAFT NOTES — biome requires the PR text to be written by you; rewrite in your own words and keep it short)
+
+Uses biome's template (`## Summary` / `## Test Plan` / `## Docs`); the checklist items from our format are folded in.
+
+```markdown
+## Summary
+
+Closes #8762.
+
+`noUnusedImports` only looked for JSDoc references in comments attached to declarations, members and exports.
+A `{@link Foo}` in a `@packageDocumentation` comment above the imports, in a comment before a plain statement,
+or at the end of the file was ignored, so the import was reported as unused. The collector now scans the
+comments of every token in the file (the old cases are a subset of this). Changeset included (patch).
+
+**Motivation / disclosure:** I had some spare AI-assistant quota (Claude Code) and am using it to try to
+help projects with open good-first-issues. The change was prepared with Claude Code and verified as listed
+below. If it doesn't fit, isn't up to your bar, or you'd simply rather not take it — please feel free to
+close it, no hard feelings at all 🙂
+
+(An earlier attempt, #9666, took the same approach and was closed as a likely unattended agent PR — this one
+has a human reviewing and answering.)
+
+## Test Plan
+
+- New specs `valid_issue_8762.ts` and `valid_issue_8762_package_documentation.ts` fail without the change
+  (every referenced import is reported) and pass with it.
+- `cargo test -p biome_js_analyze` passes; `cargo clippy -p biome_js_analyze -- -D warnings` and `cargo fmt --check` are clean.
+- CHANGELOG: changeset `.changeset/jsdoc-links-anywhere-no-unused-imports.md`.
+
+## Docs
+
+N/A (behaviour fix, rule docs unchanged).
 ```
