@@ -13,6 +13,12 @@ patch + a ready-to-paste PR description. The owner (anyingiit) submits them late
 2. **Judge whether the request is legitimate/reasonable** using the repo's ROADMAP,
    docs, CONTRIBUTING, AGENTS/CLAUDE.md, recent commits/PRs and other clues. If it is not
    reasonable, already fixed, or out of scope, stop and record why.
+2b. **Respect the project's AI-contribution policy.** Before choosing an issue, grep the repo for
+   AI/LLM rules: `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING*`, `.github/*`, docs/contributing pages
+   (e.g. `grep -ril -e "LLM" -e "AI-generated" -e "AI contribution" -e "Copilot" -e "ChatGPT" -e "agent"`).
+   If the project bans AI-generated code/PRs, SKIP it. If it allows them with conditions (disclosure,
+   human-written description, no AI co-author trailers, …), follow the conditions and record them in
+   the README under "需要提交者注意".
 3. **No duplicates.** Before implementing, search open PRs for the issue
    (`mcp__github__search_pull_requests` with query `<issue-number> repo:owner/name`, and a
    keyword query). Also check the issue is not assigned/claimed in comments. If someone is

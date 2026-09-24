@@ -1,0 +1,292 @@
+From 11124ab7de1cfd3f0dcf20f19e064052953110d7 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:35:43 +0000
+Subject: [PATCH] feat(attester): report contract rejections with a typed error
+ code
+
+examples/attest.ts decided whether a failed attestation should fail the
+job by checking the error message for the word "cooldown". Control flow
+riding on English wording breaks silently the moment a message is
+reworded.
+
+Export AttesterContractError, mirroring the attester contract's
+enum Error, and carry the contract's numeric error as `contractError` on
+the error AnchorAttester.attest returns when a simulation reverts.
+explain() is exported and returns { code?, message }. The example now
+compares against AttesterContractError.TooSoon. The error code and
+message text are unchanged, so existing callers keep working.
+
+Closes #239
+---
+ CHANGELOG.md                   | 17 ++++++
+ examples/attest.ts             |  4 +-
+ packages/attester/src/index.ts | 67 +++++++++++++++++------
+ tests/attester.test.ts         | 98 ++++++++++++++++++++++++++++++++++
+ 4 files changed, 168 insertions(+), 18 deletions(-)
+ create mode 100644 tests/attester.test.ts
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index a9bb9a0..0b18d11 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,23 @@ follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html) once it reache
+ 
+ ## [Unreleased]
+ 
++### Changed — attester rejections carry a typed contract error code (2026-09-24)
++
++`AnchorAttester.attest` turned an attester-contract revert into a message such
++as "too soon: this domain was attested within the cooldown window (contract
++error #3)", and `examples/attest.ts` decided whether to fail the job by
++checking that message for the word "cooldown". Rewording the message would
++have silently turned every cooldown hit into a job failure (or the reverse).
++
++`@corridor/attester` now exports `AttesterContractError` (mirroring the
++contract's `enum Error`: `NotInitialised = 1`, `NotAnAttester = 2`,
++`TooSoon = 3`, `InvalidDomain = 4`) and an `AttesterError` type: when the
++contract itself rejected the attestation, the error carries its number as
++`contractError`. `explain()` is exported and returns `{ code?, message }`.
++`examples/attest.ts` now checks `contractError === AttesterContractError.TooSoon`.
++The error `code` and message text are unchanged, so existing callers keep
++working.
++
+ ### Security — soroban-sdk 25 → 27 clears GHSA-x57h-xx53-v53w (2026-08-31)
+ 
+ `contracts/Cargo.lock` pinned `stellar-xdr@25.0.0`, which carries a moderate
+diff --git a/examples/attest.ts b/examples/attest.ts
+index bbafacf..6ae1455 100644
+--- a/examples/attest.ts
++++ b/examples/attest.ts
+@@ -13,7 +13,7 @@
+ import { readFileSync } from "node:fs";
+ import { Keypair } from "@stellar/stellar-sdk";
+ import { probeAnchor, decodeProbes, decodeSeps } from "@corridor/probe";
+-import { AnchorAttester } from "@corridor/attester";
++import { AnchorAttester, AttesterContractError } from "@corridor/attester";
+ 
+ interface Deployments {
+   [network: string]: {
+@@ -81,7 +81,7 @@ async function main(): Promise<void> {
+     } else {
+       // A cooldown rejection is the system working, not a failure of the job —
+       // don't fail the run over it.
+-      const cooldown = submitted.error.message.includes("cooldown");
++      const cooldown = submitted.error.contractError === AttesterContractError.TooSoon;
+       console.log(
+         `  ${cooldown ? "•" : "✗"} ${submitted.error.code}: ${submitted.error.message}\n`,
+       );
+diff --git a/packages/attester/src/index.ts b/packages/attester/src/index.ts
+index bb4876b..3e9e3d8 100644
+--- a/packages/attester/src/index.ts
++++ b/packages/attester/src/index.ts
+@@ -18,7 +18,7 @@ import {
+   xdr,
+ } from "@stellar/stellar-sdk";
+ import type { ProbeResult } from "@corridor/probe";
+-import { fail, ok, type Outcome } from "@corridor/types";
++import { err, fail, ok, type CorridorError, type Outcome } from "@corridor/types";
+ 
+ export interface AttesterOptions {
+   rpcUrl: string;
+@@ -39,17 +39,41 @@ export interface AttestationRef {
+ }
+ 
+ /**
+- * Errors the attester CONTRACT can return, by its numeric code. Mapped back to
+- * something legible because a bare "HostError: Error(Contract, #3)" tells an
+- * operator reading a job log nothing about what to do next.
++ * Errors the attester CONTRACT can return, by its numeric code. Mirrors
++ * `contracts/attester/src/lib.rs` `enum Error` — keep the two in step.
++ *
++ * Branch on these (via `AttesterError.contractError`) rather than on the text
++ * of an error message: the wording is for humans and may change.
+  */
+-const CONTRACT_ERRORS: Record<number, string> = {
+-  1: "attester contract is not initialised",
+-  2: "this key is not an enrolled attester — run add_attester first",
+-  3: "too soon: this domain was attested within the cooldown window",
+-  4: "invalid domain",
++export enum AttesterContractError {
++  NotInitialised = 1,
++  NotAnAttester = 2,
++  TooSoon = 3,
++  InvalidDomain = 4,
++}
++
++/**
++ * Mapped back to something legible because a bare "HostError: Error(Contract,
++ * #3)" tells an operator reading a job log nothing about what to do next.
++ */
++const CONTRACT_ERRORS: Record<AttesterContractError, string> = {
++  [AttesterContractError.NotInitialised]: "attester contract is not initialised",
++  [AttesterContractError.NotAnAttester]:
++    "this key is not an enrolled attester — run add_attester first",
++  [AttesterContractError.TooSoon]:
++    "too soon: this domain was attested within the cooldown window",
++  [AttesterContractError.InvalidDomain]: "invalid domain",
+ };
+ 
++/**
++ * A CorridorError from {@link AnchorAttester.attest}. When the contract itself
++ * rejected the attestation, `contractError` carries its numeric error code —
++ * compare it against {@link AttesterContractError}.
++ */
++export interface AttesterError extends CorridorError {
++  readonly contractError?: AttesterContractError | number;
++}
++
+ export class AnchorAttester {
+   private readonly server: rpc.Server;
+   private readonly contract: Contract;
+@@ -82,7 +106,7 @@ export class AnchorAttester {
+    * rejects `probes_passed` exceeding `probes_run` anyway, but the honesty has
+    * to start here rather than rely on the contract to catch it.
+    */
+-  async attest(result: ProbeResult): Promise<Outcome<AttestationRef>> {
++  async attest(result: ProbeResult): Promise<Outcome<AttestationRef, AttesterError>> {
+     if (result.probesPassed & ~result.probesRun) {
+       return fail(
+         "MANIFEST_INVALID",
+@@ -116,7 +140,9 @@ export class AnchorAttester {
+       // AND surfaces a contract revert before anything is paid for.
+       const sim = await this.server.simulateTransaction(built);
+       if (rpc.Api.isSimulationError(sim)) {
+-        return fail("MANIFEST_INVALID", `${result.domain}: ${explain(sim.error)}`);
++        const { code, message } = explain(sim.error);
++        const failed = fail("MANIFEST_INVALID", `${result.domain}: ${message}`);
++        return code === undefined ? failed : err({ ...failed.error, contractError: code });
+       }
+ 
+       const prepared = rpc.assembleTransaction(built, sim).build();
+@@ -162,10 +188,19 @@ export class AnchorAttester {
+   }
+ }
+ 
+-/** Map a raw host error onto the contract's own vocabulary where we can. */
+-function explain(error: string): string {
++/**
++ * Map a raw host error onto the contract's own vocabulary where we can.
++ *
++ * `code` is the contract error number whenever the host error names one (even
++ * one this client does not know yet); `message` is for humans only.
++ */
++export function explain(error: string): {
++  code?: AttesterContractError | number;
++  message: string;
++} {
+   const m = error.match(/Error\(Contract, #(\d+)\)/);
+-  const code = m ? Number(m[1]) : undefined;
+-  const known = code !== undefined ? CONTRACT_ERRORS[code] : undefined;
+-  return known ? `${known} (contract error #${code})` : error;
++  if (!m) return { message: error };
++  const code = Number(m[1]);
++  const known = CONTRACT_ERRORS[code as AttesterContractError] as string | undefined;
++  return { code, message: known ? `${known} (contract error #${code})` : error };
+ }
+diff --git a/tests/attester.test.ts b/tests/attester.test.ts
+new file mode 100644
+index 0000000..41b1c14
+--- /dev/null
++++ b/tests/attester.test.ts
+@@ -0,0 +1,98 @@
++// The attester's callers branch on WHY the contract refused an attestation — a
++// cooldown hit is the system working, anything else fails the job. That
++// decision must ride on the contract's numeric error code, never on the
++// English wording of a message meant for operators.
++
++import { describe, expect, it } from "vitest";
++import { Account, Keypair, Networks } from "@stellar/stellar-sdk";
++import { AnchorAttester, AttesterContractError, explain } from "@corridor/attester";
++import type { ProbeResult } from "@corridor/probe";
++
++/** The testnet attester contract id from README.md — any valid C… id will do. */
++const CONTRACT_ID = "CAHSKTAVHIES6MX2DUGNBA4VDB77WYNKEIZPOT7QX2RMJUL5RUIVKX2L";
++
++const RESULT: ProbeResult = {
++  domain: "a.example",
++  seps: 0b1,
++  probesRun: 0b11,
++  probesPassed: 0b1,
++  tomlHash: "00".repeat(32),
++  outcomes: [],
++};
++
++/** An attester whose RPC server answers every simulation with `simError`. */
++function attesterRejecting(simError: string): AnchorAttester {
++  const signer = Keypair.random();
++  const attester = new AnchorAttester({
++    rpcUrl: "https://rpc.invalid",
++    contractId: CONTRACT_ID,
++    networkPassphrase: Networks.TESTNET,
++    signer,
++  });
++  const server = {
++    getAccount: async () => new Account(signer.publicKey(), "1"),
++    simulateTransaction: async () => ({
++      id: "1",
++      latestLedger: 1,
++      error: simError,
++      events: [],
++    }),
++  };
++  Object.assign(attester, { server });
++  return attester;
++}
++
++describe("explain", () => {
++  it("maps contract error #3 to TooSoon", () => {
++    const r = explain("HostError: Error(Contract, #3)");
++    expect(r.code).toBe(AttesterContractError.TooSoon);
++    expect(r.message).toContain("contract error #3");
++  });
++
++  it("surfaces every known contract error code", () => {
++    for (const code of [
++      AttesterContractError.NotInitialised,
++      AttesterContractError.NotAnAttester,
++      AttesterContractError.TooSoon,
++      AttesterContractError.InvalidDomain,
++    ]) {
++      expect(explain(`HostError: Error(Contract, #${code})`).code).toBe(code);
++    }
++  });
++
++  it("still reports the number of a contract error it does not know", () => {
++    const raw = "HostError: Error(Contract, #99)";
++    expect(explain(raw)).toEqual({ code: 99, message: raw });
++  });
++
++  it("has no code for a host error that is not a contract error", () => {
++    const raw = "HostError: Error(Budget, ExceededLimit)";
++    expect(explain(raw)).toEqual({ message: raw });
++  });
++});
++
++describe("AnchorAttester.attest — contract rejections", () => {
++  it("carries a cooldown rejection as contractError TooSoon", async () => {
++    const r = await attesterRejecting("HostError: Error(Contract, #3)").attest(RESULT);
++    expect(r.ok).toBe(false);
++    if (r.ok) return;
++    expect(r.error.contractError).toBe(AttesterContractError.TooSoon);
++    expect(r.error.message).toContain("a.example");
++  });
++
++  it("carries a non-enrolled signer as contractError NotAnAttester", async () => {
++    const r = await attesterRejecting("HostError: Error(Contract, #2)").attest(RESULT);
++    expect(r.ok).toBe(false);
++    if (r.ok) return;
++    expect(r.error.contractError).toBe(AttesterContractError.NotAnAttester);
++  });
++
++  it("leaves contractError unset when the simulation failed for another reason", async () => {
++    const r = await attesterRejecting("HostError: Error(Budget, ExceededLimit)").attest(
++      RESULT,
++    );
++    expect(r.ok).toBe(false);
++    if (r.ok) return;
++    expect(r.error.contractError).toBeUndefined();
++  });
++});
+-- 
+2.43.0
+
