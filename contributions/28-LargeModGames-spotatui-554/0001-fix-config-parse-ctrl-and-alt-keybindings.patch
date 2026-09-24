@@ -1,0 +1,117 @@
+From e631e06cd405b8a598016bb049163fa717425c82 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:14:32 +0000
+Subject: [PATCH] fix(config): parse ctrl-- and alt-- keybindings
+
+parse_key split a binding on every dash, so a dash after a modifier
+(ctrl--, alt--) produced three sections and was rejected with
+"Shortcut can only have 2 keys". config.yml skipped the binding with a
+warning, and Settings stored alt-- while the old binding stayed active.
+
+Split on the first dash only. ctrl-a-b still fails in modifier_char,
+which names the binding.
+
+Closes #554
+---
+ CHANGELOG.md                 |  4 ++++
+ src/core/user_config.rs      | 30 +++++++++++++++++++++---------
+ src/tui/handlers/settings.rs |  9 +++++++++
+ tools/gates.count            |  2 +-
+ 4 files changed, 35 insertions(+), 10 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 29e73e8..228006e 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,6 +6,10 @@
+ 
+ - **Spotify steps aside while another source plays**: when Local Files, Subsonic, Internet Radio, YouTube or Qobuz takes over from Spotify playing on spotatui, spotatui now shuts its Spotify player down instead of only pausing it, so the spotatui device leaves the device list of your other Spotify apps until you play Spotify in spotatui again. That start rebuilds the player in about a second ("Reconnecting native streaming…") and then plays, and a Spotify track queued behind another source plays the same way. When the other source ends, Space or a media key resumes the Spotify track you left; previous, seek, volume, shuffle, repeat and next with nothing queued answer "Press play to resume Spotify" until then, and the device picker still lists spotatui (Enter on it reconnects). A track from another source queued in the middle of a Spotify playlist still only pauses Spotify, so the playlist continues without a reconnect, and when Spotify plays on another device nothing changes. Quitting now also shuts the spotatui device down, so your other Spotify apps show it as inactive.
+ 
++### Fixed
++
++- **`ctrl--` and `alt--` keybindings work**: a binding whose key is a dash after a modifier was rejected with "Shortcut can only have 2 keys", so in `config.yml` it was skipped with a warning, and pressing Alt+- or Ctrl+- in Settings showed the new binding while the old one stayed active. Only the first dash now separates the modifier from the key ([#554](https://github.com/LargeModGames/spotatui/issues/554)).
++
+ ## [v0.43.0] 2026-09-23
+ 
+ ### Added
+diff --git a/src/core/user_config.rs b/src/core/user_config.rs
+index 641f49c..afa05cc 100644
+--- a/src/core/user_config.rs
++++ b/src/core/user_config.rs
+@@ -275,15 +275,10 @@ fn parse_key(key: String) -> Result<Key> {
+     return Ok(Key::Char(c));
+   }
+ 
+-  let sections: Vec<&str> = key.split('-').collect();
+-
+-  if sections.len() > 2 {
+-    return Err(anyhow!(
+-      "Shortcut can only have 2 keys, \"{}\" has {}",
+-      key,
+-      sections.len()
+-    ));
+-  }
++  // Split on the first dash only, so the key after a modifier may itself be a
++  // dash (`ctrl--`, `alt--`). Anything longer (`ctrl-a-b`) is rejected by
++  // `modifier_char`, which names the binding (#554).
++  let sections: Vec<&str> = key.splitn(2, '-').collect();
+ 
+   match sections[0].to_lowercase().as_str() {
+     "ctrl" => Ok(Key::Ctrl(modifier_char(&key, &sections)?)),
+@@ -2584,6 +2579,23 @@ mod tests {
+     assert!(parse_key(String::from("öö")).is_err());
+   }
+ 
++  #[test]
++  fn a_dash_after_a_modifier_parses_as_the_key() {
++    use super::parse_key;
++    use crate::core::input::Key;
++
++    // Only the first dash separates the modifier from the key, so the key
++    // itself may be a dash (#554).
++    assert_eq!(parse_key(String::from("ctrl--")).unwrap(), Key::Ctrl('-'));
++    assert_eq!(parse_key(String::from("alt--")).unwrap(), Key::Alt('-'));
++    assert_eq!(parse_key(String::from("-")).unwrap(), Key::Char('-'));
++    let err = parse_key(String::from("ctrl-a-b")).unwrap_err();
++    assert!(
++      err.to_string().contains("ctrl-a-b"),
++      "error for \"ctrl-a-b\" must name the binding: {err}"
++    );
++  }
++
+   #[test]
+   fn malformed_modifier_bindings_error_instead_of_panicking() {
+     use super::parse_key;
+diff --git a/src/tui/handlers/settings.rs b/src/tui/handlers/settings.rs
+index 4a5ced6..9076860 100644
+--- a/src/tui/handlers/settings.rs
++++ b/src/tui/handlers/settings.rs
+@@ -613,6 +613,15 @@ mod tests {
+       .expect("expected a boolean setting")
+   }
+ 
++  #[test]
++  fn a_dash_keybinding_round_trips_through_the_config_string() {
++    use crate::core::user_config::parse_key_public;
++
++    for key in [Key::Alt('-'), Key::Ctrl('-'), Key::Char('-')] {
++      assert_eq!(parse_key_public(key_to_config_string(&key)).unwrap(), key);
++    }
++  }
++
+   #[test]
+   fn cycling_preset_to_terminal_turns_banner_gradient_setting_off() {
+     let mut app = App::default();
+diff --git a/tools/gates.count b/tools/gates.count
+index a77d6cd..a54657d 100644
+--- a/tools/gates.count
++++ b/tools/gates.count
+@@ -15,4 +15,4 @@ view_writes_outside_tui = 12           # target 0 (producers outside tui/ and co
+ pub_fields_on_app = 139                # target 1 (App.view stays public for the frontend; the rest go through App methods)
+ direct_playback_context_reads = 88     # target 0 (readers of App::current_playback_context outside the ownership resolver and the snapshot builder, which are excluded)
+ action_refs_in_tui_handlers = 189      # adoption: may only rise
+-test_attribute_total = 2123        # adoption: may only rise
++test_attribute_total = 2125        # adoption: may only rise
+-- 
+2.43.0
+
