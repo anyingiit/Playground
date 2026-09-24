@@ -1,6 +1,6 @@
 # go-git/go-git #1518 — split fetch/push code out of `remote.go`
 
-Status: 🚧 in progress — issue chosen, audit next
+Status: 🚧 in progress — audit done (AUDIT.md), implementing
 
 | 项 | 值 |
 |---|---|

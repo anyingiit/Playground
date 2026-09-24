@@ -1,0 +1,119 @@
+From c66d59f0339394a6c7d9b2f3516d4be3e19dfb17 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:53:17 +0000
+Subject: [PATCH] Stretch table cells to the row height
+
+Cells in a table row were laid out with their own content height, so when
+one cell wrapped onto several lines the borders of the shorter cells in the
+same row ended above the row bottom and the grid looked broken.
+
+Fixes #61
+---
+ src/layout.spec.ts | 80 ++++++++++++++++++++++++++++++++++++++++++++++
+ src/layout.ts      |  3 +-
+ 2 files changed, 82 insertions(+), 1 deletion(-)
+ create mode 100644 src/layout.spec.ts
+
+diff --git a/src/layout.spec.ts b/src/layout.spec.ts
+new file mode 100644
+index 0000000..64ba7fd
+--- /dev/null
++++ b/src/layout.spec.ts
+@@ -0,0 +1,80 @@
++import { describe, it, expect } from "vitest";
++import { layoutBlock, type BlockBox } from "./layout";
++import type { BlockNode, TextNode } from "./mdast-util-to-pdf";
++
++const text = (value: string): TextNode => ({
++  type: "text",
++  text: value,
++  style: {
++    fontSize: 10,
++    font: "Helvetica",
++    color: "black",
++    bold: false,
++    italic: false,
++    underline: false,
++    strike: false,
++  },
++  attrs: {},
++});
++
++const cell = (value: string): BlockNode => ({
++  type: "block",
++  style: { display: "table-cell" },
++  children: [text(value)],
++});
++
++const layout = (node: BlockNode) =>
++  layoutBlock(node, 0, 0, {
++    top: 0,
++    width: 300,
++    // every character is 10pt wide and every line is 10pt high
++    textWidth: (str) => str.length * 10,
++    textHeight: () => 10,
++    resolveFont: (font) => font,
++    resolveImageSize: () => null,
++  });
++
++describe("layoutBlock", () => {
++  it("stretches every cell in a table row to the row height", () => {
++    const table: BlockNode = {
++      type: "block",
++      style: { display: "table" },
++      children: [
++        {
++          type: "block",
++          style: { display: "table-row" },
++          children: [
++            // wraps onto multiple lines in a 100pt wide column
++            cell("a long cell that wraps onto multiple lines"),
++            cell("7"),
++            cell("style"),
++          ],
++        },
++        {
++          type: "block",
++          style: { display: "table-row" },
++          children: [cell("short"), cell("3"), cell("style")],
++        },
++      ],
++    };
++
++    const box = layout(table);
++    const rows = box.children as BlockBox[];
++    expect(rows).toHaveLength(2);
++
++    let y = 0;
++    for (const row of rows) {
++      expect(row.y).toBe(y);
++      const cells = row.children as BlockBox[];
++      expect(cells).toHaveLength(3);
++      for (const c of cells) {
++        expect(c.border).toBe(true);
++        expect(c.y).toBe(row.y);
++        expect(c.height).toBe(row.height);
++      }
++      y += row.height;
++    }
++    expect(rows[0]!.height).toBeGreaterThan(rows[1]!.height);
++    expect(box.height).toBe(y);
++  });
++});
+diff --git a/src/layout.ts b/src/layout.ts
+index 793519d..309c10f 100644
+--- a/src/layout.ts
++++ b/src/layout.ts
+@@ -190,7 +190,8 @@ export const layoutBlock = (
+           width,
+           height: rowHeight,
+           border: false,
+-          children: rowChildren,
++          // Stretch every cell to the row height so their borders form a grid
++          children: rowChildren.map((c) => ({ ...c, height: rowHeight })),
+         });
+         tableY += rowHeight;
+       }
+-- 
+2.43.0
+
