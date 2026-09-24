@@ -1,0 +1,150 @@
+From 9c54f030354e2fb07e23e39d46a1c87d71debd9e Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:53:29 +0000
+Subject: [PATCH] Add `message_html_display` option to show the plain text body
+ of messages
+
+Setting `message_html_display = false` skips rendering the formatted (HTML)
+body of a message and shows its plain text body instead.
+
+Closes #617
+---
+ config.example.toml |  1 +
+ docs/iamb.5         |  7 +++++++
+ src/config/mod.rs   |  4 ++++
+ src/message/mod.rs  | 35 ++++++++++++++++++++++++++++++++++-
+ src/tests.rs        |  1 +
+ 5 files changed, 47 insertions(+), 1 deletion(-)
+
+diff --git a/config.example.toml b/config.example.toml
+index 53492d8..e25a76c 100644
+--- a/config.example.toml
++++ b/config.example.toml
+@@ -15,6 +15,7 @@ ignorecase = false
+ input_prompt = "❯ "
+ log_level = "warn"
+ members_split = "vertical"
++message_html_display = true
+ message_shortcode_display = false
+ open_command = ["my-open", "--file"]
+ reaction_display = true
+diff --git a/docs/iamb.5 b/docs/iamb.5
+index d226dec..c138243 100644
+--- a/docs/iamb.5
++++ b/docs/iamb.5
+@@ -207,6 +207,13 @@ Enable mouse support
+ See
+ .Sx MOUSE
+ for more details.
++.It Sy message_html_display
++Defines whether or not the formatted (HTML) body of a message should be rendered.
++If
++.Sy false ,
++the plain text body is shown as it was sent, without any rich text rendering.
++Defaults to
++.Sy true .
+ .It Sy message_shortcode_display
+ Defines whether or not Emoji characters in messages should be replaced by their
+ respective shortcodes.
+diff --git a/src/config/mod.rs b/src/config/mod.rs
+index 6c78372..3dcc08d 100644
+--- a/src/config/mod.rs
++++ b/src/config/mod.rs
+@@ -804,6 +804,7 @@ pub struct TunableValues {
+     pub ignorecase: bool,
+     pub log_level: String,
+     pub max_log_files: usize,
++    pub message_html_display: bool,
+     pub message_shortcode_display: bool,
+     pub normal_after_send: bool,
+     pub proxy: ProxyValues,
+@@ -864,6 +865,7 @@ pub struct Tunables {
+     pub ignorecase: Option<bool>,
+     pub log_level: Option<String>,
+     pub max_log_files: Option<usize>,
++    pub message_html_display: Option<bool>,
+     pub message_shortcode_display: Option<bool>,
+     pub normal_after_send: Option<bool>,
+     pub reaction_display: Option<bool>,
+@@ -914,6 +916,7 @@ impl Tunables {
+             ignorecase: self.ignorecase.or(other.ignorecase),
+             log_level: self.log_level.or(other.log_level),
+             max_log_files: self.max_log_files.or(other.max_log_files),
++            message_html_display: self.message_html_display.or(other.message_html_display),
+             message_shortcode_display: self
+                 .message_shortcode_display
+                 .or(other.message_shortcode_display),
+@@ -965,6 +968,7 @@ impl Tunables {
+             log_level: self.log_level.unwrap_or_else(|| DEFAULT_LOG_LEVEL.to_owned()),
+             ignorecase: self.ignorecase.unwrap_or(false),
+             max_log_files: self.max_log_files.unwrap_or(7),
++            message_html_display: self.message_html_display.unwrap_or(true),
+             message_shortcode_display: self.message_shortcode_display.unwrap_or(false),
+             normal_after_send: self.normal_after_send.unwrap_or(false),
+             reaction_display: self.reaction_display.unwrap_or(true),
+diff --git a/src/message/mod.rs b/src/message/mod.rs
+index 61d0cdd..6998981 100644
+--- a/src/message/mod.rs
++++ b/src/message/mod.rs
+@@ -1400,7 +1400,9 @@ impl Message {
+             text += wrapped_text(filename, width, style);
+         }
+ 
+-        if let Some(html) = &self.html {
++        if let Some(html) = &self.html &&
++            settings.tunables.message_html_display
++        {
+             text += html.to_text(width, style, settings, info);
+         } else {
+             let mut msg = self.event.body();
+@@ -2022,4 +2024,35 @@ pub mod tests {
+         info.set_receipt(ReceiptThread::Main, user_id, MSG1_EVID.clone());
+         assert!(!msg.show_trackbar(Some(&prev), &info, &settings));
+     }
++
++    #[test]
++    fn test_show_msg_html_display() {
++        let mut settings = mock_settings();
++        let previews = PreviewManager::new(&settings);
++        let info = mock_room();
++
++        let content = RoomMessageEventContent::text_html(
++            "**hello** <world>",
++            "<strong>hello</strong> &lt;world&gt;",
++        );
++        let msg = mock_room1_message(content, TEST_USER1.clone(), MSG1_KEY.clone());
++
++        let render = |settings: &ApplicationSettings| -> String {
++            let (text, _) = msg.show_msg(60, Style::default(), settings, &previews, &info);
++
++            text.lines
++                .iter()
++                .flat_map(|line| line.spans.iter())
++                .map(|span| span.content.as_ref())
++                .collect()
++        };
++
++        // By default, the formatted HTML body is rendered.
++        assert!(settings.tunables.message_html_display);
++        assert_eq!(render(&settings), "hello <world>");
++
++        // When disabled, the plain text body is shown exactly as it was sent.
++        settings.tunables.message_html_display = false;
++        assert_eq!(render(&settings), "**hello** <world>");
++    }
+ }
+diff --git a/src/tests.rs b/src/tests.rs
+index d8688f8..da85003 100644
+--- a/src/tests.rs
++++ b/src/tests.rs
+@@ -162,6 +162,7 @@ pub fn mock_tunables() -> TunableValues {
+         input_prompt: None,
+         log_level: "warn".into(),
+         max_log_files: 7,
++        message_html_display: true,
+         message_shortcode_display: false,
+         normal_after_send: true,
+         proxy: Proxy::default().values(),
+-- 
+2.43.0
+

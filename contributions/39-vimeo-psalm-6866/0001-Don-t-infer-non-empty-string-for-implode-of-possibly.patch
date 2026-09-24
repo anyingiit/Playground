@@ -1,0 +1,118 @@
+From 4256d866e3384674a9ecd6d939b8079dfc80cc6b Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:54:22 +0000
+Subject: [PATCH] Don't infer non-empty-string for implode() of possibly-empty
+ elements
+
+implode() with a non-empty separator and a non-empty array was always
+inferred as non-empty-string, but a single empty element (or null/false,
+or a Stringable returning '') yields an empty string, e.g.
+implode(':', ['']) === ''.
+
+Only infer non-empty-string when every element is guaranteed to
+stringify to a non-empty value (non-empty-string, int or float);
+otherwise fall back to (literal-)string. Applies to implode() and join().
+
+Fixes #6866
+---
+ stubs/CoreGenericFunctions.phpstub | 24 ++++++++++++-----
+ tests/ArrayFunctionCallTest.php    | 41 ++++++++++++++++++++++++++++++
+ 2 files changed, 59 insertions(+), 6 deletions(-)
+
+diff --git a/stubs/CoreGenericFunctions.phpstub b/stubs/CoreGenericFunctions.phpstub
+index c8fc92c..486d866 100644
+--- a/stubs/CoreGenericFunctions.phpstub
++++ b/stubs/CoreGenericFunctions.phpstub
+@@ -689,9 +689,15 @@ function rtrim(string $string, string $characters = " \t\n\r\0\x0B") : string {}
+  * @return (
+  *     $separator is non-empty-string
+  *     ? ($array is non-empty-array
+- *         ? ($array is array<literal-string|literal-int>
+- *             ? ($separator is literal-string ? non-empty-literal-string : non-empty-string)
+- *             : non-empty-string
++ *         ? ($array is array<non-empty-string|int|float>
++ *             ? ($array is array<non-empty-literal-string|literal-int>
++ *                 ? ($separator is literal-string ? non-empty-literal-string : non-empty-string)
++ *                 : non-empty-string
++ *             )
++ *             : ($array is array<literal-string|literal-int>
++ *                 ? ($separator is literal-string ? literal-string : string)
++ *                 : string
++ *             )
+  *         )
+  *         : string)
+  *     : ($array is non-empty-array
+@@ -716,9 +722,15 @@ function implode($separator, array $array = []) : string {}
+  * @return (
+  *     $separator is non-empty-string
+  *     ? ($array is non-empty-array
+- *         ? ($array is array<literal-string|literal-int>
+- *             ? ($separator is literal-string ? non-empty-literal-string : non-empty-string)
+- *             : non-empty-string
++ *         ? ($array is array<non-empty-string|int|float>
++ *             ? ($array is array<non-empty-literal-string|literal-int>
++ *                 ? ($separator is literal-string ? non-empty-literal-string : non-empty-string)
++ *                 : non-empty-string
++ *             )
++ *             : ($array is array<literal-string|literal-int>
++ *                 ? ($separator is literal-string ? literal-string : string)
++ *                 : string
++ *             )
+  *         )
+  *         : string)
+  *     : ($array is non-empty-array
+diff --git a/tests/ArrayFunctionCallTest.php b/tests/ArrayFunctionCallTest.php
+index dee352d..a84cb5c 100644
+--- a/tests/ArrayFunctionCallTest.php
++++ b/tests/ArrayFunctionCallTest.php
+@@ -1283,6 +1283,47 @@ final class ArrayFunctionCallTest extends TestCase
+                     '$b===' => 'string',
+                 ],
+             ],
++            'implodeNonEmptySeparatorAndPossiblyEmptyElements' => [
++                'code' => '<?php
++                    /** @return non-empty-list<string> */
++                    function getStrings(): array {
++                        return [""];
++                    }
++                    /** @return non-empty-list<non-empty-string> */
++                    function getNonEmptyStrings(): array {
++                        return ["a"];
++                    }
++                    /** @return non-empty-list<int> */
++                    function getInts(): array {
++                        return [0];
++                    }
++                    /** @return non-empty-list<?string> */
++                    function getNullableStrings(): array {
++                        return [null];
++                    }
++                    /** @return non-empty-string */
++                    function getSeparator(): string {
++                        return ",";
++                    }
++                    $a = implode(":", [""]);
++                    $b = implode(":", ["a", ""]);
++                    $c = implode(":", getStrings());
++                    $d = implode(getSeparator(), getStrings());
++                    $e = implode(":", getNonEmptyStrings());
++                    $f = implode(":", getInts());
++                    $g = implode(":", getNullableStrings());
++                    $h = join(":", getStrings());',
++                'assertions' => [
++                    '$a===' => 'literal-string',
++                    '$b===' => 'literal-string',
++                    '$c===' => 'string',
++                    '$d===' => 'string',
++                    '$e===' => 'non-empty-string',
++                    '$f===' => 'non-empty-string',
++                    '$g===' => 'string',
++                    '$h===' => 'string',
++                ],
++            ],
+             'key' => [
+                 'code' => '<?php
+                     $a = ["one" => 1, "two" => 3];
+-- 
+2.43.0
+

@@ -5,7 +5,7 @@
 | Issue | https://github.com/vimeo/psalm/issues/6866 |
 | Tier | 自由 |
 | Labels | Help wanted, bug, easy problems, good first issue, internal stubs/callmap |
-| Status | 🚧 in progress — audit |
+| Status | 🚧 in progress — implemented, red→green done; running full checks |
 | Duplicate-PR check | (pending) |
 
 ## Notes so far
