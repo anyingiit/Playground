@@ -1,0 +1,154 @@
+From cd9162bfa05f6f4d0f286c45c6ac16a1f2014552 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:44:25 +0000
+Subject: [PATCH] fix(cli): reject out-of-range token lifetimes before local
+ setup
+
+`sotto token create --expires-in-days` parsed any u32, so 0, 366 and larger
+values got past argument parsing and reached local setup: outside a project
+the CLI created store.db and reported a missing sotto.toml instead of the
+lifetime limit. Bound the flag to 1..=365 in clap, like the share limits, so
+an invalid value is rejected with the flag name and range before any local
+state is touched. Omitting the flag still defers to the server's default,
+and the server keeps validating the lifetime authoritatively.
+
+Closes #393
+---
+ crates/cli/src/main.rs           | 52 ++++++++++++++++++++++++++++++--
+ crates/cli/src/remote/machine.rs |  4 +++
+ crates/cli/tests/share_cli.rs    | 27 +++++++++++++++++
+ 3 files changed, 80 insertions(+), 3 deletions(-)
+
+diff --git a/crates/cli/src/main.rs b/crates/cli/src/main.rs
+index b3cf50d..e2c7539 100644
+--- a/crates/cli/src/main.rs
++++ b/crates/cli/src/main.rs
+@@ -311,8 +311,11 @@ enum TokenCommand {
+         /// Human label for the token ("github-actions").
+         #[arg(long, default_value = "ci")]
+         name: String,
+-        /// Days until the token stops working (the server allows 1 to 365; default 90).
+-        #[arg(long)]
++        /// Days until the token stops working (1-365; the server defaults to 90).
++        #[arg(
++            long,
++            value_parser = clap::value_parser!(u32).range(1..=sotto_cli::remote::machine::MAX_LIFETIME_DAYS as i64)
++        )]
+         expires_in_days: Option<u32>,
+     },
+     /// List the active environment's machine tokens.
+@@ -1870,7 +1873,7 @@ mod tests {
+ 
+     use super::{
+         display_secret, env_list_json, history_line, import_dotenv, login_config, set_confirmation,
+-        Cli, Command, EnvCommand, ThemeCommand,
++        Cli, Command, EnvCommand, ThemeCommand, TokenCommand,
+     };
+ 
+     #[test]
+@@ -2192,6 +2195,49 @@ mod tests {
+         ));
+     }
+ 
++    #[test]
++    fn token_lifetime_parses_bounds_and_rejects_out_of_range_values_before_setup() {
++        let max = sotto_cli::remote::machine::MAX_LIFETIME_DAYS;
++        for days in [1, max] {
++            let value = days.to_string();
++            let cli =
++                Cli::try_parse_from(["sotto", "token", "create", "--expires-in-days", &value])
++                    .unwrap();
++            assert!(matches!(
++                cli.command,
++                Command::Token {
++                    command: TokenCommand::Create {
++                        expires_in_days: Some(parsed),
++                        ..
++                    }
++                } if parsed == days
++            ));
++        }
++
++        for value in ["0", "366", "4294967295", "-1"] {
++            let flag = format!("--expires-in-days={value}");
++            let err = match Cli::try_parse_from(["sotto", "token", "create", &flag]) {
++                Ok(_) => panic!("accepted {flag}"),
++                Err(err) => err,
++            };
++            let message = err.to_string();
++            assert!(message.contains("--expires-in-days"), "{flag}: {message}");
++            assert!(message.contains("1..=365"), "{flag}: {message}");
++        }
++
++        // Omitting the flag defers to the server's default lifetime.
++        let cli = Cli::try_parse_from(["sotto", "token", "create"]).unwrap();
++        assert!(matches!(
++            cli.command,
++            Command::Token {
++                command: TokenCommand::Create {
++                    expires_in_days: None,
++                    ..
++                }
++            }
++        ));
++    }
++
+     #[test]
+     fn share_help_explains_supported_limits() {
+         let mut command = Cli::command();
+diff --git a/crates/cli/src/remote/machine.rs b/crates/cli/src/remote/machine.rs
+index 61fd004..bb89f70 100644
+--- a/crates/cli/src/remote/machine.rs
++++ b/crates/cli/src/remote/machine.rs
+@@ -23,6 +23,10 @@ const KEY_VERSION: u8 = 1;
+ /// Warn in the job log once a token has fewer than this many whole days left. Two weeks spans a
+ /// holiday and a sprint, so whoever owns the pipeline sees it at least once before it breaks.
+ const EXPIRY_WARNING_DAYS: i64 = 14;
++/// Longest lifetime `sotto token create --expires-in-days` accepts, in days. Mirrors the server's
++/// limit so an out-of-range value is rejected while parsing arguments, before any local setup;
++/// the server still validates the lifetime authoritatively.
++pub const MAX_LIFETIME_DAYS: u32 = 365;
+ 
+ /// A parsed machine token: the API bearer + the machine keypair recovered from its private key.
+ pub struct MachineToken {
+diff --git a/crates/cli/tests/share_cli.rs b/crates/cli/tests/share_cli.rs
+index 12fcfb4..568e5df 100644
+--- a/crates/cli/tests/share_cli.rs
++++ b/crates/cli/tests/share_cli.rs
+@@ -40,6 +40,33 @@ fn invalid_share_limits_are_rejected_before_local_setup() {
+     }
+ }
+ 
++#[test]
++fn invalid_token_lifetimes_are_rejected_before_local_setup() {
++    let scratch = tempfile::tempdir().expect("scratch directory");
++    for value in ["0", "366", "4294967295"] {
++        let data_dir = scratch.path().join(format!("days-{value}"));
++        let output = Command::new(env!("CARGO_BIN_EXE_sotto"))
++            .current_dir(scratch.path())
++            .env("SOTTO_DATA_DIR", &data_dir)
++            .env_remove("SOTTO_TOKEN")
++            .env_remove("SOTTO_THEME")
++            .env_remove("SOTTO_PASSWORD")
++            .args(["--plain", "token", "create", "--expires-in-days", value])
++            .output()
++            .expect("run sotto");
++
++        assert_eq!(output.status.code(), Some(2), "accepted {value}");
++        let stderr = String::from_utf8(output.stderr).expect("UTF-8 stderr");
++        assert!(stderr.contains("--expires-in-days"), "{value}: {stderr}");
++        assert!(stderr.contains("1..=365"), "{value}: {stderr}");
++        assert!(
++            !stderr.contains("sotto.toml"),
++            "{value} reached project lookup: {stderr}"
++        );
++        assert!(!data_dir.exists(), "{value} created {}", data_dir.display());
++    }
++}
++
+ #[test]
+ fn invalid_rollback_versions_are_rejected_before_local_setup() {
+     let scratch = tempfile::tempdir().expect("scratch directory");
+-- 
+2.43.0
+

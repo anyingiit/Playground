@@ -1,0 +1,238 @@
+From 5eb33f187af99e4802ae94d38397dc13bde68ac0 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:44:59 +0000
+Subject: [PATCH] Read the target machine name from SMOLVM_MACHINE_NAME
+
+Commands that act on an existing machine and otherwise fall back to
+"default" (exec, shell, start, stop, status, resize, sync, monitor,
+egress-events, network-test) now take their --name from the
+SMOLVM_MACHINE_NAME environment variable when the flag is omitted. An
+explicit --name still wins. This lets per-project tooling such as direnv
+select the machine without repeating --name on every command.
+
+`machine run` (ephemeral) and the commands that create, delete or
+modify a named machine are intentionally left unchanged, so the
+variable can never make them act on a machine implicitly.
+
+Enables clap's `env` feature, which adds no new dependencies.
+
+Closes #1385
+---
+ AGENTS.md          |  2 +-
+ Cargo.toml         |  2 +-
+ src/cli/machine.rs | 96 +++++++++++++++++++++++++++++++++++++++++-----
+ 3 files changed, 88 insertions(+), 12 deletions(-)
+
+diff --git a/AGENTS.md b/AGENTS.md
+index a7e5ed2..c65bede 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -164,7 +164,7 @@ rejected with a hint to build first (`docker build … && docker save … | …
+ | Flag | Short | Used on | Description |
+ |------|-------|---------|-------------|
+ | `--image` | `-I` | run, create, pack create | OCI image, or a local source: a `docker save` archive (`./img.tar`, or `-` for stdin) or unpacked rootfs dir (`./rootfs/`) |
+-| `--name` | `-n` | run, start, stop, status, exec, update | Machine name (default: "default") |
++| `--name` | `-n` | run, start, stop, status, exec, update | Machine name (default: "default"). On commands that target an existing machine (exec, shell, start, stop, status, resize, sync, monitor, egress-events, network-test) an unset `--name` falls back to `$SMOLVM_MACHINE_NAME` |
+ | `--net` | | run, create | Enable outbound networking (off by default) |
+ | `--gpu` | | run, create | Enable GPU acceleration (Vulkan via virtio-gpu) |
+ | `--gpu-vram` | | run, create | GPU shared-memory region size in MiB (default: 4096). Ignored without `--gpu`. |
+diff --git a/Cargo.toml b/Cargo.toml
+index 53740af..b0a3a09 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -49,7 +49,7 @@ smolvm-pack = { path = "crates/smolvm-pack", version = "1.18.1" }
+ smolvm-registry = { path = "crates/smolvm-registry", version = "1.18.1" }
+ smolfile = { path = "crates/smolvm-smolfile", version = "1.18.1" }
+ thiserror = "1"
+-clap = { version = "4", features = ["derive"] }
++clap = { version = "4", features = ["derive", "env"] }
+ serde = { version = "1", features = ["derive"] }
+ serde_json = "1"
+ serde_yaml = "0.9"
+diff --git a/src/cli/machine.rs b/src/cli/machine.rs
+index 3127914..f488a45 100644
+--- a/src/cli/machine.rs
++++ b/src/cli/machine.rs
+@@ -31,6 +31,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
+ /// successive runs (and other commands sweep without a cap).
+ const EPHEMERAL_RUN_SWEEP_CAP: usize = 8;
+ 
++/// Environment variable that supplies the target machine for `--name` on the
++/// commands that act on an existing machine and otherwise fall back to
++/// "default" (exec, shell, start, stop, status, ...). An explicit `--name`
++/// always wins. Lets per-project tooling such as direnv pick the machine.
++const MACHINE_NAME_ENV: &str = "SMOLVM_MACHINE_NAME";
++
+ /// Resolve `--allow-cidr`, `--allow-host`, and `--outbound-localhost-only` into a CIDR list,
+ /// net flag, and the original hostname list (for DNS filtering).
+ ///
+@@ -2581,6 +2587,76 @@ mod tests {
+         assert!(cmd.detach);
+     }
+ 
++    /// `SMOLVM_MACHINE_NAME` supplies `--name` for commands that act on an
++    /// existing machine. Kept in one test because it mutates the process
++    /// environment; no other parser test relies on these commands' env-less
++    /// default.
++    #[test]
++    fn machine_name_falls_back_to_env_var() {
++        fn name_of(args: &[&str]) -> Option<String> {
++            let mut argv = vec!["machine"];
++            argv.extend_from_slice(args);
++            match TestMachineCli::parse_from(argv).command {
++                MachineCmd::Exec(cmd) => cmd.name,
++                MachineCmd::Shell(cmd) => cmd.name,
++                MachineCmd::Start(cmd) => cmd.name,
++                MachineCmd::Stop(cmd) => cmd.name,
++                MachineCmd::Status(cmd) => cmd.name,
++                MachineCmd::EgressEvents(cmd) => cmd.name,
++                MachineCmd::Resize(cmd) => cmd.name,
++                MachineCmd::Sync(cmd) => cmd.name,
++                MachineCmd::Monitor(cmd) => cmd.name,
++                MachineCmd::NetworkTest(cmd) => cmd.name,
++                MachineCmd::Run(cmd) => cmd.name,
++                other => panic!("unexpected command: {other:?}"),
++            }
++        }
++        let commands: &[&[&str]] = &[
++            &["exec", "--", "true"],
++            &["shell"],
++            &["start"],
++            &["stop"],
++            &["status"],
++            &["egress-events"],
++            &["resize", "--storage", "50"],
++            &["sync"],
++            &["monitor"],
++            &["network-test"],
++        ];
++
++        let previous = std::env::var_os(MACHINE_NAME_ENV);
++        std::env::remove_var(MACHINE_NAME_ENV);
++        for args in commands {
++            assert_eq!(name_of(args), None, "no env, no flag: {args:?}");
++        }
++
++        std::env::set_var(MACHINE_NAME_ENV, "proj-vm");
++        for args in commands {
++            assert_eq!(
++                name_of(args),
++                Some("proj-vm".to_string()),
++                "env fallback: {args:?}"
++            );
++            let mut explicit = args.to_vec();
++            explicit.splice(1..1, ["--name", "other"]);
++            assert_eq!(
++                name_of(&explicit),
++                Some("other".to_string()),
++                "explicit --name wins: {explicit:?}"
++            );
++        }
++        // Ephemeral `run` must not silently pick up a persistent name, and
++        // commands that create or destroy a machine still require --name.
++        assert_eq!(name_of(&["run", "--image", "alpine"]), None);
++        assert!(TestMachineCli::try_parse_from(["machine", "delete"]).is_err());
++        assert!(TestMachineCli::try_parse_from(["machine", "update"]).is_err());
++
++        match previous {
++            Some(value) => std::env::set_var(MACHINE_NAME_ENV, value),
++            None => std::env::remove_var(MACHINE_NAME_ENV),
++        }
++    }
++
+     #[test]
+     fn start_cuda_pool_flags_parse_and_limit_requires_pool() {
+         let cli = TestMachineCli::parse_from([
+@@ -3058,7 +3134,7 @@ pub struct ExecCmd {
+     pub command: Vec<String>,
+ 
+     /// Target machine (default: "default")
+-    #[arg(long, value_name = "NAME")]
++    #[arg(long, value_name = "NAME", env = MACHINE_NAME_ENV)]
+     pub name: Option<String>,
+ 
+     /// Set working directory in the VM
+@@ -3338,7 +3414,7 @@ impl ExecEventPrinter {
+ #[derive(Args, Debug)]
+ pub struct ShellCmd {
+     /// Target machine (default: "default")
+-    #[arg(long, short = 'n', value_name = "NAME")]
++    #[arg(long, short = 'n', value_name = "NAME", env = MACHINE_NAME_ENV)]
+     pub name: Option<String>,
+ }
+ 
+@@ -4345,7 +4421,7 @@ impl CreateCmd {
+ #[derive(Args, Debug)]
+ pub struct StartCmd {
+     /// Machine to start (default: "default")
+-    #[arg(short = 'n', long, value_name = "NAME")]
++    #[arg(short = 'n', long, value_name = "NAME", env = MACHINE_NAME_ENV)]
+     pub name: Option<String>,
+ 
+     /// Start as a branch source: back guest RAM with a memfd (CoW-cloneable) and
+@@ -4818,7 +4894,7 @@ fn forkpoint_timeout(
+ #[derive(Args, Debug)]
+ pub struct StopCmd {
+     /// Machine to stop (default: "default")
+-    #[arg(short = 'n', long, value_name = "NAME")]
++    #[arg(short = 'n', long, value_name = "NAME", env = MACHINE_NAME_ENV)]
+     pub name: Option<String>,
+ }
+ 
+@@ -4914,7 +4990,7 @@ impl DeleteCmd {
+ #[derive(Args, Debug)]
+ pub struct StatusCmd {
+     /// Machine to check (default: "default")
+-    #[arg(short = 'n', long, value_name = "NAME")]
++    #[arg(short = 'n', long, value_name = "NAME", env = MACHINE_NAME_ENV)]
+     pub name: Option<String>,
+ 
+     /// Output in JSON format
+@@ -4943,7 +5019,7 @@ impl StatusCmd {
+ #[derive(Args, Debug)]
+ pub struct EgressEventsCmd {
+     /// Machine to inspect (default: "default")
+-    #[arg(short = 'n', long, value_name = "NAME")]
++    #[arg(short = 'n', long, value_name = "NAME", env = MACHINE_NAME_ENV)]
+     pub name: Option<String>,
+ 
+     /// Maximum number of events to show (newest kept)
+@@ -5044,7 +5120,7 @@ impl LsCmd {
+ ))]
+ pub struct ResizeCmd {
+     /// Machine to resize (default: "default")
+-    #[arg(short = 'n', long, value_name = "NAME")]
++    #[arg(short = 'n', long, value_name = "NAME", env = MACHINE_NAME_ENV)]
+     pub name: Option<String>,
+ 
+     /// Storage disk size in GiB (expand only)
+@@ -5480,7 +5556,7 @@ impl DataDirCmd {
+ #[derive(Args, Debug)]
+ pub struct NetworkTestCmd {
+     /// Named machine to test (omit for default)
+-    #[arg(long)]
++    #[arg(long, env = MACHINE_NAME_ENV)]
+     pub name: Option<String>,
+ 
+     /// URL to test
+@@ -5911,7 +5987,7 @@ impl CpCmd {
+ #[derive(Args, Debug)]
+ pub struct SyncCmd {
+     /// Machine to synchronize (default: "default")
+-    #[arg(short = 'n', long, value_name = "NAME")]
++    #[arg(short = 'n', long, value_name = "NAME", env = MACHINE_NAME_ENV)]
+     pub name: Option<String>,
+ }
+ 
+@@ -5957,7 +6033,7 @@ impl SyncCmd {
+ #[derive(Args, Debug)]
+ pub struct MonitorCmd {
+     /// Machine to monitor (default: "default")
+-    #[arg(short = 'n', long, value_name = "NAME")]
++    #[arg(short = 'n', long, value_name = "NAME", env = MACHINE_NAME_ENV)]
+     pub name: Option<String>,
+ 
+     /// Override restart policy (never, always, on-failure, unless-stopped)
+-- 
+2.43.0
+

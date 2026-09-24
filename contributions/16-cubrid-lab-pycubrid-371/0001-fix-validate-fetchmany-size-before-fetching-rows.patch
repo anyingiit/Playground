@@ -1,0 +1,214 @@
+From 2b1522226cf61179b7bd3af7486d7cdf90a626ae Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:44:14 +0000
+Subject: [PATCH] fix: validate fetchmany(size) before fetching rows
+
+fetchmany() used `size` as-is: a float such as 2.5 failed deep inside
+the row loop with a bare `TypeError: slice indices must be integers`,
+and a zero or negative size silently returned an empty list that is
+easy to mistake for "no more rows".
+
+Validate `size` up front, the same way as the `arraysize` setter (an
+int >= 1), with a shared `validate_fetch_size()` helper in
+`_cursor_common` used by both the sync and async cursors. A non-int
+(float, str, bool), zero or negative size now raises ProgrammingError
+before any rows are consumed. `fetchmany()` without arguments still
+uses `arraysize`.
+
+Closes #371
+---
+ CHANGELOG.md               |  1 +
+ docs/API_REFERENCE.md      |  2 ++
+ docs/ko/API_REFERENCE.md   |  2 ++
+ pycubrid/_cursor_common.py | 18 ++++++++++++++++++
+ pycubrid/aio/cursor.py     |  3 ++-
+ pycubrid/cursor.py         |  3 ++-
+ tests/test_async.py        | 20 +++++++++++++++++++-
+ tests/test_cursor.py       | 24 ++++++++++++++++++++++++
+ 8 files changed, 70 insertions(+), 3 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 9454d2b..92fdfda 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
+ ### Fixed
+ - **Batch execution closes an existing query handle (#374)** — `executemany_batch()` now releases an active server-side query handle before sending a batch request, matching `execute()` and preventing the prior result-set handle from leaking. Sync and async cursors keep the same behavior.
+ - Format very large integer parameters as decimal strings without converting them to floats, avoiding `OverflowError`. Float NaN/infinity rejection and boolean formatting are unchanged. (#368)
++- **`fetchmany(size)` validates `size` (#371)** — `size` is now validated like `arraysize` (an `int` >= 1): a non-`int` (e.g. `2.5`, `2.0`, `"2"`, `True`), zero, or negative `size` raises `ProgrammingError` before any rows are consumed, instead of a bare `TypeError` from list slicing (floats) or a silent empty list (zero/negative). `fetchmany()` without arguments still uses `arraysize`. Sync and async cursors behave the same.
+ 
+ ## [1.7.1] - 2026-09-18
+ 
+diff --git a/docs/API_REFERENCE.md b/docs/API_REFERENCE.md
+index 6de8176..4d2eb03 100644
+--- a/docs/API_REFERENCE.md
++++ b/docs/API_REFERENCE.md
+@@ -675,6 +675,8 @@ def fetchmany(self, size: int | None = None) -> list[tuple[Any, ...]]
+ 
+ Fetch the next `size` rows. Defaults to `cursor.arraysize` if `size` is not specified.
+ 
++Like `arraysize`, `size` must be an `int` greater than zero; a float (even `2.0`), a string, a `bool`, zero, or a negative value raises `ProgrammingError`.
++
+ ```python
+ cur.execute("SELECT * FROM users")
+ batch = cur.fetchmany(10)  # Up to 10 rows
+diff --git a/docs/ko/API_REFERENCE.md b/docs/ko/API_REFERENCE.md
+index 9f7d8e1..06baf0b 100644
+--- a/docs/ko/API_REFERENCE.md
++++ b/docs/ko/API_REFERENCE.md
+@@ -660,6 +660,8 @@ def fetchmany(self, size: int | None = None) -> list[tuple[Any, ...]]
+ 
+ 다음 `size`행을 가져옵니다. `size`가 지정되지 않으면 `cursor.arraysize`가 기본값입니다.
+ 
++`arraysize`와 마찬가지로 `size`는 0보다 큰 `int`여야 합니다. float(`2.0` 포함), 문자열, `bool`, 0 또는 음수를 전달하면 `ProgrammingError`가 발생합니다.
++
+ ```python
+ cur.execute("SELECT * FROM users")
+ batch = cur.fetchmany(10)  # 최대 10행
+diff --git a/pycubrid/_cursor_common.py b/pycubrid/_cursor_common.py
+index 5caf51b..217c9af 100644
+--- a/pycubrid/_cursor_common.py
++++ b/pycubrid/_cursor_common.py
+@@ -35,6 +35,24 @@ DML_BATCH_VERBS = frozenset({"INSERT", "UPDATE", "DELETE", "MERGE"})
+ _RE_LEADING_COMMENTS = re.compile(r"^(\s*(/\*.*?\*/|--[^\n]*(\n|$)|//[^\n]*(\n|$)))*\s*", re.DOTALL)
+ 
+ 
++# ---- fetch helpers ---------------------------------------------------------
++
++
++def validate_fetch_size(size: object) -> int:
++    """Validate the ``size`` argument of ``fetchmany()`` and return it.
++
++    Mirrors the ``arraysize`` setter: ``size`` must be an ``int`` >= 1.
++    Floats (even integral ones such as ``2.0``), strings, and ``bool`` are
++    rejected rather than coerced, and a zero or negative value is rejected
++    instead of silently returning no rows.
++    """
++    if isinstance(size, bool) or not isinstance(size, int):
++        raise ProgrammingError(f"fetchmany size must be an int, got {type(size).__name__}")
++    if size < 1:
++        raise ProgrammingError(f"fetchmany size must be greater than zero, got {size}")
++    return size
++
++
+ # ---- SQL parsing -----------------------------------------------------------
+ 
+ 
+diff --git a/pycubrid/aio/cursor.py b/pycubrid/aio/cursor.py
+index c6aa5de..28d133a 100644
+--- a/pycubrid/aio/cursor.py
++++ b/pycubrid/aio/cursor.py
+@@ -13,6 +13,7 @@ from pycubrid._cursor_common import (
+     DML_BATCH_VERBS,
+     extract_first_keyword,
+     _raise_batch_error,
++    validate_fetch_size,
+ )
+ from pycubrid.constants import CUBRIDStatementType
+ from pycubrid.exceptions import InterfaceError, OperationalError, ProgrammingError
+@@ -268,7 +269,7 @@ class AsyncCursor(_AsyncCursorBase):
+     async def fetchmany(self, size: int | None = None) -> list[tuple[Any, ...]]:
+         self._check_closed()
+         self._check_result_set()
+-        fetch_size = self.arraysize if size is None else size
++        fetch_size = self.arraysize if size is None else validate_fetch_size(size)
+ 
+         rows: list[tuple[Any, ...]] = []
+         remaining = fetch_size
+diff --git a/pycubrid/cursor.py b/pycubrid/cursor.py
+index a68fd43..c3540da 100644
+--- a/pycubrid/cursor.py
++++ b/pycubrid/cursor.py
+@@ -15,6 +15,7 @@ from ._cursor_common import (
+     extract_first_keyword,
+     _raise_batch_error,
+     split_on_placeholders,
++    validate_fetch_size,
+ )
+ from .exceptions import InterfaceError, OperationalError, ProgrammingError
+ 
+@@ -314,7 +315,7 @@ class Cursor(_CursorBase):
+         """Fetch the next set of rows of a query result."""
+         self._check_closed()
+         self._check_result_set()
+-        fetch_size = self.arraysize if size is None else size
++        fetch_size = self.arraysize if size is None else validate_fetch_size(size)
+ 
+         rows: list[tuple[Any, ...]] = []
+         remaining = fetch_size
+diff --git a/tests/test_async.py b/tests/test_async.py
+index 1c5ea24..f215a65 100644
+--- a/tests/test_async.py
++++ b/tests/test_async.py
+@@ -11,7 +11,7 @@ import pytest
+ 
+ from pycubrid.aio.connection import AsyncConnection
+ from pycubrid.aio.cursor import AsyncCursor
+-from pycubrid.exceptions import InterfaceError, OperationalError
++from pycubrid.exceptions import InterfaceError, OperationalError, ProgrammingError
+ from pycubrid.protocol import BatchExecutePacket, CloseQueryPacket
+ 
+ 
+@@ -362,6 +362,24 @@ class TestAsyncCursorFetch:
+         rows = await cur.fetchmany(2)
+         assert rows == [(3,), (4,)]
+ 
++    @pytest.mark.asyncio
++    @pytest.mark.parametrize("size", [2.5, 2.0, "2", True, 0, -1])
++    async def test_fetchmany_rejects_invalid_size(self, size: object) -> None:
++        """Regression for #371: async cursor rejects a bad ``size`` like the sync one."""
++        conn = MagicMock()
++        conn._timing = None
++        conn._cursors = set()
++        cur = AsyncCursor(conn)
++        cur._description = (("id", 1, None, None, 0, 0, False),)
++        cur._rows = [(1,), (2,), (3,)]
++        cur._row_index = 0
++        cur._query_handle = None
++        cur._total_tuple_count = 3
++
++        with pytest.raises(ProgrammingError, match="fetchmany size"):
++            await cur.fetchmany(size)  # type: ignore[arg-type]
++        assert await cur.fetchall() == [(1,), (2,), (3,)]
++
+     @pytest.mark.asyncio
+     async def test_fetchone_on_closed_raises(self) -> None:
+         conn = MagicMock()
+diff --git a/tests/test_cursor.py b/tests/test_cursor.py
+index 4fe48d5..d948938 100644
+--- a/tests/test_cursor.py
++++ b/tests/test_cursor.py
+@@ -343,6 +343,30 @@ def test_fetchmany_with_size_and_default_arraysize(
+     assert cursor.fetchmany() == [(3,)]
+ 
+ 
++@pytest.mark.parametrize("size", [2.5, 2.0, "2", True, 0, -1])
++def test_fetchmany_rejects_invalid_size(
++    cursor: Cursor, mock_connection: MagicMock, size: object
++) -> None:
++    """Regression for #371: a bad ``size`` raises ProgrammingError and consumes no rows."""
++
++    def send(packet: object) -> object:
++        if isinstance(packet, PrepareAndExecutePacket):
++            _set_prepare_packet(
++                packet,
++                stmt_type=CUBRIDStatementType.SELECT,
++                rows=[(1,), (2,), (3,)],
++                total_count=3,
++                result_count=3,
++            )
++        return packet
++
++    mock_connection._send_and_receive.side_effect = send
++    cursor.execute("SELECT id FROM t")
++    with pytest.raises(ProgrammingError, match="fetchmany size"):
++        cursor.fetchmany(size)  # type: ignore[arg-type]
++    assert cursor.fetchall() == [(1,), (2,), (3,)]
++
++
+ def test_fetchall_returns_remaining_rows(cursor: Cursor, mock_connection: MagicMock) -> None:
+     def send(packet: object) -> object:
+         if isinstance(packet, PrepareAndExecutePacket):
+-- 
+2.43.0
+

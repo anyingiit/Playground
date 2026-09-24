@@ -5,7 +5,7 @@
 | Issue | https://github.com/getsotto/sotto/issues/393 |
 | Tier | 新锐 |
 | Labels | bug, good first issue, help wanted |
-| Status | 🚧 in progress — audit done (AUDIT.md), tests written, running red |
+| Status | 🚧 in progress — implemented, red→green done, patch exported; running full checks |
 | Duplicate-PR check | 2026-09-24: `is:pr 393` → 0 results; `is:pr expires` → only #383 (merged, introduced the feature), no open PR for this issue; no assignees/comments |
 
 ## 为什么符合“新锐”

@@ -5,7 +5,7 @@
 | Issue | https://github.com/smol-machines/smolvm/issues/1385 |
 | Tier | 自由 |
 | Labels | enhancement, good first issue, help wanted |
-| Status | 🚧 in progress — audit done (AUDIT.md), implementing |
+| Status | 🚧 in progress — implemented, red→green done, running full checks |
 | Duplicate-PR check | pending |
 
 ## Notes
