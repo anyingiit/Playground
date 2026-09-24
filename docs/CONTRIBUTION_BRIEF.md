@@ -88,6 +88,13 @@ If the target repo's own template demands extra items (e.g. a changeset checkbox
 
 ## Environment notes
 
+- **Disk is critical** (~10 GB free, shared by 7 agents). Budget ≤3 GB per task. Never install
+  heavy optional extras (torch, CUDA, browsers) unless the test truly needs them. Delete your
+  venv/node_modules/target/GOCACHE dirs as soon as verification is done. Set `GOCACHE` /
+  `CARGO_TARGET_DIR` inside your own work dir so cleanup is easy.
+- If a repo's own test rejects a placeholder file name (e.g. Soup's changelog-fragment test needs a
+  numeric PR number), say so explicitly in the README and the PR checklist.
+
 - Work in `/home/user/work/<repo>`; shallow clones (`git clone --depth 1`), sparse checkout for huge repos.
 - Disk is limited (~15 GB free shared by everyone). Check `df -h /home/user` before big
   installs/builds; delete `node_modules`, `target/`, venvs, caches (`~/.cache/pip`) when done.
