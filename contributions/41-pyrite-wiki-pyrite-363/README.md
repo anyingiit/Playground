@@ -5,7 +5,7 @@
 | Issue | https://github.com/pyrite-wiki/pyrite/issues/363 |
 | Tier | 自由 |
 | Labels | bug, cli, good first issue |
-| Status | 🚧 in progress — patch exported, full suite running |
+| Status | ✅ ready — patch + PR text done (full suite not completed, 60-file related subset green) |
 | 重复 PR 检查 | 2026-09-24: issue 无评论、无 assignee、无 linked PR；open PRs 只有 #371/#367/#362（均无关） |
 | Base branch | `dev` @ 547a8eb |
 
@@ -39,7 +39,8 @@
 - **按 issue 步骤用真实 CLI 复现**：修复后 `search hello -k notes`、`kb validate notes`、`kb schema show notes`、`schema validate -k notes` 都返回 exit 0；`search hello -k nope` 仍然报 KB_NOT_FOUND（exit 1），而且提示里现在会列出 `notes`。
 - `ruff check pyrite/ tests/ extensions/` → All checks passed。`ruff format --check` → 557 files already formatted。
 - `scripts/check_import_cycles.py` → No import cycles。`scripts/check_fix_commit_has_tests.py --range origin/dev HEAD` → OK。
-- 全量：`pytest tests/ extensions/ -n 4` → （结果见下方，待补）
+- 全量 `pytest tests/ extensions/ -n 4` 在这台共享机器上太慢（约 10 分钟才跑到 3%），我中途停掉了。改跑最大的相关子集：所有 `test_cli*`、`test_search*`、`test_kb*`、`test_schema*`，加上所有引用 `merge_registered_kbs` / `all_kbs` / `with_registered_kbs` / 被 patch 的 `load_config` 名字的测试文件，共 60 个文件 → **1264 passed, 72 skipped, 0 failed**（4 分 25 秒）。skipped 主要是缺 postgres、semantic、ai 这些可选依赖。其余测试文件没有跑。
+- 项目自带的 `scripts/verify_red_ci.py --base origin/dev`：9 个 "red without the fix"。2 个 "passes without the fix"，就是上面说的两个守护测试，PR 里已经说明。
 
 ## 如何提交
 ```bash
@@ -54,4 +55,38 @@ git push -u origin fix/kb-add-config-only-commands
 fix: config-only CLI commands see KBs added with `pyrite kb add` (#363)
 
 ## PR body
-PR_BODY_PLACEHOLDER
+```markdown
+## Summary
+`search -k`, `kb validate`, `kb schema show|add-type|remove-type|set` and `schema validate -k` built their config with a bare `load_config()`, which only knows the KBs in `config.yaml`. That made a KB added with `pyrite kb add` come back as `KB_NOT_FOUND`, even though `get`, `index sync` and `link` accept it, because those merge the DB registry through `pyrite/cli/context.py`.
+
+This PR adds one shared helper, `with_registered_kbs(config)`, to `pyrite/cli/context.py`. It opens the index, runs `db.merge_registered_kbs(config)`, closes the index again, and returns the config. The affected commands now use `config = with_registered_kbs(load_config())`. `config.yaml` KBs still win on a name clash, since `register_db_kbs` already skips names that are in `config.yaml`. The helper takes an already-loaded config instead of loading one itself, so the existing tests that patch each module's `load_config` keep working unchanged.
+
+Two related spots in the same commands now enumerate `config.all_kbs()` instead of `config.knowledge_bases`:
+- `kb validate` without a KB name
+- `search --files` without `-k`
+
+Otherwise those two would still silently skip `kb add` KBs, which is the case the `all_kbs()` docstring warns about.
+
+Fixes #363
+
+**Motivation / disclosure:** I had some spare AI-assistant quota (Claude Code) and am using it to try to help projects with open good-first-issues. The change was prepared with Claude Code and verified as listed below; as CONTRIBUTING asks, the commit carries a `Co-authored-by: Claude` trailer. If it doesn't fit, isn't up to your bar, or you'd simply rather not take it — please feel free to close it, no hard feelings at all 🙂
+
+## Plan / claim
+This PR is the claim. The plan is one shared helper in `cli/context.py`, used by the seven `load_config()` call sites the issue lists, plus one CLI test per affected command.
+
+## Testing
+- [x] New `tests/test_config_only_commands_see_registered_kbs.py` (11 tests). Each test registers a KB only in the database, which is the state `kb add` leaves behind, and runs the real Typer command. Without the fix: 9 failed, 2 passed. With the fix: 11 passed. `python scripts/verify_red_ci.py --base origin/dev` reports the same 9 as "red without the fix".
+  - The 2 tests that pass without the fix are deliberate guards: a `config.yaml` KB beats a DB-registered KB of the same name, and an unknown KB still reports `KB_NOT_FOUND`.
+- [x] I reproduced the issue's steps with the real CLI (`kb add` + `index sync`). All four commands now return exit 0. `search -k nope` still returns `KB_NOT_FOUND`, and its hint now lists the registered KB.
+- [x] `ruff check pyrite/ tests/ extensions/ && ruff format --check pyrite/ tests/ extensions/`: clean.
+- [x] `scripts/check_import_cycles.py` and `scripts/check_fix_commit_has_tests.py --range origin/dev HEAD`: OK.
+- [ ] `pytest tests/ extensions/ -n auto` (full suite): **not run to completion**. It was too slow on my shared machine. I ran the 60 test files that touch the changed modules or patch these `load_config` names (all `test_cli*`, `test_search*`, `test_kb*`, `test_schema*`, plus every file that references `merge_registered_kbs` / `all_kbs` / the patched names): **1264 passed, 72 skipped, 0 failed**. The run was on Python 3.12 with `.[server,cli,dev]` and all `extensions/*`, without the `ai`/`semantic` extras.
+- [x] A `fix:` change includes a test that fails without the fix.
+- [ ] Frontend change: n/a
+
+Changelog: `changelog.d/kb-add-config-only-commands.fixed.md`
+
+## Notes for the reviewer
+- `kb schema add-type`/`remove-type`/`set` were not in the issue's command list, but they were among the listed line numbers and had the same bug, so this PR fixes them too.
+- `kb discover` still uses a bare `load_config()`. It reports `kb.yaml` files found on disk rather than resolving a KB by name, so I left it alone.
+```

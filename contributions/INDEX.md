@@ -1,7 +1,7 @@
 # Contributions index
 
 Target: **60 = 12 高活跃高Star + 12 新锐 + 36 自由**.
-Ready: **38** (高星 12 · 新锐 12 · 自由 14).
+Ready: **39** (高星 12 · 新锐 12 · 自由 15).
 Each folder: `README.md` (analysis, verification, submit steps, PR text, **需要提交者注意**), `0001-*.patch`, `AUDIT.md`.
 Rules: [`docs/CONTRIBUTION_BRIEF.md`](../docs/CONTRIBUTION_BRIEF.md). Tools: [`tools/`](../tools/).
 
@@ -46,7 +46,7 @@ Rules: [`docs/CONTRIBUTION_BRIEF.md`](../docs/CONTRIBUTION_BRIEF.md). Tools: [`t
 | 38 | 自由 | [rnag/dataclass-wizard#219](https://github.com/rnag/dataclass-wizard/issues/219) | ✅ |
 | 39 | 自由 | [vimeo/psalm#6866](https://github.com/vimeo/psalm/issues/6866) | 🚧 |
 | 40 | 自由 | [ulyssa/iamb#617](https://github.com/ulyssa/iamb/issues/617) | 🚧 |
-| 41 | 自由 | [pyrite-wiki/pyrite#363](https://github.com/pyrite-wiki/pyrite/issues/363) | 🚧 |
+| 41 | 自由 | [pyrite-wiki/pyrite#363](https://github.com/pyrite-wiki/pyrite/issues/363) | ✅ |
 | 42 | 自由 | [ProjectMirador/mirador#4071](https://github.com/ProjectMirador/mirador/issues/4071) | 🚧 |
 | 43 | 自由 | [bolshakov/stoplight#853](https://github.com/bolshakov/stoplight/issues/853) | 🚧 |
 | 44 | 新锐 | [pasteurlabs/tesseract-core#768](https://github.com/pasteurlabs/tesseract-core/issues/768) | ✅ |
