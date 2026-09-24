@@ -1,0 +1,94 @@
+From 61a6a9cd244c7052677cb581a8e21c84291b3ca9 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:32:15 +0000
+Subject: [PATCH] fix(cli): offer --json when completing ls, agent ls and
+ secret ls
+
+All three listings accept --json, and their own refusals say so, but
+completion offered it on none of them: `brig ls -` knew only -q and
+--quiet, and the agent and secret ls rows in the groups table declared no
+flags. A user tabbing for the flag was told it did not exist.
+
+TestGroupsTableCoversEveryGroupFlag could not catch this: all three
+listings read their arguments by hand rather than through a FlagSet, and
+the test only checks that a registered flag appears somewhere in the
+table, not on which subcommand. The new cases pin the three listings
+directly.
+
+Fixes: #176
+---
+ cmd/brig/completion.go      | 10 ++++++----
+ cmd/brig/completion_test.go | 19 ++++++++++++++++++-
+ 2 files changed, 24 insertions(+), 5 deletions(-)
+
+diff --git a/cmd/brig/completion.go b/cmd/brig/completion.go
+index 9b6dd1b..98a48f3 100644
+--- a/cmd/brig/completion.go
++++ b/cmd/brig/completion.go
+@@ -204,9 +204,11 @@ func complete(words []string) (string, []string) {
+ 		}
+ 		return names(cur, []string{"bash", "fish", "zsh"})
+ 	case verb == "ls":
+-		// One flag, no operand.
++		// Two flags, no operand. ls reads them by hand rather than through a
++		// FlagSet, so TestGroupsTableCoversEveryGroupFlag cannot see them: keep
++		// this list in step with listSandboxes.
+ 		if strings.HasPrefix(cur, "-") {
+-			return names(cur, []string{"--quiet", "-q"})
++			return names(cur, []string{"--quiet", "-q", "--json"})
+ 		}
+ 		return dirNone, nil
+ 	case verb == "version":
+@@ -475,7 +477,7 @@ type sub struct {
+ // do not.
+ var groups = map[string][]sub{
+ 	"agent": {
+-		{name: "ls"},
++		{name: "ls", flags: []string{"--json"}},
+ 		{name: "show", flags: []string{"--json"}, operands: []operand{opAgent}},
+ 		{
+ 			name:     "new",
+@@ -529,7 +531,7 @@ var groups = map[string][]sub{
+ 			operands: []operand{opNothing},
+ 		},
+ 		{name: "delete", flags: []string{"--yes", "-y"}, operands: []operand{opNothing}},
+-		{name: "ls"},
++		{name: "ls", flags: []string{"--json"}},
+ 		{
+ 			name:     "import",
+ 			flags:    []string{"--dry-run", "--yes", "-y"},
+diff --git a/cmd/brig/completion_test.go b/cmd/brig/completion_test.go
+index a75cdaa..9cfd87a 100644
+--- a/cmd/brig/completion_test.go
++++ b/cmd/brig/completion_test.go
+@@ -186,9 +186,26 @@ func TestCompletePositions(t *testing.T) {
+ 		directive: dirNames,
+ 		exactly:   []string{"mine"},
+ 	}, {
+-		name:      "ls takes one flag and no operand",
++		name:      "ls takes no operand",
+ 		words:     []string{"ls", ""},
+ 		directive: dirNone,
++	}, {
++		// ls reads -q/--quiet and --json itself, with no FlagSet, so
++		// TestGroupsTableCoversEveryGroupFlag cannot see either of them.
++		name:      "ls offers --json beside --quiet",
++		words:     []string{"ls", "-"},
++		directive: dirNames,
++		exactly:   []string{"--quiet", "-q", "--json"},
++	}, {
++		name:      "agent ls offers --json",
++		words:     []string{"agent", "ls", "-"},
++		directive: dirNames,
++		exactly:   []string{"--json"},
++	}, {
++		name:      "secret ls offers --json",
++		words:     []string{"secret", "ls", "-"},
++		directive: dirNames,
++		exactly:   []string{"--json"},
+ 	}, {
+ 		name:      "a noun command offers its subcommands",
+ 		words:     []string{"agent", ""},
+-- 
+2.43.0
+

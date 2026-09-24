@@ -1,0 +1,106 @@
+From f9215fe73d8ca49fc9cbd0ad23ecc9b67fd66aee Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:29:49 +0000
+Subject: [PATCH] MudDatePicker: Reject typed dates outside MinDate/MaxDate
+ (#3461)
+
+With Editable=true, a date typed into the input was accepted even when it was before MinDate or after MaxDate, although the calendar never lets the user pick such a day.
+
+User input is now checked with IsDayDisabled (MinDate, MaxDate and IsDateDisabledFunc) and rejected the same way a typed disabled day already is.
+A date bound from code is still only checked against IsDateDisabledFunc, so existing out-of-range data is not discarded.
+---
+ .../Components/DatePickerTests.cs             | 62 +++++++++++++++++++
+ .../Components/DatePicker/MudDatePicker.cs    |  4 +-
+ 2 files changed, 65 insertions(+), 1 deletion(-)
+
+diff --git a/src/MudBlazor.UnitTests/Components/DatePickerTests.cs b/src/MudBlazor.UnitTests/Components/DatePickerTests.cs
+index 145f84f..e68ebb3 100644
+--- a/src/MudBlazor.UnitTests/Components/DatePickerTests.cs
++++ b/src/MudBlazor.UnitTests/Components/DatePickerTests.cs
+@@ -1023,6 +1023,68 @@ namespace MudBlazor.UnitTests.Components
+             wasEventCallbackCalled.Should().BeTrue();
+         }
+ 
++        /// <summary>
++        /// Typing a date before <see cref="MudBaseDatePicker.MinDate"/> or after <see cref="MudBaseDatePicker.MaxDate"/> into an editable picker does not select it: https://github.com/MudBlazor/MudBlazor/issues/3461.
++        /// </summary>
++        [Test]
++        [TestCase("09/01/2024")]
++        [TestCase("21/01/2024")]
++        public async Task Editable_TypingDateOutsideMinMax_IsRejected(string typedText)
++        {
++            var wasEventCallbackCalled = false;
++            var comp = Context.Render<MudDatePicker>(parameters => parameters
++                .Add(p => p.Editable, true)
++                .Add(p => p.DateFormat, "dd/MM/yyyy")
++                .Add(p => p.Culture, CultureInfo.InvariantCulture)
++                .Add(p => p.MinDate, new DateTime(2024, 1, 10))
++                .Add(p => p.MaxDate, new DateTime(2024, 1, 20))
++                .Add(p => p.DateChanged, (DateTime? _) => wasEventCallbackCalled = true));
++
++            await comp.Find("input").ChangeAsync(typedText);
++
++            comp.Instance.Date.Should().BeNull();
++            comp.Instance.Text.Should().BeNullOrEmpty();
++            wasEventCallbackCalled.Should().BeFalse();
++        }
++
++        /// <summary>
++        /// Typing a date inside the <see cref="MudBaseDatePicker.MinDate"/> and <see cref="MudBaseDatePicker.MaxDate"/> range, including both bounds, selects it.
++        /// </summary>
++        [Test]
++        [TestCase("10/01/2024", 10)]
++        [TestCase("15/01/2024", 15)]
++        [TestCase("20/01/2024", 20)]
++        public async Task Editable_TypingDateInsideMinMax_IsAccepted(string typedText, int expectedDay)
++        {
++            var comp = Context.Render<MudDatePicker>(parameters => parameters
++                .Add(p => p.Editable, true)
++                .Add(p => p.DateFormat, "dd/MM/yyyy")
++                .Add(p => p.Culture, CultureInfo.InvariantCulture)
++                .Add(p => p.MinDate, new DateTime(2024, 1, 10))
++                .Add(p => p.MaxDate, new DateTime(2024, 1, 20)));
++
++            await comp.Find("input").ChangeAsync(typedText);
++
++            comp.Instance.Date.Should().Be(new DateTime(2024, 1, expectedDay));
++            comp.Instance.Text.Should().Be(typedText);
++        }
++
++        /// <summary>
++        /// A date outside <see cref="MudBaseDatePicker.MinDate"/> and <see cref="MudBaseDatePicker.MaxDate"/> that is bound from code is kept, so existing data is not discarded.
++        /// </summary>
++        [Test]
++        public async Task SettingDateOutsideMinMaxFromCode_KeepsTheDate()
++        {
++            var outOfRange = new DateTime(2024, 1, 5);
++            var comp = Context.Render<MudDatePicker>(parameters => parameters
++                .Add(p => p.MinDate, new DateTime(2024, 1, 10))
++                .Add(p => p.MaxDate, new DateTime(2024, 1, 20)));
++
++            await comp.SetParametersAndRenderAsync(parameters => parameters.Add(p => p.Date, outOfRange));
++
++            comp.Instance.Date.Should().Be(outOfRange);
++        }
++
+         [Test]
+         public async Task IsDateDisabledFunc_NoDisabledDatesByDefault()
+         {
+diff --git a/src/MudBlazor/Components/DatePicker/MudDatePicker.cs b/src/MudBlazor/Components/DatePicker/MudDatePicker.cs
+index bc65044..877eaf5 100644
+--- a/src/MudBlazor/Components/DatePicker/MudDatePicker.cs
++++ b/src/MudBlazor/Components/DatePicker/MudDatePicker.cs
+@@ -79,7 +79,9 @@ namespace MudBlazor
+ 
+                 HighlightedDate = date;
+ 
+-                if (date is not null && IsDateDisabledFunc(date.Value.Date))
++                // User input outside MinDate/MaxDate is rejected like a disabled day (#3461).
++                // A date bound from code is only checked against IsDateDisabledFunc, so existing out-of-range data is not discarded.
++                if (date is not null && (suppressInteraction ? IsDateDisabledFunc(date.Value.Date) : IsDayDisabled(date.Value.Date)))
+                 {
+                     await SetTextAsync(null, false);
+                     return;
+-- 
+2.43.0
+

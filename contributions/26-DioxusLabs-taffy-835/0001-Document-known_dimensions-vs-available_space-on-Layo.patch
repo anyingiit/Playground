@@ -1,0 +1,107 @@
+From e57c511fa9d817a7b4d269200b2a4cbd3a166bda Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:31:03 +0000
+Subject: [PATCH] Document known_dimensions vs available_space on LayoutInput
+
+Explain the difference between the two fields (soft constraint from the
+containing block vs hard constraint on the node's own size), that
+known_dimensions takes precedence, and add a runnable measure-function
+example. Based on the explanation in #716.
+
+Fixes #835
+---
+ src/tree/layout.rs | 64 ++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 64 insertions(+)
+
+diff --git a/src/tree/layout.rs b/src/tree/layout.rs
+index 7e3730bc..31b40847 100644
+--- a/src/tree/layout.rs
++++ b/src/tree/layout.rs
+@@ -108,6 +108,64 @@ impl TryFrom<RequestedAxis> for AbsoluteAxis {
+ }
+ 
+ /// A struct containing the inputs constraints/hints for laying out a node, which are passed in by the parent
++///
++/// # `known_dimensions` vs `available_space`
++///
++/// Both [`known_dimensions`](Self::known_dimensions) and [`available_space`](Self::available_space) constrain
++/// the size of the node, but they mean different things:
++///
++/// - `available_space` is the size of the *containing block* (roughly, the parent node). It is a *soft*
++///   constraint that asks the node: "If you had this much space, then what size would you be?". A node may
++///   end up smaller or larger than the available space (for example, if its content overflows), and it is
++///   mostly used to decide things like where text should wrap. See [`AvailableSpace`] for the possible values.
++/// - `known_dimensions` is the size of *the node itself*. It is a *hard* constraint that asks the node: "If
++///   your size in this dimension is exactly X, then what would your size in the other dimension be?". When
++///   both dimensions are known, the size of the node is fully determined and it only needs to lay out its
++///   children.
++///
++/// `known_dimensions` takes precedence over `available_space`: if a dimension is known in a particular axis,
++/// then the `available_space` in that axis can be ignored, and the output size in that axis will be ignored in
++/// favour of the known dimension. For example, a measure function for a leaf node might look like this:
++///
++/// ```
++/// use taffy::{AvailableSpace, Size};
++///
++/// /// Measures a run of text that is `text_width` wide when laid out on a single line
++/// /// and `line_height` tall per line.
++/// fn measure_text(
++///     known_dimensions: Size<Option<f32>>,
++///     available_space: Size<AvailableSpace>,
++///     text_width: f32,
++///     line_height: f32,
++/// ) -> Size<f32> {
++///     // Both dimensions are known: there is nothing left to measure.
++///     if let Size { width: Some(width), height: Some(height) } = known_dimensions {
++///         return Size { width, height };
++///     }
++///
++///     // A known width takes precedence over the available width.
++///     let width = known_dimensions.width.unwrap_or(match available_space.width {
++///         AvailableSpace::MinContent => 0.0,
++///         AvailableSpace::MaxContent => text_width,
++///         AvailableSpace::Definite(space) => space.min(text_width),
++///     });
++///     let line_count = if width > 0.0 { (text_width / width).ceil() } else { 1.0 };
++///     let height = known_dimensions.height.unwrap_or(line_count * line_height);
++///     Size { width, height }
++/// }
++///
++/// let available_space = Size { width: AvailableSpace::Definite(100.0), height: AvailableSpace::MaxContent };
++///
++/// // "If you had 100px of space, then what size would you be?"
++/// // The text wraps onto two lines to fit into the available space.
++/// let size = measure_text(Size::NONE, available_space, 150.0, 20.0);
++/// assert_eq!(size, Size { width: 100.0, height: 40.0 });
++///
++/// // "If your width is exactly 50px, then what would your height be?"
++/// // The known width wins over the available space.
++/// let size = measure_text(Size { width: Some(50.0), height: None }, available_space, 150.0, 20.0);
++/// assert_eq!(size, Size { width: 50.0, height: 60.0 });
++/// ```
+ #[derive(Debug, Copy, Clone, PartialEq)]
+ #[cfg_attr(feature = "serde", derive(Serialize))]
+ pub struct LayoutInput {
+@@ -127,6 +185,8 @@ pub struct LayoutInput {
+     ///
+     ///   "The exact size of this node is WIDTHxHEIGHT. Please lay out your children"
+     ///
++    /// Known dimensions are a hard constraint on the size of the node itself and take precedence over
++    /// [`available_space`](Self::available_space). See the [`LayoutInput`] docs for more details.
+     pub known_dimensions: Size<Option<f32>>,
+     /// Whether each known dimension should be treated as a *definite* size when laying out the node's
+     /// own content (resolving percentage sizes of children, and collecting flex items into flex lines).
+@@ -143,6 +203,10 @@ pub struct LayoutInput {
+     pub parent_size: Size<Option<f32>>,
+     /// Available space represents an amount of space to layout into, and is used as a soft constraint
+     /// for the purpose of wrapping.
++    ///
++    /// This is roughly the size of the containing block (parent node), not the size of the node itself.
++    /// Where a [`known_dimensions`](Self::known_dimensions) value is set for an axis, it takes precedence over
++    /// the available space in that axis. See the [`LayoutInput`] docs for more details.
+     pub available_space: Size<AvailableSpace>,
+     /// Specific to CSS Block layout. Used for correctly computing margin collapsing. You probably want to set this to `Line::FALSE`.
+     pub vertical_margins_are_collapsible: Line<bool>,
+-- 
+2.43.0
+
