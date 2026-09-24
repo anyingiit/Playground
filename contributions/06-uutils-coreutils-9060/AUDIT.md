@@ -15,6 +15,6 @@ Command: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/core
 | `tests/fixtures/join/non-unicode_{1,2}.bin` (7/9 bytes) | Tiny invalid-UTF-8 fixtures for `join` tests | benign |
 | npm lifecycle hooks | none | n/a |
 
-Also checked by hand: `tests/uutests` (test harness crate) spawns only the built `coreutils` binary and, for GNU-comparison tests, the system `who`. Nothing fetched from the network during `cargo test`.
+Also checked by hand: `tests/uutests` (test harness crate) spawns the built `coreutils` binary, the system utility for GNU-comparison tests (here `/usr/bin/who`), `locale charmap`, and for a few root-only tests `sudo -E --non-interactive whoami` (skipped in CI, and fails harmlessly without passwordless sudo). Nothing is fetched from the network during `cargo test`.
 
 **Verdict: no malicious code found; safe to build and test.**
