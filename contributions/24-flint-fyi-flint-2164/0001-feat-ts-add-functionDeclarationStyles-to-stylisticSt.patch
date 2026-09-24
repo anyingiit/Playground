@@ -1,0 +1,893 @@
+From c4d0dc86aed5f36ef8fb792e4f724032736f6a41 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:02:46 +0000
+Subject: [PATCH] feat(ts): add functionDeclarationStyles to stylisticStrict
+
+---
+ .changeset/function-declarations-strict.md    |  6 ++
+ packages/core/src/cache/getCacheFilePath.ts   |  6 +-
+ packages/core/src/changing/ordering.ts        |  6 +-
+ .../src/configs/validateConfigDefinition.ts   |  6 +-
+ packages/core/src/globs/all.ts                |  7 +-
+ .../src/host/createDiskBackedLinterHost.ts    | 12 +--
+ packages/core/src/utils/codecs.ts             |  7 +-
+ packages/markdown-language/src/language.ts    |  4 +-
+ .../src/getPackagePropertiesOfNames.ts        |  4 +-
+ packages/package-json/src/isBooleanNode.ts    |  5 +-
+ .../package-json/src/rules/propertyOrder.ts   |  4 +-
+ .../src/rules/repositoryShorthand.ts          |  5 +-
+ .../src/utils/ruleCreatorHelpers.ts           | 12 ++-
+ packages/rule-data/src/data.json              |  4 +-
+ packages/rule-tester/src/RuleTester.test.ts   |  9 +-
+ .../rules/ts/functionDeclarationStyles.mdx    | 47 +++++-----
+ .../rules/functionDeclarationStyles.test.ts   | 86 +++++++++++++------
+ .../ts/src/rules/functionDeclarationStyles.ts |  3 +-
+ .../src/rules/nullishCoalescingOperators.ts   | 16 +++-
+ .../src/rules/utils/getFunctionName.test.ts   |  4 +-
+ .../src/createNodeVisitorsForFile.ts          |  1 +
+ .../src/createTypeScriptServerHost.ts         |  1 +
+ .../src/scope/scopeManager.test.ts            |  5 +-
+ .../vitest/src/rules/conditionalExpects.ts    | 13 ++-
+ .../vitest/src/utils/testCaseFunctions.ts     | 10 +--
+ packages/vue/src/rules/vForKeys.ts            | 22 ++---
+ packages/yaml-language/src/language.ts        |  4 +-
+ 27 files changed, 189 insertions(+), 120 deletions(-)
+ create mode 100644 .changeset/function-declarations-strict.md
+
+diff --git a/.changeset/function-declarations-strict.md b/.changeset/function-declarations-strict.md
+new file mode 100644
+index 0000000..962f9aa
+--- /dev/null
++++ b/.changeset/function-declarations-strict.md
+@@ -0,0 +1,6 @@
++---
++"@flint.fyi/rule-data": patch
++"@flint.fyi/ts": minor
++---
++
++Add `functionDeclarationStyles` to the `stylisticStrict` preset and change its default `style` to `"declaration"`.
+diff --git a/packages/core/src/cache/getCacheFilePath.ts b/packages/core/src/cache/getCacheFilePath.ts
+index da64083..f3226d3 100644
+--- a/packages/core/src/cache/getCacheFilePath.ts
++++ b/packages/core/src/cache/getCacheFilePath.ts
+@@ -7,9 +7,7 @@ const defaultCacheFilePath = join(
+ 	defaultCacheFileName,
+ );
+ 
+-export const getCacheFilePath = (
+-	userProvidedCacheLocation?: string,
+-): string => {
++export function getCacheFilePath(userProvidedCacheLocation?: string): string {
+ 	if (userProvidedCacheLocation) {
+ 		if (userProvidedCacheLocation.toLocaleLowerCase().endsWith(".json")) {
+ 			return userProvidedCacheLocation;
+@@ -19,4 +17,4 @@ export const getCacheFilePath = (
+ 	}
+ 
+ 	return defaultCacheFilePath;
+-};
++}
+diff --git a/packages/core/src/changing/ordering.ts b/packages/core/src/changing/ordering.ts
+index 632d0cf..6d5d55e 100644
+--- a/packages/core/src/changing/ordering.ts
++++ b/packages/core/src/changing/ordering.ts
+@@ -2,9 +2,9 @@ import { nullThrows } from "@flint.fyi/utils";
+ 
+ import type { FileChange } from "../types/changes.ts";
+ 
+-export const orderChangesLastToFirstWithoutOverlaps = (
++export function orderChangesLastToFirstWithoutOverlaps(
+ 	changes: FileChange[],
+-): FileChange[] => {
++): FileChange[] {
+ 	const ordered = changes.toSorted((a, b) => a.range.end - b.range.end);
+ 	const orderedWithoutOverlaps: FileChange[] = [];
+ 	let lastStart = Infinity;
+@@ -23,4 +23,4 @@ export const orderChangesLastToFirstWithoutOverlaps = (
+ 	}
+ 
+ 	return orderedWithoutOverlaps;
+-};
++}
+diff --git a/packages/core/src/configs/validateConfigDefinition.ts b/packages/core/src/configs/validateConfigDefinition.ts
+index 01b8fc0..6fbcabd 100644
+--- a/packages/core/src/configs/validateConfigDefinition.ts
++++ b/packages/core/src/configs/validateConfigDefinition.ts
+@@ -10,10 +10,10 @@ export function validateConfigDefinition(
+ 	definition: ConfigDefinition,
+ 	configFilePath: string,
+ ): string | undefined {
+-	const checkRules = (
++	function checkRules(
+ 		rulesValue: AnyLevelDeep<ConfigRuleDefinition> | undefined,
+ 		useIndex: number,
+-	) => {
++	) {
+ 		return rulesValue
+ 			? undefined
+ 			: `Invalid configuration in ${configFilePath}
+@@ -26,7 +26,7 @@ Common causes:
+   • Importing from the wrong package
+   • Using untyped or dynamically constructed config
+ `;
+-	};
++	}
+ 
+ 	for (const [useIndex, use] of definition.use.entries()) {
+ 		const error = checkRules(use.rules, useIndex);
+diff --git a/packages/core/src/globs/all.ts b/packages/core/src/globs/all.ts
+index 935ae82..449b12c 100644
+--- a/packages/core/src/globs/all.ts
++++ b/packages/core/src/globs/all.ts
+@@ -1,11 +1,12 @@
+-import type { FilesComputer, FilesGlobObject } from "../types/files.ts";
++import type { ProcessedConfigDefinition } from "../types/configs.ts";
++import type { FilesGlobObject } from "../types/files.ts";
+ import { flatten } from "../utils/arrays.ts";
+ import { collectFilesValues } from "./collectFilesValues.ts";
+ 
+ /**
+  * Selects all files included (and not excluded) by past config definition entries.
+  */
+-export const all: FilesComputer = (config): FilesGlobObject => {
++export function all(config: ProcessedConfigDefinition): FilesGlobObject {
+ 	const exclude = new Set<string>();
+ 	const include = new Set<string>();
+ 
+@@ -19,4 +20,4 @@ export const all: FilesComputer = (config): FilesGlobObject => {
+ 		exclude: Array.from(exclude),
+ 		include: Array.from(include),
+ 	};
+-};
++}
+diff --git a/packages/core/src/host/createDiskBackedLinterHost.ts b/packages/core/src/host/createDiskBackedLinterHost.ts
+index 84e4d68..40b9823 100644
+--- a/packages/core/src/host/createDiskBackedLinterHost.ts
++++ b/packages/core/src/host/createDiskBackedLinterHost.ts
+@@ -117,17 +117,17 @@ export function createDiskBackedLinterHost(cwd: string): LinterHost {
+ 					unwatch = watchMissing();
+ 				});
+ 			let unwatched = false;
+-			const unwatchSelf = () => {
++			function unwatchSelf() {
+ 				unwatched = true;
+ 				watcher.close();
+-			};
++			}
+ 			return unwatchSelf;
+ 		}
+ 
+ 		// fs.watchFile uses polling and therefore is less performant,
+ 		// we fallback to it when the file doesn't exist on disk
+ 		function watchMissing() {
+-			const listener: fs.StatsListener = (curr, prev) => {
++			function listener(curr: fs.Stats, prev: fs.Stats) {
+ 				if (unwatched) {
+ 					return;
+ 				}
+@@ -140,17 +140,17 @@ export function createDiskBackedLinterHost(cwd: string): LinterHost {
+ 				fs.unwatchFile(normalizedWatchPath, listener);
+ 				unwatchSelf();
+ 				unwatch = watchPresent();
+-			};
++			}
+ 			fs.watchFile(
+ 				normalizedWatchPath,
+ 				{ interval: pollingInterval, persistent: false },
+ 				listener,
+ 			);
+ 			let unwatched = false;
+-			const unwatchSelf = () => {
++			function unwatchSelf() {
+ 				unwatched = true;
+ 				fs.unwatchFile(normalizedWatchPath, listener);
+-			};
++			}
+ 			return unwatchSelf;
+ 		}
+ 		return {
+diff --git a/packages/core/src/utils/codecs.ts b/packages/core/src/utils/codecs.ts
+index b53d671..478228a 100644
+--- a/packages/core/src/utils/codecs.ts
++++ b/packages/core/src/utils/codecs.ts
+@@ -4,10 +4,10 @@
+ // eslint-disable-next-line @typescript-eslint/no-restricted-imports -- TODO: Use Zod Mini in core package
+ import z from "zod/v4";
+ 
+-export const jsonCodec = <T extends z.core.$ZodType>(
++export function jsonCodec<T extends z.core.$ZodType>(
+ 	schema: T,
+-): z.ZodCodec<z.ZodString, T> =>
+-	z.codec(z.string(), schema, {
++): z.ZodCodec<z.ZodString, T> {
++	return z.codec(z.string(), schema, {
+ 		decode: (jsonString, ctx) => {
+ 			try {
+ 				return JSON.parse(jsonString) as z.input<T>;
+@@ -23,3 +23,4 @@ export const jsonCodec = <T extends z.core.$ZodType>(
+ 		},
+ 		encode: (value) => JSON.stringify(value),
+ 	});
++}
+diff --git a/packages/markdown-language/src/language.ts b/packages/markdown-language/src/language.ts
+index a476a5e..24ca6b6 100644
+--- a/packages/markdown-language/src/language.ts
++++ b/packages/markdown-language/src/language.ts
+@@ -50,7 +50,7 @@ export const markdownLanguage: Language<
+ 			fileVisitors,
+ 		);
+ 
+-		const visit = (node: Node) => {
++		function visit(node: Node) {
+ 			const entering = enter?.get(node.type);
+ 			if (entering !== undefined) {
+ 				runFileVisitorSubscriptions(entering, node);
+@@ -66,7 +66,7 @@ export const markdownLanguage: Language<
+ 			if (exiting !== undefined) {
+ 				runFileVisitorSubscriptions(exiting, node);
+ 			}
+-		};
++		}
+ 
+ 		visit(file.services.root);
+ 	},
+diff --git a/packages/package-json/src/getPackagePropertiesOfNames.ts b/packages/package-json/src/getPackagePropertiesOfNames.ts
+index 81867d8..ae04f9e 100644
+--- a/packages/package-json/src/getPackagePropertiesOfNames.ts
++++ b/packages/package-json/src/getPackagePropertiesOfNames.ts
+@@ -15,9 +15,9 @@ export function getPackagePropertiesOfNames<T extends string[]>(
+ 
+ 	const propertyNameSet = new Set(propertyNames);
+ 
+-	const isPropertyName = (name: string): name is T[number] => {
++	function isPropertyName(name: string): name is T[number] {
+ 		return propertyNameSet.has(name);
+-	};
++	}
+ 
+ 	for (const property of properties) {
+ 		if (
+diff --git a/packages/package-json/src/isBooleanNode.ts b/packages/package-json/src/isBooleanNode.ts
+index 920d540..722e03f 100644
+--- a/packages/package-json/src/isBooleanNode.ts
++++ b/packages/package-json/src/isBooleanNode.ts
+@@ -1,4 +1,5 @@
+ import type { ValueNode } from "@humanwhocodes/momoa";
+ 
+-export const isBooleanTrue = (valueNode: ValueNode): boolean =>
+-	valueNode.type === "Boolean" && valueNode.value;
++export function isBooleanTrue(valueNode: ValueNode): boolean {
++	return valueNode.type === "Boolean" && valueNode.value;
++}
+diff --git a/packages/package-json/src/rules/propertyOrder.ts b/packages/package-json/src/rules/propertyOrder.ts
+index e28f6d6..66c3841 100644
+--- a/packages/package-json/src/rules/propertyOrder.ts
++++ b/packages/package-json/src/rules/propertyOrder.ts
+@@ -56,7 +56,7 @@ export default ruleCreator.createRule(jsonLanguage, {
+ 
+ 					const properties = body.members;
+ 
+-					const fixOrder = () => {
++					function fixOrder() {
+ 						const { indent, type } = detectIndent(sourceText);
+ 						const newline = detectNewlineGraceful(sourceText);
+ 						const endCharacter = sourceText.endsWith("\n") ? "\n" : "";
+@@ -71,7 +71,7 @@ export default ruleCreator.createRule(jsonLanguage, {
+ 						}
+ 
+ 						return result;
+-					};
++					}
+ 
+ 					for (let i = 0; i < properties.length; i += 1) {
+ 						// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+diff --git a/packages/package-json/src/rules/repositoryShorthand.ts b/packages/package-json/src/rules/repositoryShorthand.ts
+index 0d82dfa..4ec4eab 100644
+--- a/packages/package-json/src/rules/repositoryShorthand.ts
++++ b/packages/package-json/src/rules/repositoryShorthand.ts
+@@ -19,8 +19,9 @@ const providerUrls = {
+ 	gitlab: "https://gitlab.com/",
+ } satisfies Record<Provider, string>;
+ 
+-const isProvider = (value: string): value is Provider =>
+-	value in providerRegexes;
++function isProvider(value: string): value is Provider {
++	return value in providerRegexes;
++}
+ 
+ function createUrl(shorthand: string) {
+ 	if (!shorthand.includes(":")) {
+diff --git a/packages/plugin-flint/src/utils/ruleCreatorHelpers.ts b/packages/plugin-flint/src/utils/ruleCreatorHelpers.ts
+index 518a837..afea857 100644
+--- a/packages/plugin-flint/src/utils/ruleCreatorHelpers.ts
++++ b/packages/plugin-flint/src/utils/ruleCreatorHelpers.ts
+@@ -32,12 +32,16 @@ function isTypedMethodCall(
+ 	return typeName === leftType && propertyAccess.name.text === rightCall;
+ }
+ 
+-export const isRuleCreatorCreateRule = (
++export function isRuleCreatorCreateRule(
+ 	node: AST.CallExpression,
+ 	typeChecker: Checker,
+-): boolean => isTypedMethodCall(node, typeChecker, "RuleCreator", "createRule");
++): boolean {
++	return isTypedMethodCall(node, typeChecker, "RuleCreator", "createRule");
++}
+ 
+-export const isRuleContextReport = (
++export function isRuleContextReport(
+ 	node: AST.CallExpression,
+ 	typeChecker: Checker,
+-): boolean => isTypedMethodCall(node, typeChecker, "RuleContext", "report");
++): boolean {
++	return isTypedMethodCall(node, typeChecker, "RuleContext", "report");
++}
+diff --git a/packages/rule-data/src/data.json b/packages/rule-data/src/data.json
+index 22c7e42..220a3bc 100644
+--- a/packages/rule-data/src/data.json
++++ b/packages/rule-data/src/data.json
+@@ -19972,7 +19972,9 @@
+ 		"flint": {
+ 			"name": "functionDeclarationStyles",
+ 			"plugin": "ts",
+-			"status": "implemented"
++			"preset": "stylistic",
++			"status": "implemented",
++			"strictness": "strict"
+ 		},
+ 		"eslint": [
+ 			{
+diff --git a/packages/rule-tester/src/RuleTester.test.ts b/packages/rule-tester/src/RuleTester.test.ts
+index 97d2565..9563962 100644
+--- a/packages/rule-tester/src/RuleTester.test.ts
++++ b/packages/rule-tester/src/RuleTester.test.ts
+@@ -12,7 +12,6 @@ import {
+ import {
+ 	RuleTester,
+ 	type TestCases,
+-	type TesterSetupDescribe,
+ 	type TesterSetupIt,
+ } from "./RuleTester.ts";
+ 
+@@ -177,12 +176,12 @@ function createTestSetups({
+ 	testCases = { invalid: [], valid: [""] },
+ }: TestSetupOptions): (() => Promise<void>)[] {
+ 	const testSetups: (() => Promise<void>)[] = [];
+-	const collectTest: TesterSetupIt = (_description, setup): void => {
++	function collectTest(_description: string, setup: () => Promise<void>): void {
+ 		testSetups.push(setup);
+-	};
+-	const runDescribe: TesterSetupDescribe = (_description, setup): void => {
++	}
++	function runDescribe(_description: string, setup: () => void): void {
+ 		setup();
+-	};
++	}
+ 	const language = createLanguage({
+ 		about: { name: "Test" },
+ 		createFileFactory: () => ({
+diff --git a/packages/site/src/content/docs/rules/ts/functionDeclarationStyles.mdx b/packages/site/src/content/docs/rules/ts/functionDeclarationStyles.mdx
+index c159aaa..3a265f6 100644
+--- a/packages/site/src/content/docs/rules/ts/functionDeclarationStyles.mdx
++++ b/packages/site/src/content/docs/rules/ts/functionDeclarationStyles.mdx
+@@ -16,59 +16,59 @@ Enforcing a consistent style helps maintain code consistency across a codebase.
+ 
+ ## Examples
+ 
+-With the default `"expression"` style:
++With the default `"declaration"` style:
+ 
+ <Tabs>
+ <TabItem label="❌ Incorrect">
+ 
+ ```ts
+-function doSomething() {
++const doSomething = function () {
+ 	return 42;
+-}
++};
+ ```
+ 
+-</TabItem>
+-<TabItem label="✅ Correct">
+-
+ ```ts
+-const doSomething = function () {
++const doSomething = () => {
+ 	return 42;
+ };
+ ```
+ 
++</TabItem>
++<TabItem label="✅ Correct">
++
+ ```ts
+-const doSomething = () => {
++function doSomething() {
+ 	return 42;
+-};
++}
+ ```
+ 
+ </TabItem>
+ </Tabs>
+ 
+-With the `"declaration"` style:
++With the `"expression"` style:
+ 
+ <Tabs>
+ <TabItem label="❌ Incorrect">
+ 
+ ```ts
+-const doSomething = function () {
++function doSomething() {
+ 	return 42;
+-};
++}
+ ```
+ 
++</TabItem>
++<TabItem label="✅ Correct">
++
+ ```ts
+-const doSomething = () => {
++const doSomething = function () {
+ 	return 42;
+ };
+ ```
+ 
+-</TabItem>
+-<TabItem label="✅ Correct">
+-
+ ```ts
+-function doSomething() {
++const doSomething = () => {
+ 	return 42;
+-}
++};
+ ```
+ 
+ </TabItem>
+@@ -80,13 +80,13 @@ function doSomething() {
+ 
+ Which function style to enforce:
+ 
+-- `"expression"` (default): Requires function expressions instead of declarations
+-- `"declaration"`: Requires function declarations instead of expressions
++- `"declaration"` (default): Requires function declarations instead of expressions
++- `"expression"`: Requires function expressions instead of declarations
+ 
+ ```json
+ {
+ 	"rules": {
+-		"ts/functionDeclarationStyles": ["error", { "style": "declaration" }]
++		"ts/functionDeclarationStyles": ["error", { "style": "expression" }]
+ 	}
+ }
+ ```
+@@ -99,10 +99,7 @@ Default is `false`.
+ ```json
+ {
+ 	"rules": {
+-		"ts/functionDeclarationStyles": [
+-			"error",
+-			{ "style": "declaration", "allowArrowFunctions": true }
+-		]
++		"ts/functionDeclarationStyles": ["error", { "allowArrowFunctions": true }]
+ 	}
+ }
+ ```
+diff --git a/packages/ts/src/rules/functionDeclarationStyles.test.ts b/packages/ts/src/rules/functionDeclarationStyles.test.ts
+index de6d170..085c64a 100644
+--- a/packages/ts/src/rules/functionDeclarationStyles.test.ts
++++ b/packages/ts/src/rules/functionDeclarationStyles.test.ts
+@@ -5,26 +5,22 @@ ruleTester.describe(rule, {
+ 	invalid: [
+ 		{
+ 			code: `
+-function doSomething() {}
++const doSomething = function() {};
+ `,
+ 			snapshot: `
+-function doSomething() {}
+-         ~~~~~~~~~~~
+-         For consistency, this project prefers a function expression instead of a function declaration.
++const doSomething = function() {};
++      ~~~~~~~~~~~
++      For consistency, this project prefers a function declaration instead of a function expression.
+ `,
+ 		},
+ 		{
+ 			code: `
+-function doSomething(value: number): string {
+-    return String(value);
+-}
++const doSomething = () => {};
+ `,
+ 			snapshot: `
+-function doSomething(value: number): string {
+-         ~~~~~~~~~~~
+-         For consistency, this project prefers a function expression instead of a function declaration.
+-    return String(value);
+-}
++const doSomething = () => {};
++      ~~~~~~~~~~~
++      For consistency, this project prefers a function declaration instead of a function expression.
+ `,
+ 		},
+ 		{
+@@ -42,7 +38,7 @@ const doSomething = function() {};
+ 			code: `
+ const doSomething = () => {};
+ `,
+-			options: { style: "declaration" },
++			options: { allowArrowFunctions: false, style: "declaration" },
+ 			snapshot: `
+ const doSomething = () => {};
+       ~~~~~~~~~~~
+@@ -51,37 +47,79 @@ const doSomething = () => {};
+ 		},
+ 		{
+ 			code: `
+-const doSomething = () => {};
++function doSomething() {}
+ `,
+-			options: { allowArrowFunctions: false, style: "declaration" },
++			options: { style: "expression" },
+ 			snapshot: `
+-const doSomething = () => {};
+-      ~~~~~~~~~~~
+-      For consistency, this project prefers a function declaration instead of a function expression.
++function doSomething() {}
++         ~~~~~~~~~~~
++         For consistency, this project prefers a function expression instead of a function declaration.
++`,
++		},
++		{
++			code: `
++function doSomething(value: number): string {
++    return String(value);
++}
++`,
++			options: { style: "expression" },
++			snapshot: `
++function doSomething(value: number): string {
++         ~~~~~~~~~~~
++         For consistency, this project prefers a function expression instead of a function declaration.
++    return String(value);
++}
+ `,
+ 		},
+ 	],
+ 	valid: [
+-		`const doSomething = function() {};`,
+-		`const doSomething = () => {};`,
++		`function doSomething() {}`,
+ 		`const value = 42;`,
+-		`const doSomething = function namedFunction() {};`,
++		`const items = [1, 2, 3].map((value) => value * 2);`,
++		`
++function overloaded(value: string): string;
++function overloaded(value: number): number;
++function overloaded(value: number | string): number | string {
++    return value;
++}
++`,
+ 		{
+ 			code: `function doSomething() {}`,
+ 			options: { style: "declaration" },
+ 		},
++		{
++			code: `const doSomething = () => {};`,
++			options: { allowArrowFunctions: true },
++		},
+ 		{
+ 			code: `const doSomething = () => {};`,
+ 			options: { allowArrowFunctions: true, style: "declaration" },
+ 		},
+-		`
++		{
++			code: `const doSomething = function() {};`,
++			options: { style: "expression" },
++		},
++		{
++			code: `const doSomething = () => {};`,
++			options: { style: "expression" },
++		},
++		{
++			code: `const doSomething = function namedFunction() {};`,
++			options: { style: "expression" },
++		},
++		{
++			code: `const callback = (value: number) => value * 2;`,
++			options: { style: "expression" },
++		},
++		{
++			code: `
+ function overloaded(value: string): string;
+ function overloaded(value: number): number;
+ function overloaded(value: number | string): number | string {
+     return value;
+ }
+ `,
+-		`const callback = (value: number) => value * 2;`,
+-		`const items = [1, 2, 3].map((value) => value * 2);`,
++			options: { style: "expression" },
++		},
+ 	],
+ });
+diff --git a/packages/ts/src/rules/functionDeclarationStyles.ts b/packages/ts/src/rules/functionDeclarationStyles.ts
+index 4c9ef7d..cd552e3 100644
+--- a/packages/ts/src/rules/functionDeclarationStyles.ts
++++ b/packages/ts/src/rules/functionDeclarationStyles.ts
+@@ -40,6 +40,7 @@ export default ruleCreator.createRule(typescriptLanguage, {
+ 		description:
+ 			"Reports functions that don't match the configured style (declaration vs expression).",
+ 		id: "functionDeclarationStyles",
++		presets: ["stylisticStrict"],
+ 	},
+ 	messages: {
+ 		preferDeclaration: {
+@@ -72,7 +73,7 @@ export default ruleCreator.createRule(typescriptLanguage, {
+ 			),
+ 		style: z
+ 			.enum(["declaration", "expression"])
+-			.default("expression")
++			.default("declaration")
+ 			.describe(
+ 				"Which function style to enforce: 'declaration' for function declarations or 'expression' for function expressions.",
+ 			),
+diff --git a/packages/ts/src/rules/nullishCoalescingOperators.ts b/packages/ts/src/rules/nullishCoalescingOperators.ts
+index 0a3a15a..93080dd 100644
+--- a/packages/ts/src/rules/nullishCoalescingOperators.ts
++++ b/packages/ts/src/rules/nullishCoalescingOperators.ts
+@@ -569,8 +569,12 @@ export default ruleCreator.createRule(typescriptLanguage, {
+ 			range: CharacterReportRange,
+ 			test?: AST.AnyNode,
+ 		) {
+-			const getText = (node: AST.AnyNode) =>
+-				sourceFile.text.substring(node.getStart(sourceFile), node.getEnd());
++			function getText(node: AST.AnyNode) {
++				return sourceFile.text.substring(
++					node.getStart(sourceFile),
++					node.getEnd(),
++				);
++			}
+ 
+ 			let leftText = getText(consequent);
+ 
+@@ -598,8 +602,12 @@ export default ruleCreator.createRule(typescriptLanguage, {
+ 			sourceFile: AST.SourceFile,
+ 			range: CharacterReportRange,
+ 		) {
+-			const getText = (node: AST.AnyNode) =>
+-				sourceFile.text.substring(node.getStart(sourceFile), node.getEnd());
++			function getText(node: AST.AnyNode) {
++				return sourceFile.text.substring(
++					node.getStart(sourceFile),
++					node.getEnd(),
++				);
++			}
+ 
+ 			return { range, text: `${getText(left)} ??= ${getText(right)};` };
+ 		}
+diff --git a/packages/ts/src/rules/utils/getFunctionName.test.ts b/packages/ts/src/rules/utils/getFunctionName.test.ts
+index 5cabe48..e45b471 100644
+--- a/packages/ts/src/rules/utils/getFunctionName.test.ts
++++ b/packages/ts/src/rules/utils/getFunctionName.test.ts
+@@ -22,14 +22,14 @@ function findFirstNode(sourceText: string, kind: SyntaxKind): Node {
+ 	);
+ 
+ 	let foundNode: Node | undefined;
+-	const visit = (node: Node) => {
++	function visit(node: Node) {
+ 		if (node.kind === kind) {
+ 			foundNode = node;
+ 			return;
+ 		}
+ 
+ 		forEachChild(node, visit);
+-	};
++	}
+ 
+ 	visit(sourceFile);
+ 
+diff --git a/packages/typescript-language/src/createNodeVisitorsForFile.ts b/packages/typescript-language/src/createNodeVisitorsForFile.ts
+index 4598e9e..7b84d2b 100644
+--- a/packages/typescript-language/src/createNodeVisitorsForFile.ts
++++ b/packages/typescript-language/src/createNodeVisitorsForFile.ts
+@@ -72,6 +72,7 @@ export function createNodeVisitorsForFile(
+ 	}
+ 
+ 	if (exit) {
++		// flint-disable-next-line ts/functionDeclarationStyles
+ 		const visit = (node: Node) => {
+ 			node.forEachChild(visit);
+ 
+diff --git a/packages/typescript-language/src/createTypeScriptServerHost.ts b/packages/typescript-language/src/createTypeScriptServerHost.ts
+index 1e074e5..2742b75 100644
+--- a/packages/typescript-language/src/createTypeScriptServerHost.ts
++++ b/packages/typescript-language/src/createTypeScriptServerHost.ts
+@@ -61,6 +61,7 @@ export function createTypeScriptServerHost(
+ 			process.cwd = () => host.getCurrentDirectory();
+ 			const originalReadDirSync = fs.readdirSync;
+ 			// @ts-expect-error - TypeScript doesn't understand that the overloads do match up.
++			// flint-disable-next-line ts/functionDeclarationStyles
+ 			const patchedReaddirSync: typeof fs.readdirSync = (readPath, options) => {
+ 				assert(
+ 					typeof options === "object" &&
+diff --git a/packages/typescript-language/src/scope/scopeManager.test.ts b/packages/typescript-language/src/scope/scopeManager.test.ts
+index ef08f1d..1261be4 100644
+--- a/packages/typescript-language/src/scope/scopeManager.test.ts
++++ b/packages/typescript-language/src/scope/scopeManager.test.ts
+@@ -732,8 +732,9 @@ describe(getScopeManager, () => {
+ 			SyntaxKind.CatchClause,
+ 		);
+ 
+-		const global = (name: string) =>
+-			scopeManager.globalScope.variables.find((v) => v.name === name);
++		function global(name: string) {
++			return scopeManager.globalScope.variables.find((v) => v.name === name);
++		}
+ 
+ 		expect(global("imported")?.definitions[0]?.kind).toBe("import");
+ 		expect(global("declared")?.definitions[0]?.kind).toBe("variable");
+diff --git a/packages/vitest/src/rules/conditionalExpects.ts b/packages/vitest/src/rules/conditionalExpects.ts
+index 606a71c..cba341b 100644
+--- a/packages/vitest/src/rules/conditionalExpects.ts
++++ b/packages/vitest/src/rules/conditionalExpects.ts
+@@ -57,8 +57,17 @@ export default ruleCreator.createRule(typescriptLanguage, {
+ 		let inPromiseCatch = false;
+ 		let expectAssertions = 0;
+ 
+-		const increaseConditionalDepth = () => inTestCase && conditionalDepth++;
+-		const decreaseConditionalDepth = () => inTestCase && conditionalDepth--;
++		function increaseConditionalDepth() {
++			if (inTestCase) {
++				conditionalDepth++;
++			}
++		}
++
++		function decreaseConditionalDepth() {
++			if (inTestCase) {
++				conditionalDepth--;
++			}
++		}
+ 
+ 		return {
+ 			visitors: {
+diff --git a/packages/vitest/src/utils/testCaseFunctions.ts b/packages/vitest/src/utils/testCaseFunctions.ts
+index 2df9ab1..229348c 100644
+--- a/packages/vitest/src/utils/testCaseFunctions.ts
++++ b/packages/vitest/src/utils/testCaseFunctions.ts
+@@ -13,16 +13,16 @@ const testCaseFunctionNamesSet = new Set([
+ 	"xtest",
+ ]);
+ 
+-export const isVitestTestFunction = (node: AST.CallExpression): boolean => {
++export function isVitestTestFunction(node: AST.CallExpression): boolean {
+ 	const vitestFunction = parseVitestFunctionCall(node);
+ 	return (
+ 		vitestFunction != null && testCaseFunctionNamesSet.has(vitestFunction.name)
+ 	);
+-};
++}
+ 
+-export const getTestCallExpressionsFromDeclaredVariables = (
++export function getTestCallExpressionsFromDeclaredVariables(
+ 	declaredVariables: readonly ScopeVariable[],
+-): AST.CallExpression[] => {
++): AST.CallExpression[] {
+ 	return declaredVariables.reduce<AST.CallExpression[]>(
+ 		(acc, { references }) =>
+ 			acc.concat(
+@@ -36,4 +36,4 @@ export const getTestCallExpressionsFromDeclaredVariables = (
+ 			),
+ 		[],
+ 	);
+-};
++}
+diff --git a/packages/vue/src/rules/vForKeys.ts b/packages/vue/src/rules/vForKeys.ts
+index ceb0f7d..0f24062 100644
+--- a/packages/vue/src/rules/vForKeys.ts
++++ b/packages/vue/src/rules/vForKeys.ts
+@@ -59,19 +59,19 @@ export default ruleCreator.createRule(vueLanguage, {
+ 					}
+ 					const { map, sfc } = services.vue;
+ 
+-					const toGeneratedLocation = (sourceLocation: number) => {
++					function toGeneratedLocation(sourceLocation: number) {
+ 						for (const [loc] of map.toGeneratedLocation(sourceLocation)) {
+ 							return loc;
+ 						}
+ 						return undefined;
+-					};
++					}
+ 
+-					const toGeneratedLocationOrThrow = (sourceLocation: number) => {
++					function toGeneratedLocationOrThrow(sourceLocation: number) {
+ 						return nullThrows(
+ 							toGeneratedLocation(sourceLocation),
+ 							"Unable to map source location to generated location",
+ 						);
+-					};
++					}
+ 
+ 					const templateBlock = sfc.children.find(
+ 						(c): c is vue.ElementNode =>
+@@ -81,19 +81,19 @@ export default ruleCreator.createRule(vueLanguage, {
+ 						return {};
+ 					}
+ 
+-					const propValueRange = (propValue: vue.TextNode) => {
++					function propValueRange(propValue: vue.TextNode) {
+ 						const strip = propValue.loc.source === propValue.content ? 0 : 1;
+ 						return {
+ 							begin: propValue.loc.start.offset + strip,
+ 							end: propValue.loc.end.offset - strip,
+ 						};
+-					};
++					}
+ 
+-					const checkFor = (
++					function checkFor(
+ 						forDirective: vue.DirectiveNode,
+ 						forParseResult: vue.ForParseResult,
+ 						keyProp: null | vue.AttributeNode | vue.DirectiveNode,
+-					) => {
++					) {
+ 						if (keyProp == null) {
+ 							reportSourceCode(context, {
+ 								message: "missingKey",
+@@ -184,7 +184,7 @@ export default ruleCreator.createRule(vueLanguage, {
+ 
+ 						// TODO(perf): use ScopeManager instead
+ 						// https://github.com/flint-fyi/flint/issues/400
+-						const find = (current: ts.Node) => {
++						function find(current: ts.Node): boolean {
+ 							const currentBegin = current.getStart(node);
+ 							const currentEnd = current.getEnd();
+ 							if (
+@@ -212,7 +212,7 @@ export default ruleCreator.createRule(vueLanguage, {
+ 							}
+ 
+ 							return current.getChildren(node).some(find);
+-						};
++						}
+ 
+ 						if (!find(node)) {
+ 							reportSourceCode(context, {
+@@ -220,7 +220,7 @@ export default ruleCreator.createRule(vueLanguage, {
+ 								range: reportRange,
+ 							});
+ 						}
+-					};
++					}
+ 
+ 					// TODO: add vue: listeners to the language
+ 					function visitTag(node: vue.TemplateChildNode) {
+diff --git a/packages/yaml-language/src/language.ts b/packages/yaml-language/src/language.ts
+index 424a115..bef58c7 100644
+--- a/packages/yaml-language/src/language.ts
++++ b/packages/yaml-language/src/language.ts
+@@ -43,7 +43,7 @@ export const yamlLanguage: Language<YamlNodeVisitors, YamlFileServices> =
+ 				fileVisitors,
+ 			);
+ 
+-			const visit = (node: Node) => {
++			function visit(node: Node) {
+ 				const entering = enter?.get(node.type);
+ 				if (entering !== undefined) {
+ 					runFileVisitorSubscriptions(entering, node);
+@@ -59,7 +59,7 @@ export const yamlLanguage: Language<YamlNodeVisitors, YamlFileServices> =
+ 				if (exiting !== undefined) {
+ 					runFileVisitorSubscriptions(exiting, node);
+ 				}
+-			};
++			}
+ 
+ 			visit(file.services.root);
+ 		},
+-- 
+2.43.0
+

@@ -5,7 +5,7 @@
 | Issue | https://github.com/flint-fyi/flint/issues/2164 |
 | Tier | 新锐 |
 | Labels | `good first issue`, `status: accepting prs`, `plugin: ts`, `package: rule-data`, `type: feature` |
-| Status | 🚧 in progress — audit done, installing |
+| Status | 🚧 in progress — implemented, running full checks |
 
 ## Notes
 - Issue by maintainer JoshuaKGoldberg (2026-01-27): add `functionDeclarationStyles` to `stylisticStrict`; default should be `'declaration'` instead of `'expression'`.
