@@ -17,3 +17,4 @@ Command: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/prov
 
 Verdict: **no malicious code found**; safe to run `go test` / `go build` / `make generate`.
 Go deps and toolchain (go1.26.4 via GOTOOLCHAIN=auto) were downloaded into a private cache `/home/user/work/gocache` (deleted afterwards).
+Cleanup: /home/user/work/gocache (toolchain, modules, build and lint caches, ~3 GB), bin/ and cover.out were deleted after verification.
