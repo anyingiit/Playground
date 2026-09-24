@@ -5,7 +5,7 @@
 | Issue | https://github.com/Mozart2234/herdr-agent-pulse/issues/1 |
 | Tier | 自由 |
 | Labels | bug, help wanted |
-| Status | 🚧 in progress — audit |
+| Status | 🚧 in progress — audit done, implementing |
 | Duplicate-PR check | no linked PRs / no comments (WebFetch 2026-09-24) |
 
 ## Notes
