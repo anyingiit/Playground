@@ -5,7 +5,7 @@
 | Issue | https://github.com/MakazhanAlpamys/Soup/issues/1221 |
 | Tier | 高活跃高Star |
 | Labels | bug, help wanted |
-| Status | 🚧 in progress — issue chosen, cloning/auditing |
+| Status | 🚧 in progress — audit done (clean @ 1826a2b), implementing |
 | Duplicate-PR check | `1221 repo:MakazhanAlpamys/Soup` → 0 PRs; keyword `forge judge empty answer` open → 0; issue has 0 comments, unassigned (checked 2026-09-24) |
 
 ## Notes
