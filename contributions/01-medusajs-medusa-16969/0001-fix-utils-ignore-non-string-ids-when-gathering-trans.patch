@@ -1,0 +1,103 @@
+From 53dbd4c176d5a8a3bf24afd84259b0b2c5eaf5ab Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 16:35:31 +0000
+Subject: [PATCH] fix(utils): ignore non-string ids when gathering translation
+ reference ids
+
+applyTranslations walked every nested object and collected any truthy `id`,
+including numeric ids of entities returned by aliased Remote Query services
+(e.g. a custom CMS). Mixing them into the text `reference_id` IN filter made
+Postgres fail with "operator does not exist: text = integer".
+
+Fixes #16969
+---
+ .../translations-ignore-non-string-ids.md     |  5 +++
+ .../__tests__/apply-translations.spec.ts      | 35 +++++++++++++++++++
+ .../src/translations/apply-translations.ts    |  8 ++++-
+ 3 files changed, 47 insertions(+), 1 deletion(-)
+ create mode 100644 .changeset/translations-ignore-non-string-ids.md
+
+diff --git a/.changeset/translations-ignore-non-string-ids.md b/.changeset/translations-ignore-non-string-ids.md
+new file mode 100644
+index 00000000..549f91f4
+--- /dev/null
++++ b/.changeset/translations-ignore-non-string-ids.md
+@@ -0,0 +1,5 @@
++---
++"@medusajs/utils": patch
++---
++
++fix(utils): only gather string ids in `applyTranslations` so numeric ids from aliased Remote Query services no longer break the translations lookup
+diff --git a/packages/core/utils/src/translations/__tests__/apply-translations.spec.ts b/packages/core/utils/src/translations/__tests__/apply-translations.spec.ts
+index a55c65ab..1d2522a0 100644
+--- a/packages/core/utils/src/translations/__tests__/apply-translations.spec.ts
++++ b/packages/core/utils/src/translations/__tests__/apply-translations.spec.ts
+@@ -428,4 +428,39 @@ describe("applyTranslations", () => {
+ 
+     expect(data[0].documents).toHaveLength(2)
+   })
++
++  it("should only gather string ids and ignore numeric ids from aliased services", async () => {
++    const inputObjects = [
++      {
++        id: "prod_1",
++        title: "Original Title",
++        cms: { id: 770, meta_description: "CMS description" },
++      },
++    ]
++
++    mockQuery.graph.mockResolvedValue({
++      data: [
++        {
++          reference_id: "prod_1",
++          translations: { title: "Translated Title" },
++        },
++      ],
++    })
++
++    await applyTranslations({
++      localeCode: mockReq.locale as string,
++      objects: inputObjects,
++      container: mockContainer as any,
++    })
++
++    expect(mockQuery.graph).toHaveBeenCalledTimes(1)
++    expect(mockQuery.graph.mock.calls[0][0].filters.reference_id).toEqual([
++      "prod_1",
++    ])
++    expect(inputObjects[0].title).toBe("Translated Title")
++    expect(inputObjects[0].cms).toEqual({
++      id: 770,
++      meta_description: "CMS description",
++    })
++  })
+ })
+diff --git a/packages/core/utils/src/translations/apply-translations.ts b/packages/core/utils/src/translations/apply-translations.ts
+index e405f337..9d33cf18 100644
+--- a/packages/core/utils/src/translations/apply-translations.ts
++++ b/packages/core/utils/src/translations/apply-translations.ts
+@@ -1,6 +1,7 @@
+ import { MedusaContainer, RemoteQueryFunction } from "@medusajs/types"
+ import { ContainerRegistrationKeys } from "../common/container"
+ import { isObject } from "../common/is-object"
++import { isString } from "../common/is-string"
+ import { FeatureFlag } from "../feature-flags/flag-router"
+ 
+ const excludedKeys = [
+@@ -20,7 +21,12 @@ function gatherIds(object: Record<string, any>, gatheredIds: Set<string>) {
+     return
+   }
+ 
+-  if (object.id) {
++  // Translations are keyed by a text `reference_id`, so only string ids can
++  // belong to translatable Medusa entities. Objects coming from aliased
++  // services (e.g. a custom CMS exposed through Remote Query) may carry
++  // numeric ids, which would otherwise end up in the same `IN (...)` filter
++  // and make the query fail with "operator does not exist: text = integer".
++  if (isString(object.id) && object.id) {
+     gatheredIds.add(object.id)
+   }
+ 
+-- 
+2.43.0
+
