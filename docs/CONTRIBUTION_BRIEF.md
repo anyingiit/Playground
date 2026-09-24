@@ -16,6 +16,8 @@ patch + a ready-to-paste PR description. The owner (anyingiit) submits them late
 2b. **Respect the project's AI-contribution policy.** Before choosing an issue, grep the repo for
    AI/LLM rules: `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING*`, `.github/*`, docs/contributing pages
    (e.g. `grep -ril -e "LLM" -e "AI-generated" -e "AI contribution" -e "Copilot" -e "ChatGPT" -e "agent"`).
+   Also read the repo's **label descriptions** (github.com/<owner>/<repo>/labels) — some projects put
+   the rule there, e.g. `good first issue`: "Human contributions only".
    If the project bans AI-generated code/PRs, SKIP it. If it allows them with conditions (disclosure,
    human-written description, no AI co-author trailers, …), follow the conditions and record them in
    the README under "需要提交者注意".

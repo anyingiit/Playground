@@ -5,7 +5,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent / "contributions"
 rows, counts = [], {"高星": 0, "新锐": 0, "自由": 0}
-for d in sorted(p for p in root.iterdir() if p.is_dir()):
+for d in sorted(p for p in root.iterdir() if p.is_dir() and not p.name.startswith("_")):
     readme = d / "README.md"
     text = readme.read_text(encoding="utf-8") if readme.exists() else ""
     m = re.search(r"https://github\.com/([^/\s)]+/[^/\s)]+)/issues/(\d+)", text)
