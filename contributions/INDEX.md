@@ -1,7 +1,7 @@
 # Contributions index
 
 Target: **60 = 12 高活跃高Star + 12 新锐 + 36 自由**.
-Ready: **36** (高星 12 · 新锐 10 · 自由 14).
+Ready: **36** (高星 12 · 新锐 11 · 自由 13).
 Each folder: `README.md` (analysis, verification, submit steps, PR text, **需要提交者注意**), `0001-*.patch`, `AUDIT.md`.
 Rules: [`docs/CONTRIBUTION_BRIEF.md`](../docs/CONTRIBUTION_BRIEF.md). Tools: [`tools/`](../tools/).
 
@@ -32,7 +32,7 @@ Rules: [`docs/CONTRIBUTION_BRIEF.md`](../docs/CONTRIBUTION_BRIEF.md). Tools: [`t
 | 24 | 新锐 | [flint-fyi/flint#2164](https://github.com/flint-fyi/flint/issues/2164) | ✅ |
 | 25 | 自由 | [Smaug6739/Alexandrie#781](https://github.com/Smaug6739/Alexandrie/issues/781) | ✅ |
 | 26 | 高星 | [DioxusLabs/taffy#835](https://github.com/DioxusLabs/taffy/issues/835) | ✅ |
-| 27 | 自由 | [webgpu-tools/wesl-rs#256](https://github.com/webgpu-tools/wesl-rs/issues/256) | ✅ |
+| 27 | 新锐 | [webgpu-tools/wesl-rs#256](https://github.com/webgpu-tools/wesl-rs/issues/256) | ✅ |
 | 28 | 自由 | [LargeModGames/spotatui#554](https://github.com/LargeModGames/spotatui/issues/554) | ✅ |
 | 29 | 高星 | [biomejs/biome#8762](https://github.com/biomejs/biome/issues/8762) | ✅ |
 | 30 | 新锐 | [librasn/rasn#55](https://github.com/librasn/rasn/issues/55) | ✅ |

@@ -10,8 +10,8 @@ for d in sorted(p for p in root.iterdir() if p.is_dir()):
     text = readme.read_text(encoding="utf-8") if readme.exists() else ""
     m = re.search(r"https://github\.com/([^/\s)]+/[^/\s)]+)/issues/(\d+)", text)
     issue = f"[{m.group(1)}#{m.group(2)}](https://github.com/{m.group(1)}/issues/{m.group(2)})" if m else d.name
-    tier_line = next((l for l in text.splitlines() if "Tier" in l or "tier" in l), "")
-    tier = "高星" if ("高" in tier_line and "Star" in tier_line) or "高活跃" in tier_line else "新锐" if "新锐" in tier_line else "自由"
+    head = "\n".join(text.splitlines()[:25])
+    tier = "高星" if ("高活跃" in head or "高星" in head) else "新锐" if "新锐" in head else "自由"
     status_line = next((l for l in text.splitlines() if re.search(r"\bStatus\b|状态", l)), "")
     ready = "🚧" not in status_line and bool(list(d.glob("*.patch")))
     if ready:
