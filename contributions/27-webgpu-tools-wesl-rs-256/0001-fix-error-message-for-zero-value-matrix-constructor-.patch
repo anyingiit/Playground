@@ -1,0 +1,89 @@
+From 6bc79387f0577a4b9e4890fd30cd713a1eb0490c Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:11:10 +0000
+Subject: [PATCH] fix error message for zero-value matrix constructor without
+ template
+
+`mat2x2()` (and the other `matCxR()` forms) without a template argument
+reported "matrix components are incompatible", because the component type
+was inferred from an empty argument list. Report that the zero-value matrix
+constructor requires a template argument instead, both when type-checking
+and when evaluating.
+
+Fixes #256
+---
+ crates/wgsl-types/src/builtin/ctor.rs | 40 +++++++++++++++++++++++++++
+ 1 file changed, 40 insertions(+)
+
+diff --git a/crates/wgsl-types/src/builtin/ctor.rs b/crates/wgsl-types/src/builtin/ctor.rs
+index 4e477ca..ca3fbe0 100644
+--- a/crates/wgsl-types/src/builtin/ctor.rs
++++ b/crates/wgsl-types/src/builtin/ctor.rs
+@@ -28,6 +28,12 @@ use crate::{
+ 
+ type E = Error;
+ 
++/// Error for `matCxR()`: WGSL has no zero-value matrix constructor without a template,
++/// because the component type cannot be inferred from zero arguments.
++const ERR_MAT_ZERO_VALUE: E = E::Builtin(
++    "the zero-value matrix constructor requires a template argument (e.g. `mat2x2<f32>()`)",
++);
++
+ /// Check if a function name could correspond to a built-in constructor function.
+ ///
+ /// Warning: WGSL allows shadowing built-in functions. Check that a user-defined
+@@ -406,6 +412,9 @@ pub fn mat(c: usize, r: usize, args: &[Instance]) -> Result<Instance, E> {
+         // note: `matCxR(e: matCxR<S>) -> matCxR<S>` is no-op
+         Ok(m.clone().into())
+     } else {
++        if args.is_empty() {
++            return Err(ERR_MAT_ZERO_VALUE);
++        }
+         let tys = args.iter().map(|a| a.ty()).collect_vec();
+         let ty = convert_all_ty(&tys).ok_or(E::Builtin("matrix components are incompatible"))?;
+         let mut inner_ty = ty.inner_ty();
+@@ -723,6 +732,9 @@ fn mat_ctor_ty(c: u8, r: u8, args: &[Type]) -> Result<Type, E> {
+         }
+         Ok(ty.clone())
+     } else {
++        if args.is_empty() {
++            return Err(ERR_MAT_ZERO_VALUE);
++        }
+         let ty = convert_all_ty(args).ok_or(E::Builtin("matrix components are incompatible"))?;
+         let mut inner_ty = ty.inner_ty();
+ 
+@@ -1093,3 +1105,31 @@ impl AtomicInstance {
+         Ok(AtomicInstance::new(zero))
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    const EXPECTED_MSG: &str = "the zero-value matrix constructor requires a template \
++        argument (e.g. `mat2x2<f32>()`)";
++
++    #[test]
++    fn mat_zero_value_without_template_has_explicit_error() {
++        for (c, r) in [(2, 2), (3, 4), (4, 2)] {
++            let name = format!("mat{c}x{r}");
++
++            let err = type_ctor(&name, None, &[]).unwrap_err();
++            assert_eq!(err.to_string(), EXPECTED_MSG, "type_ctor `{name}()`");
++
++            let err = mat(c, r, &[]).unwrap_err();
++            assert_eq!(err.to_string(), EXPECTED_MSG, "mat `{name}()`");
++        }
++    }
++
++    #[test]
++    fn mat_zero_value_with_template() {
++        let tplt = [TpltParam::Type(Type::F32)];
++        let ty = type_ctor("mat2x2", Some(&tplt), &[]).unwrap();
++        assert_eq!(ty, Type::Mat(2, 2, Box::new(Type::F32)));
++    }
++}
+-- 
+2.43.0
+

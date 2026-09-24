@@ -1,0 +1,391 @@
+From ec3e41efbd2062a59a0082310e096403297aae0a Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:11:47 +0000
+Subject: [PATCH] feat(expect/unstable): implement
+ toThrowErrorMatchingSnapshot()
+
+---
+ expect/_matchers.ts                           |  74 ++++++-
+ .../_to_throw_error_matching_snapshot_test.ts | 182 ++++++++++++++++++
+ expect/_types.ts                              |  27 +++
+ expect/expect.ts                              |   2 +
+ expect/mod.ts                                 |   4 +-
+ 5 files changed, 280 insertions(+), 9 deletions(-)
+ create mode 100644 expect/_to_throw_error_matching_snapshot_test.ts
+
+diff --git a/expect/_matchers.ts b/expect/_matchers.ts
+index f53244e..15d388f 100644
+--- a/expect/_matchers.ts
++++ b/expect/_matchers.ts
+@@ -1144,12 +1144,76 @@ export function toMatchSnapshot(
+     maybeHint,
+   );
+ 
++  matchSnapshot(
++    "toMatchSnapshot",
++    () =>
++      propertyMatchers
++        ? applyPropertyMatchers(context, propertyMatchers, "toMatchSnapshot")
++        : context.value,
++    hint,
++  );
++}
++
++/**
++ * Compares the message of the error thrown by a function (or the reason of a
++ * rejected promise, when used with `.rejects`) against a stored snapshot file.
++ *
++ * @experimental
++ */
++export function toThrowErrorMatchingSnapshot(
++  context: MatcherContext,
++  hint?: string,
++): MatchResult {
++  if (context.isNot) {
++    throw new AssertionError("Snapshot matchers do not support `.not`");
++  }
++
++  let error: unknown;
++  if (typeof context.value === "function") {
++    let threw = false;
++    try {
++      context.value();
++    } catch (err) {
++      threw = true;
++      error = err;
++    }
++    if (!threw) {
++      const defaultMessage = "Received function did not throw";
++      throw new AssertionError(
++        context.customMessage
++          ? `${context.customMessage}: ${defaultMessage}`
++          : defaultMessage,
++      );
++    }
++  } else {
++    // With `.rejects`, the value is already the rejection reason.
++    error = context.value;
++  }
++
++  const message = typeof error === "object" && error !== null &&
++      "message" in error
++    ? error.message
++    : error;
++
++  matchSnapshot("toThrowErrorMatchingSnapshot", () => message, hint);
++}
++
++/**
++ * Serializes the value returned by `getValue` and compares it against the
++ * stored snapshot for the current test, or records it when running in update
++ * mode.
++ */
++function matchSnapshot(
++  matcherName: string,
++  getValue: () => unknown,
++  hint: string | undefined,
++): void {
+   // Determine test file path
+   const state = getState();
+   const testFilePath = state.testPath ?? getTestFileFromStack();
+   if (!testFilePath) {
+     throw new Error(
+-      "toMatchSnapshot: Unable to determine test file path. " +
++      `${matcherName}: Unable to determine test file path. ` +
+         "Set it using expect.setState({ testPath: import.meta.url }).",
+     );
+   }
+@@ -1158,7 +1222,7 @@ export function toMatchSnapshot(
+   const testName = state.currentTestName;
+   if (!testName) {
+     throw new Error(
+-      "toMatchSnapshot: Unable to determine test name. " +
++      `${matcherName}: Unable to determine test name. ` +
+         "Set it using expect.setState({ currentTestName: '<test name>' }).",
+     );
+   }
+@@ -1169,11 +1233,7 @@ export function toMatchSnapshot(
+   const count = snapshotCtx.getCount(snapshotName);
+   const key = `${snapshotName} ${count}`;
+ 
+-  const valueToSerialize = propertyMatchers
+-    ? applyPropertyMatchers(context, propertyMatchers, "toMatchSnapshot")
+-    : context.value;
+-
+-  const actualSnapshot = serialize(valueToSerialize);
++  const actualSnapshot = serialize(getValue());
+   snapshotCtx.pushToUpdateQueue(key);
+ 
+   if (getIsUpdate()) {
+diff --git a/expect/_to_throw_error_matching_snapshot_test.ts b/expect/_to_throw_error_matching_snapshot_test.ts
+new file mode 100644
+index 0000000..0019e9a
+--- /dev/null
++++ b/expect/_to_throw_error_matching_snapshot_test.ts
+@@ -0,0 +1,182 @@
++// Copyright 2018-2026 the Deno authors. MIT license.
++
++import { expect } from "./expect.ts";
++import {
++  assertEquals,
++  AssertionError,
++  assertRejects,
++  assertThrows,
++} from "@std/assert";
++import { SnapshotContext } from "./_snapshot_state.ts";
++
++/**
++ * Runs `fn` against a temporary test file whose snapshot file contains
++ * `snapshots` (a map of snapshot key to serialized value).
++ */
++async function withSnapshotFile(
++  testName: string,
++  snapshots: Record<string, string>,
++  fn: () => void | Promise<void>,
++) {
++  const dir = await Deno.makeTempDir();
++  const testFile = `${dir}/test.ts`;
++  const snapshotDir = `${dir}/__snapshots__`;
++  await Deno.mkdir(snapshotDir);
++  await Deno.writeTextFile(
++    `${snapshotDir}/test.ts.snap`,
++    [
++      "export const snapshot = {};",
++      "",
++      ...Object.entries(snapshots).map(([key, value]) =>
++        `snapshot[\`${key}\`] = \`${value}\`;\n`
++      ),
++    ].join("\n"),
++  );
++
++  expect.setState({ currentTestName: testName, testPath: testFile });
++  try {
++    await fn();
++  } finally {
++    expect.setState({ currentTestName: undefined, testPath: undefined });
++    SnapshotContext.contexts.clear();
++    await Deno.remove(dir, { recursive: true });
++  }
++}
++
++Deno.test("expect().toThrowErrorMatchingSnapshot() matches the thrown error message", async () => {
++  await withSnapshotFile(
++    "throw match",
++    { "throw match 1": `"boom"` },
++    () => {
++      expect(() => {
++        throw new Error("boom");
++      }).toThrowErrorMatchingSnapshot();
++    },
++  );
++});
++
++Deno.test("expect().toThrowErrorMatchingSnapshot() detects a different error message", async () => {
++  await withSnapshotFile(
++    "throw mismatch",
++    { "throw mismatch 1": `"boom"` },
++    () => {
++      assertThrows(
++        () => {
++          expect(() => {
++            throw new TypeError("bang");
++          }).toThrowErrorMatchingSnapshot();
++        },
++        AssertionError,
++        "Snapshot does not match",
++      );
++    },
++  );
++});
++
++Deno.test("expect().toThrowErrorMatchingSnapshot() uses the hint in the snapshot key", async () => {
++  await withSnapshotFile(
++    "throw hint",
++    { "throw hint: my hint 1": `"boom"` },
++    () => {
++      expect(() => {
++        throw new Error("boom");
++      }).toThrowErrorMatchingSnapshot("my hint");
++    },
++  );
++});
++
++Deno.test("expect().toThrowErrorMatchingSnapshot() shares the snapshot counter with toMatchSnapshot()", async () => {
++  await withSnapshotFile(
++    "throw counter",
++    { "throw counter 1": `"value"`, "throw counter 2": `"boom"` },
++    () => {
++      expect("value").toMatchSnapshot();
++      expect(() => {
++        throw new Error("boom");
++      }).toThrowErrorMatchingSnapshot();
++    },
++  );
++});
++
++Deno.test("expect().toThrowErrorMatchingSnapshot() throws on missing snapshot in assert mode", async () => {
++  await withSnapshotFile("throw missing", {}, () => {
++    assertThrows(
++      () => {
++        expect(() => {
++          throw new Error("boom");
++        }).toThrowErrorMatchingSnapshot();
++      },
++      AssertionError,
++      "Missing snapshot: throw missing 1",
++    );
++  });
++});
++
++Deno.test("expect().toThrowErrorMatchingSnapshot() throws when the function does not throw", async () => {
++  await withSnapshotFile(
++    "no throw",
++    { "no throw 1": `"boom"` },
++    () => {
++      assertThrows(
++        () => {
++          expect(() => {}).toThrowErrorMatchingSnapshot();
++        },
++        AssertionError,
++        "Received function did not throw",
++      );
++    },
++  );
++});
++
++Deno.test("expect().toThrowErrorMatchingSnapshot() works with rejects", async () => {
++  await withSnapshotFile(
++    "rejects match",
++    { "rejects match 1": `"async boom"`, "rejects match 2": `"async boom"` },
++    async () => {
++      await expect(Promise.reject(new Error("async boom"))).rejects
++        .toThrowErrorMatchingSnapshot();
++      await assertRejects(
++        () =>
++          expect(Promise.reject(new Error("other"))).rejects
++            .toThrowErrorMatchingSnapshot(),
++        AssertionError,
++        "Snapshot does not match",
++      );
++    },
++  );
++});
++
++Deno.test("expect().not.toThrowErrorMatchingSnapshot() throws", async () => {
++  await withSnapshotFile("throw not", {}, () => {
++    assertThrows(
++      () => {
++        expect(() => {
++          throw new Error("boom");
++        }).not.toThrowErrorMatchingSnapshot();
++      },
++      AssertionError,
++      "Snapshot matchers do not support `.not`",
++    );
++  });
++});
++
++Deno.test("expect().toThrowErrorMatchingSnapshot() throws without currentTestName", () => {
++  expect.setState({ currentTestName: undefined, testPath: import.meta.url });
++  try {
++    const error = assertThrows(
++      () => {
++        expect(() => {
++          throw new Error("boom");
++        }).toThrowErrorMatchingSnapshot();
++      },
++      Error,
++      "Unable to determine test name",
++    );
++    assertEquals(
++      error.message.startsWith("toThrowErrorMatchingSnapshot:"),
++      true,
++    );
++  } finally {
++    expect.setState({ currentTestName: undefined, testPath: undefined });
++  }
++});
+diff --git a/expect/_types.ts b/expect/_types.ts
+index 9cf38a0..038cc8d 100644
+--- a/expect/_types.ts
++++ b/expect/_types.ts
+@@ -909,6 +909,33 @@ export interface Expected<IsAsync = false> {
+     expected?: string | RegExp | E | (new (...args: any[]) => E),
+   ): void;
+ 
++  /**
++   * Asserts that the function throws an error whose message matches the most
++   * recent snapshot. If no snapshot exists, one will be created when running
++   * in update mode (`-- --update`).
++   *
++   * When used with `.rejects`, the message of the rejection reason is
++   * compared instead.
++   *
++   * Requires `expect.setState({ currentTestName: "..." })` to be called before use.
++   * The test file path is auto-detected from the call stack.
++   *
++   * @example Usage
++   * ```ts ignore
++   * import { expect } from "@std/expect";
++   *
++   * Deno.test("error snapshot test", () => {
++   *   expect.setState({ currentTestName: "error snapshot test", testPath: import.meta.url });
++   *   expect(() => {
++   *     throw new Error("boom");
++   *   }).toThrowErrorMatchingSnapshot();
++   * });
++   * ```
++   *
++   * @param hint An optional hint string appended to the snapshot name.
++   */
++  toThrowErrorMatchingSnapshot(hint?: string): void;
++
+   /**
+    * The negation object that allows chaining negated assertions.
+    */
+diff --git a/expect/expect.ts b/expect/expect.ts
+index c2f6f31..bbc0d72 100644
+--- a/expect/expect.ts
++++ b/expect/expect.ts
+@@ -59,6 +59,7 @@ import {
+   toMatchSnapshot,
+   toStrictEqual,
+   toThrow,
++  toThrowErrorMatchingSnapshot,
+ } from "./_matchers.ts";
+ import { addSerializer } from "./_serializer.ts";
+ import { isPromiseLike } from "./_utils.ts";
+@@ -117,6 +118,7 @@ const matchers: Record<MatcherKey, Matcher> = {
+   toReturnWith: toHaveReturnedWith,
+   toStrictEqual,
+   toThrow,
++  toThrowErrorMatchingSnapshot,
+ };
+ 
+ /**
+diff --git a/expect/mod.ts b/expect/mod.ts
+index 2933bda..b7198fd 100644
+--- a/expect/mod.ts
++++ b/expect/mod.ts
+@@ -40,6 +40,7 @@
+  *   - {@linkcode Expected.toHaveProperty | toHaveProperty}
+  *   - {@linkcode Expected.toMatchSnapshot | toMatchSnapshot}
+  *   - {@linkcode Expected.toMatchInlineSnapshot | toMatchInlineSnapshot}
++ *   - {@linkcode Expected.toThrowErrorMatchingSnapshot | toThrowErrorMatchingSnapshot}
+  * - Mock related matchers:
+  *   - {@linkcode Expected.toHaveBeenCalled | toHaveBeenCalled}
+  *   - {@linkcode Expected.toHaveBeenCalledTimes | toHaveBeenCalledTimes}
+@@ -70,9 +71,8 @@
+  *   - {@linkcode expect.extend}
+  *   - {@linkcode expect.hasAssertions}
+  *
+- * Only these functions are still not available:
++ * Only this function is still not available:
+  * - Matchers:
+- *   - `toThrowErrorMatchingSnapshot`
+  *   - `toThrowErrorMatchingInlineSnapshot`
+  *
+  * The tracking issue to add support for unsupported parts of the API is
+-- 
+2.43.0
+

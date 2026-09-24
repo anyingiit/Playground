@@ -5,6 +5,6 @@
 | Issue | https://github.com/LargeModGames/spotatui/issues/554 |
 | Tier | 自由 |
 | Labels | bug, good first issue |
-| Status | 🚧 in progress — clone + AI-policy/duplicate check |
+| Status | 🚧 in progress — audit done (AUDIT.md), tests written, building |
 
 Notes: issue opened by the maintainer (LargeModGames) 2026-09-23; no assignee, no comments seen.
