@@ -1,7 +1,7 @@
 # Contributions index
 
 Target: **60 = 12 高活跃高Star + 12 新锐 + 36 自由**.
-Ready: **39** (高星 12 · 新锐 12 · 自由 15).
+Ready: **40** (高星 12 · 新锐 12 · 自由 16).
 Each folder: `README.md` (analysis, verification, submit steps, PR text, **需要提交者注意**), `0001-*.patch`, `AUDIT.md`.
 Rules: [`docs/CONTRIBUTION_BRIEF.md`](../docs/CONTRIBUTION_BRIEF.md). Tools: [`tools/`](../tools/).
 
@@ -49,4 +49,6 @@ Rules: [`docs/CONTRIBUTION_BRIEF.md`](../docs/CONTRIBUTION_BRIEF.md). Tools: [`t
 | 41 | 自由 | [pyrite-wiki/pyrite#363](https://github.com/pyrite-wiki/pyrite/issues/363) | ✅ |
 | 42 | 自由 | [ProjectMirador/mirador#4071](https://github.com/ProjectMirador/mirador/issues/4071) | 🚧 |
 | 43 | 自由 | [bolshakov/stoplight#853](https://github.com/bolshakov/stoplight/issues/853) | 🚧 |
+| 43 | 自由 | [cubrid-lab/sqlalchemy-cubrid#440](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/440) | 🚧 |
 | 44 | 新锐 | [pasteurlabs/tesseract-core#768](https://github.com/pasteurlabs/tesseract-core/issues/768) | ✅ |
+| 45 | 自由 | [fsspec/projspec#69](https://github.com/fsspec/projspec/issues/69) | ✅ |

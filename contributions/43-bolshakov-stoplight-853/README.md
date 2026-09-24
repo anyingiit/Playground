@@ -1,12 +1,11 @@
-# bolshakov/stoplight#853 — Rename `TrafficRecovery` decision constants
+# bolshakov/stoplight#853 — SKIPPED (AI-assisted PRs not accepted)
 
 | Item | Value |
 |---|---|
 | Issue | https://github.com/bolshakov/stoplight/issues/853 |
 | Tier | 自由 |
 | Labels | good first issue |
-| Status | 🚧 in progress — audit done, implementing |
-| Duplicate-PR check | `repo:bolshakov/stoplight TrafficRecovery` / `853` → no open PR; issue unassigned, no comments |
+| Status | ❌ skipped — the repo's `good first issue` label is defined as "For newcomers to learn the codebase. Human contributions only, AI-assisted PRs not accepted" (https://github.com/bolshakov/stoplight/labels) |
 
-Notes: issue by maintainer (bolshakov): rename `GREEN`→`RECOVERED`, `YELLOW`→`RECOVERING`/`PROBING`, `RED`→`FAILED_TO_RECOVER` in `Stoplight::Domain::TrafficRecovery`.
-No AI ban found (repo ships AGENTS.md/CLAUDE.md).
+Found only after implementing (the label description is not in the repo files; AGENTS.md/CLAUDE.md exist, which looked AI-friendly).
+Patch deleted on purpose — do NOT submit anything for this issue. Add `bolshakov/stoplight` (good-first-issue label) to the exclusion list.
