@@ -1,0 +1,338 @@
+From a3f249ebc101fc4525776dfde2e5d6c3dc8b8014 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:43:58 +0000
+Subject: [PATCH] fix(provider): allow overriding the system provider directory
+
+DiscoverProviders() always scanned the hard-coded system directory
+/usr/libexec/complytime/providers after the user directory, so unit
+tests that expect an empty or controlled provider set failed on hosts
+with providers installed from RPM packages.
+
+Add the COMPLYTIME_SYSTEM_PROVIDER_DIR environment variable, resolved
+by complytime.ResolveSystemProviderDir(), following the existing env
+override pattern (XDG_DATA_HOME, COMPLYTIME_WORKSPACE). Discovery and
+the doctor "no providers found" message use the resolved path.
+
+Tests that assume no system providers now point the variable at an
+empty temporary directory, and a new test covers discovery from an
+overridden system directory including user-directory precedence.
+
+Fixes #881
+
+Assisted-by: Claude Code
+---
+ CHANGELOG.md                       |  6 ++++++
+ README.md                          |  1 +
+ cmd/complyctl/cli/cli_test.go      |  2 ++
+ docs/man/complyctl.1               |  6 ++++++
+ docs/man/complyctl.md              |  5 +++++
+ internal/complytime/consts.go      | 17 +++++++++++++++
+ internal/complytime/consts_test.go | 10 +++++++++
+ internal/doctor/doctor.go          |  4 ++--
+ internal/doctor/doctor_test.go     | 13 +++++++-----
+ pkg/provider/discovery.go          |  5 +++--
+ pkg/provider/discovery_test.go     | 34 ++++++++++++++++++++++++++++++
+ pkg/provider/manager_test.go       |  3 +++
+ 12 files changed, 97 insertions(+), 9 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 60301eb..0b2abad 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -32,6 +32,12 @@
+   corrects a semantic error in upstream `go-gemara` result
+   aggregation fixed in v0.9.0. (#813)
+ 
++- Provider discovery and `complyctl doctor` unit tests no longer fail on
++  hosts with providers installed in `/usr/libexec/complytime/providers`
++  (e.g., from RPM packages). The system-wide provider directory can now
++  be overridden with the `COMPLYTIME_SYSTEM_PROVIDER_DIR` environment
++  variable, which the tests use to isolate discovery from the host. (#881)
++
+ ### Security
+ 
+ - Transitive `oras-go` bump via `go-gemara` v0.9.1 addresses
+diff --git a/README.md b/README.md
+index 63d4922..9388570 100644
+--- a/README.md
++++ b/README.md
+@@ -243,6 +243,7 @@ Lists discovered scanning providers with their evaluator ID, path, health status
+ | `COMPLYTIME_SHOW_PASSING` | Set to `false` to exclude passing controls from scan summary (default: `true`) |
+ | `COMPLYTIME_LOG_FORMAT` | EvaluationLog format: `yaml` or `json` (default: `yaml`) |
+ | `COMPLYTIME_CACHE_VERSIONS` | Complypack versions to retain per evaluator-id (default: `1`) |
++| `COMPLYTIME_SYSTEM_PROVIDER_DIR` | Override the system-wide provider directory scanned after the user provider directory (default: `/usr/libexec/complytime/providers`) |
+ | `NO_COLOR` | Disables emoji output in `complyctl doctor` (selects `text` format) |
+ 
+ ## Workspace Configuration
+diff --git a/cmd/complyctl/cli/cli_test.go b/cmd/complyctl/cli/cli_test.go
+index c365b30..4a6cb5c 100644
+--- a/cmd/complyctl/cli/cli_test.go
++++ b/cmd/complyctl/cli/cli_test.go
+@@ -1061,6 +1061,8 @@ func TestInitOptions_Run_AlreadyExists(t *testing.T) {
+ // --- providersOptions tests ---
+ 
+ func TestProvidersOptions_Run_EmptyProviderDir(t *testing.T) {
++	// Keep providers installed on the host out of discovery.
++	t.Setenv(complytime.SystemProviderDirEnvVar, t.TempDir())
+ 	tmpDir := t.TempDir()
+ 	o := &providersOptions{
+ 		Common:      &Common{},
+diff --git a/docs/man/complyctl.1 b/docs/man/complyctl.1
+index c6cb994..fb1c642 100644
+--- a/docs/man/complyctl.1
++++ b/docs/man/complyctl.1
+@@ -383,6 +383,12 @@ cache (\(ti/.cache/complytime/complypacks/).
+ Default: \f[B]1\f[R].
+ Values less than 1 are clamped to 1.
+ .TP
++\f[B]COMPLYTIME_SYSTEM_PROVIDER_DIR\f[R]
++Override the system\-wide provider directory that is scanned after the
++user provider directory.
++Providers in the user directory take precedence.
++Default: \f[B]/usr/libexec/complytime/providers\f[R].
++.TP
+ \f[B]NO_COLOR\f[R]
+ When set (any non\-empty value), \f[B]complyctl doctor\f[R]
+ automatically selects \f[B]text\f[R] format instead of the default
+diff --git a/docs/man/complyctl.md b/docs/man/complyctl.md
+index 9b35f30..c1fc4f5 100644
+--- a/docs/man/complyctl.md
++++ b/docs/man/complyctl.md
+@@ -397,6 +397,11 @@ Default: **yaml**. The **--log-format** flag takes precedence.
+ local cache (~/.cache/complytime/complypacks/). Default: **1**.
+ Values less than 1 are clamped to 1.
+ 
++**COMPLYTIME_SYSTEM_PROVIDER_DIR**
++: Override the system-wide provider directory that is scanned after
++the user provider directory. Providers in the user directory take
++precedence. Default: **/usr/libexec/complytime/providers**.
++
+ **NO_COLOR**
+ : When set (any non-empty value), **complyctl doctor** automatically
+ selects **text** format instead of the default human-readable emoji
+diff --git a/internal/complytime/consts.go b/internal/complytime/consts.go
+index 22d035d..02b73b7 100644
+--- a/internal/complytime/consts.go
++++ b/internal/complytime/consts.go
+@@ -69,8 +69,25 @@ const ProviderExecutablePrefix = "complyctl-provider-"
+ // SystemProviderDir is the system-wide provider directory where
+ // package managers (e.g., RPM) install provider binaries.
+ // Discovery checks this path as a fallback after the user directory.
++// Use ResolveSystemProviderDir to honor SystemProviderDirEnvVar.
+ const SystemProviderDir = "/usr/libexec/complytime/providers"
+ 
++// SystemProviderDirEnvVar is the environment variable that overrides
++// SystemProviderDir. It lets tests isolate discovery from providers
++// installed on the host, and lets packagers or users point discovery
++// at a different system-wide location.
++const SystemProviderDirEnvVar = "COMPLYTIME_SYSTEM_PROVIDER_DIR"
++
++// ResolveSystemProviderDir returns the system-wide provider directory:
++// the value of SystemProviderDirEnvVar when set and non-empty,
++// SystemProviderDir otherwise.
++func ResolveSystemProviderDir() string {
++	if dir := os.Getenv(SystemProviderDirEnvVar); dir != "" {
++		return dir
++	}
++	return SystemProviderDir
++}
++
+ // Gemara OCI layer media types for identifying layer content within multi-layer OCI manifests.
+ const (
+ 	MediaTypeCatalog  = "application/vnd.gemara.catalog.v1+yaml"
+diff --git a/internal/complytime/consts_test.go b/internal/complytime/consts_test.go
+index 0884639..f9c17ef 100644
+--- a/internal/complytime/consts_test.go
++++ b/internal/complytime/consts_test.go
+@@ -160,3 +160,13 @@ func TestResolveProviderDir_CustomXDGDataHome(t *testing.T) {
+ 	require.NoError(t, err)
+ 	assert.Equal(t, filepath.Join("/custom/data", xdgAppName, providerSubdir), dir)
+ }
++
++func TestResolveSystemProviderDir_Default(t *testing.T) {
++	t.Setenv(SystemProviderDirEnvVar, "")
++	assert.Equal(t, SystemProviderDir, ResolveSystemProviderDir())
++}
++
++func TestResolveSystemProviderDir_EnvOverride(t *testing.T) {
++	t.Setenv(SystemProviderDirEnvVar, "/custom/providers")
++	assert.Equal(t, "/custom/providers", ResolveSystemProviderDir())
++}
+diff --git a/internal/doctor/doctor.go b/internal/doctor/doctor.go
+index cfc489b..5d34a82 100644
+--- a/internal/doctor/doctor.go
++++ b/internal/doctor/doctor.go
+@@ -354,7 +354,7 @@ func CheckConfig(configPath string) CheckResult {
+ // Returns both diagnostic results and Describe data for variable validation (R51).
+ // providerLogger is passed to the provider Manager for go-plugin client logging.
+ // Discovery scans both the user directory (providerDir) and the system-wide
+-// directory (complytime.SystemProviderDir) so RPM-installed providers are found
++// directory (complytime.ResolveSystemProviderDir) so RPM-installed providers are found
+ // even when the user directory does not exist.
+ func CheckProviders(providerDir string, providerLogger hclog.Logger) ([]CheckResult, []ProviderHealth) {
+ 	mgr, err := provider.NewManager(providerDir, providerLogger)
+@@ -387,7 +387,7 @@ func CheckProviders(providerDir string, providerLogger hclog.Logger) ([]CheckRes
+ 			Status: StatusWarn,
+ 			Message: fmt.Sprintf(
+ 				"no providers found in %s or %s",
+-				providerDir, complytime.SystemProviderDir,
++				providerDir, complytime.ResolveSystemProviderDir(),
+ 			),
+ 			Blocking: false,
+ 		}}, nil
+diff --git a/internal/doctor/doctor_test.go b/internal/doctor/doctor_test.go
+index 1796bff..dfd2f61 100644
+--- a/internal/doctor/doctor_test.go
++++ b/internal/doctor/doctor_test.go
+@@ -109,9 +109,11 @@ func TestCheckProviders_NonExistentUserDir(t *testing.T) {
+ 	// Simulates RPM-only install where the user XDG provider directory
+ 	// does not exist. The discovery layer should tolerate the missing
+ 	// user directory and fall through to the system directory scan.
+-	// On dev machines where /usr/libexec/complytime/providers also
+-	// does not exist, the result should be a non-blocking WARN
+-	// (not the previous blocking FAIL with "directory not found").
++	// When the system directory has no providers either, the result
++	// should be a non-blocking WARN (not the previous blocking FAIL
++	// with "directory not found").
++	sysDir := filepath.Join(t.TempDir(), "no-system-providers")
++	t.Setenv(complytime.SystemProviderDirEnvVar, sysDir)
+ 	nonExistent := filepath.Join(t.TempDir(), "does-not-exist")
+ 	results, healthData := CheckProviders(nonExistent, hclog.NewNullLogger())
+ 
+@@ -119,13 +121,14 @@ func TestCheckProviders_NonExistentUserDir(t *testing.T) {
+ 	assert.Equal(t, StatusWarn, results[0].Status)
+ 	assert.False(t, results[0].Blocking)
+ 	assert.Contains(t, results[0].Message, "no providers found")
+-	assert.Contains(t, results[0].Message, complytime.SystemProviderDir)
++	assert.Contains(t, results[0].Message, sysDir)
+ 	assert.Nil(t, healthData)
+ }
+ 
+ func TestCheckProviders_EmptyUserDir(t *testing.T) {
+ 	// User directory exists but is empty. Same outcome: no providers
+-	// discovered from either directory on a dev machine.
++	// discovered from either directory.
++	t.Setenv(complytime.SystemProviderDirEnvVar, t.TempDir())
+ 	emptyDir := t.TempDir()
+ 	results, healthData := CheckProviders(emptyDir, hclog.NewNullLogger())
+ 
+diff --git a/pkg/provider/discovery.go b/pkg/provider/discovery.go
+index a00104b..78c62c6 100644
+--- a/pkg/provider/discovery.go
++++ b/pkg/provider/discovery.go
+@@ -30,7 +30,8 @@ func NewDiscovery(providerDir string) *Discovery {
+ }
+ 
+ // DiscoverProviders scans the user provider directory and the system-wide
+-// provider directory for executables matching the naming convention.
++// provider directory (see complytime.ResolveSystemProviderDir) for
++// executables matching the naming convention.
+ // User-directory providers take precedence over system-installed ones.
+ func (d *Discovery) DiscoverProviders() ([]ProviderInfo, error) {
+ 	seen := make(map[string]bool)
+@@ -45,7 +46,7 @@ func (d *Discovery) DiscoverProviders() ([]ProviderInfo, error) {
+ 		providers = append(providers, p)
+ 	}
+ 
+-	sysProviders, err := scanDir(complytime.SystemProviderDir)
++	sysProviders, err := scanDir(complytime.ResolveSystemProviderDir())
+ 	if err != nil {
+ 		return nil, err
+ 	}
+diff --git a/pkg/provider/discovery_test.go b/pkg/provider/discovery_test.go
+index cb6e4b4..863b30f 100644
+--- a/pkg/provider/discovery_test.go
++++ b/pkg/provider/discovery_test.go
+@@ -16,6 +16,7 @@ import (
+ // --- T157: DiscoverProviders tests ---
+ 
+ func TestDiscoverProviders_EmptyDir(t *testing.T) {
++	isolateSystemProviderDir(t)
+ 	dir := t.TempDir()
+ 	d := NewDiscovery(dir)
+ 	providers, err := d.DiscoverProviders()
+@@ -24,6 +25,7 @@ func TestDiscoverProviders_EmptyDir(t *testing.T) {
+ }
+ 
+ func TestDiscoverProviders_NonPrefixedExecutables(t *testing.T) {
++	isolateSystemProviderDir(t)
+ 	dir := t.TempDir()
+ 	createExecutable(t, dir, "some-other-tool")
+ 
+@@ -34,6 +36,7 @@ func TestDiscoverProviders_NonPrefixedExecutables(t *testing.T) {
+ }
+ 
+ func TestDiscoverProviders_ValidProvider(t *testing.T) {
++	isolateSystemProviderDir(t)
+ 	dir := t.TempDir()
+ 	createExecutable(t, dir, complytime.ProviderExecutablePrefix+"mock")
+ 
+@@ -45,6 +48,27 @@ func TestDiscoverProviders_ValidProvider(t *testing.T) {
+ 	assert.Equal(t, filepath.Join(dir, complytime.ProviderExecutablePrefix+"mock"), providers[0].ExecutablePath)
+ }
+ 
++func TestDiscoverProviders_SystemDirFromEnv(t *testing.T) {
++	userDir := t.TempDir()
++	sysDir := isolateSystemProviderDir(t)
++	createExecutable(t, userDir, complytime.ProviderExecutablePrefix+"openscap")
++	createExecutable(t, sysDir, complytime.ProviderExecutablePrefix+"openscap")
++	createExecutable(t, sysDir, complytime.ProviderExecutablePrefix+"sys-only")
++
++	d := NewDiscovery(userDir)
++	providers, err := d.DiscoverProviders()
++	require.NoError(t, err)
++	require.Len(t, providers, 2)
++
++	idPaths := make(map[string]string)
++	for _, p := range providers {
++		idPaths[p.EvaluatorID] = p.ExecutablePath
++	}
++	assert.Equal(t, filepath.Join(userDir, complytime.ProviderExecutablePrefix+"openscap"), idPaths["openscap"],
++		"user-dir openscap should take precedence over system-dir")
++	assert.Equal(t, filepath.Join(sysDir, complytime.ProviderExecutablePrefix+"sys-only"), idPaths["sys-only"])
++}
++
+ // --- T158: scanDir tests ---
+ 
+ func TestScanDir_NonexistentDirectory(t *testing.T) {
+@@ -152,6 +176,16 @@ func TestScanDir_UserDirPrecedence(t *testing.T) {
+ 	assert.Equal(t, filepath.Join(sysDir, complytime.ProviderExecutablePrefix+"sys-only"), idPaths["sys-only"])
+ }
+ 
++// isolateSystemProviderDir points system-wide provider discovery at an
++// empty temporary directory so tests do not pick up providers installed
++// on the host (e.g., from RPM packages). It returns that directory.
++func isolateSystemProviderDir(t *testing.T) string {
++	t.Helper()
++	dir := t.TempDir()
++	t.Setenv(complytime.SystemProviderDirEnvVar, dir)
++	return dir
++}
++
+ func createExecutable(t *testing.T, dir, name string) {
+ 	t.Helper()
+ 	path := filepath.Join(dir, name)
+diff --git a/pkg/provider/manager_test.go b/pkg/provider/manager_test.go
+index 8d3aaad..8568fce 100644
+--- a/pkg/provider/manager_test.go
++++ b/pkg/provider/manager_test.go
+@@ -10,6 +10,7 @@ import (
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
+ 
++	"github.com/complytime/complyctl/internal/complytime"
+ 	"github.com/complytime/complyctl/pkg/provider"
+ )
+ 
+@@ -65,6 +66,8 @@ func TestManager_ListProviders(t *testing.T) {
+ }
+ 
+ func TestManager_EmptyProviderDir(t *testing.T) {
++	// Keep providers installed on the host out of discovery.
++	t.Setenv(complytime.SystemProviderDirEnvVar, t.TempDir())
+ 	tmpDir := t.TempDir()
+ 
+ 	mgr, err := provider.NewManager(tmpDir, nil)
+-- 
+2.43.0
+

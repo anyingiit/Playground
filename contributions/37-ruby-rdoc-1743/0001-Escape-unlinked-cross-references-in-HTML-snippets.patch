@@ -1,0 +1,57 @@
+From 84b155a055ddb725103b955e5319eac6ab229600 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:42:53 +0000
+Subject: [PATCH] Escape unlinked cross-references in HTML snippets
+
+ToHtmlSnippet does not link cross-references, but its CROSSREF handler
+returned the matched text as-is. The text is then emitted as already
+converted HTML, so a match such as `#<` in `#<Encoding:UTF-8>` put a raw
+`<` into search snippets and broke the markup.
+
+Escape the text like the suppressed cross-reference handler does.
+
+Fixes #1743
+---
+ lib/rdoc/markup/to_html_snippet.rb       | 5 +++--
+ test/rdoc/markup/to_html_snippet_test.rb | 7 +++++++
+ 2 files changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/lib/rdoc/markup/to_html_snippet.rb b/lib/rdoc/markup/to_html_snippet.rb
+index 3d184d6f..4fe022e9 100644
+--- a/lib/rdoc/markup/to_html_snippet.rb
++++ b/lib/rdoc/markup/to_html_snippet.rb
+@@ -128,10 +128,11 @@ module RDoc
+       end
+ 
+       ##
+-      # Removes escaping from the cross-references in +target+
++      # Removes escaping from the cross-references in +target+ and escapes HTML
++      # characters, since snippets don't link cross-references.
+ 
+       def handle_regexp_CROSSREF(text)
+-        text.sub(/\A\\/, '')
++        convert_string(text.delete_prefix('\\'))
+       end
+ 
+       ##
+diff --git a/test/rdoc/markup/to_html_snippet_test.rb b/test/rdoc/markup/to_html_snippet_test.rb
+index 4573bded..f0398397 100644
+--- a/test/rdoc/markup/to_html_snippet_test.rb
++++ b/test/rdoc/markup/to_html_snippet_test.rb
+@@ -650,6 +650,13 @@ This routine modifies its +comment+ parameter.
+     assert_equal 3, @to.characters
+   end
+ 
++  def test_convert_CROSSREF_escapes_html
++    result = @to.convert 'See [#<Encoding:ISO-8859-1>, #<Encoding:UTF-8>] and Foo::<bar>'
++
++    expected = "<p>See [#&lt;Encoding:ISO-8859-1&gt;, #&lt;Encoding:UTF-8&gt;] and Foo::&lt;bar&gt;\n"
++    assert_equal expected, result
++  end
++
+   def test_handle_regexp_HYPERLINK_link
+     target = 'link:README.txt'
+ 
+-- 
+2.43.0
+

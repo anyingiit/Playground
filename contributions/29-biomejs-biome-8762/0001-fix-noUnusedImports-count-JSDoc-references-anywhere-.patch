@@ -1,0 +1,223 @@
+From 98ff54ac273579b94c8fadaf4df0198a546c2885 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:42:58 +0000
+Subject: [PATCH] fix(noUnusedImports): count JSDoc references anywhere in the
+ file
+
+JSDoc types were only collected from comments attached to declarations,
+class/object/type members and exports, so a type referenced from a
+@packageDocumentation comment before the imports, from a comment before
+an expression statement, or from a comment at the end of the file was
+reported as unused.
+
+Collect them from the trivia of every token of the file instead.
+
+Closes #8762
+---
+ .../jsdoc-links-anywhere-no-unused-imports.md |  5 +++
+ .../src/lint/correctness/no_unused_imports.rs | 44 +++++++++++--------
+ .../noUnusedImports/valid_issue_8762.ts       | 21 +++++++++
+ .../noUnusedImports/valid_issue_8762.ts.snap  | 29 ++++++++++++
+ .../valid_issue_8762_package_documentation.ts |  8 ++++
+ ...d_issue_8762_package_documentation.ts.snap | 16 +++++++
+ 6 files changed, 105 insertions(+), 18 deletions(-)
+ create mode 100644 .changeset/jsdoc-links-anywhere-no-unused-imports.md
+ create mode 100644 crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762.ts
+ create mode 100644 crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762.ts.snap
+ create mode 100644 crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762_package_documentation.ts
+ create mode 100644 crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762_package_documentation.ts.snap
+
+diff --git a/.changeset/jsdoc-links-anywhere-no-unused-imports.md b/.changeset/jsdoc-links-anywhere-no-unused-imports.md
+new file mode 100644
+index 00000000..c1507460
+--- /dev/null
++++ b/.changeset/jsdoc-links-anywhere-no-unused-imports.md
+@@ -0,0 +1,5 @@
++---
++"@biomejs/biome": patch
++---
++
++Fixed [#8762](https://github.com/biomejs/biome/issues/8762): [`noUnusedImports`](https://biomejs.dev/linter/rules/no-unused-imports/) now considers types referenced by JSDoc comments placed anywhere in the file, such as a `@packageDocumentation` comment before the imports, a comment before an expression statement, or a comment at the end of the file. Previously, only JSDoc comments attached to declarations, class members, object members, and exports were taken into account.
+diff --git a/crates/biome_js_analyze/src/lint/correctness/no_unused_imports.rs b/crates/biome_js_analyze/src/lint/correctness/no_unused_imports.rs
+index ee8c49e1..f9153192 100644
+--- a/crates/biome_js_analyze/src/lint/correctness/no_unused_imports.rs
++++ b/crates/biome_js_analyze/src/lint/correctness/no_unused_imports.rs
+@@ -18,17 +18,16 @@ use biome_js_factory::make;
+ use biome_js_factory::make::{js_identifier_binding, js_module, js_module_item_list};
+ use biome_js_semantic::{ReferencesExtensions, SemanticModel};
+ use biome_js_syntax::{
+-    AnyJsBinding, AnyJsClassMember, AnyJsCombinedSpecifier, AnyJsDeclaration, AnyJsExportClause,
+-    AnyJsExportNamedSpecifier, AnyJsImportClause, AnyJsModuleItem, AnyJsNamedImportSpecifier,
+-    AnyJsObjectMember, AnyTsTypeMember, JsExport, JsLanguage, JsNamedImportSpecifiers,
+-    JsStaticMemberAssignment, JsSyntaxNode, T, TsEnumMember,
++    AnyJsBinding, AnyJsCombinedSpecifier, AnyJsExportClause, AnyJsExportNamedSpecifier,
++    AnyJsImportClause, AnyJsModuleItem, AnyJsNamedImportSpecifier, JsLanguage,
++    JsNamedImportSpecifiers, JsSyntaxNode, T,
+ };
+ use biome_jsdoc_comment::JsdocComment;
+ use biome_languages::JsFileSource;
+ use biome_languages::javascript::JsEmbeddingKind;
+ use biome_rowan::{
+-    AstNode, AstNodeList, AstSeparatedElement, AstSeparatedList, BatchMutationExt, Language,
+-    NodeOrToken, SyntaxNode, TextRange, TriviaPieceKind, WalkEvent, declare_node_union,
++    AstNode, AstNodeList, AstSeparatedElement, AstSeparatedList, BatchMutationExt, Direction,
++    Language, NodeOrToken, SyntaxNode, TextRange, TriviaPieceKind, WalkEvent,
+ };
+ use regex::Regex;
+ use rustc_hash::FxHashSet;
+@@ -526,10 +525,6 @@ struct JsDocTypeCollectorVisitor {
+     jsdoc_types: JsDocTypeModel,
+ }
+ 
+-declare_node_union! {
+-    pub AnyJsWithTypeReferencingJsDoc = AnyJsDeclaration | AnyJsClassMember | AnyJsObjectMember | AnyTsTypeMember | TsEnumMember | JsExport | JsStaticMemberAssignment
+-}
+-
+ impl Visitor for JsDocTypeCollectorVisitor {
+     type Language = JsLanguage;
+     fn visit(
+@@ -538,12 +533,11 @@ impl Visitor for JsDocTypeCollectorVisitor {
+         _ctx: VisitorContext<Self::Language>,
+     ) {
+         match event {
+-            WalkEvent::Enter(node) => {
+-                if AnyJsWithTypeReferencingJsDoc::can_cast(node.kind()) {
+-                    load_jsdoc_types_from_node(&mut self.jsdoc_types, node);
+-                }
++            // Only the root is inspected: its tokens carry every comment of the file.
++            WalkEvent::Enter(node) if node.parent().is_none() => {
++                load_jsdoc_types_from_root(&mut self.jsdoc_types, node);
+             }
+-            WalkEvent::Leave(_) => {}
++            WalkEvent::Enter(_) | WalkEvent::Leave(_) => {}
+         }
+     }
+ 
+@@ -552,9 +546,23 @@ impl Visitor for JsDocTypeCollectorVisitor {
+     }
+ }
+ 
+-fn load_jsdoc_types_from_node(model: &mut JsDocTypeModel, node: &SyntaxNode<JsLanguage>) {
+-    JsdocComment::get_jsdocs(node)
+-        .for_each(|comment| load_jsdoc_types_from_jsdoc_comment(model, comment.as_str()));
++/// Collects the types referenced by every JSDoc comment of the file.
++///
++/// Comments are trivia of the following (or preceding) token, so JSDoc comments placed
++/// before an import, before a non-declaration statement, or at the end of the file
++/// are collected too.
++fn load_jsdoc_types_from_root(model: &mut JsDocTypeModel, root: &SyntaxNode<JsLanguage>) {
++    for token in root.descendants_tokens(Direction::Next) {
++        for piece in token
++            .leading_trivia()
++            .pieces()
++            .chain(token.trailing_trivia().pieces())
++        {
++            if piece.is_comments() && JsdocComment::text_is_jsdoc_comment(piece.text()) {
++                load_jsdoc_types_from_jsdoc_comment(model, piece.text());
++            }
++        }
++    }
+ }
+ 
+ static JSDOC_INLINE_TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+diff --git a/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762.ts b/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762.ts
+new file mode 100644
+index 00000000..7073fc72
+--- /dev/null
++++ b/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762.ts
+@@ -0,0 +1,21 @@
++/* should not generate diagnostics */
++// See https://github.com/biomejs/biome/issues/8762
++
++import type { LinkOnImport } from "mod";
++import type { LinkOnExpressionStatement } from "mod";
++import type { LinkTrailing } from "mod";
++import type { TypeOnExpressionStatement } from "mod";
++import type { LinkAtEndOfFile } from "mod";
++
++/** {@link LinkOnImport} */
++import { run } from "mod";
++
++/** Runs {@link LinkOnExpressionStatement}. */
++run();
++
++run(); /** See {@link LinkTrailing}. */
++
++/** @type {TypeOnExpressionStatement} */
++globalThis.value = run();
++
++/** {@link LinkAtEndOfFile} */
+diff --git a/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762.ts.snap b/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762.ts.snap
+new file mode 100644
+index 00000000..07c3fc54
+--- /dev/null
++++ b/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762.ts.snap
+@@ -0,0 +1,29 @@
++---
++source: crates/biome_js_analyze/tests/spec_tests.rs
++expression: valid_issue_8762.ts
++---
++# Input
++```ts
++/* should not generate diagnostics */
++// See https://github.com/biomejs/biome/issues/8762
++
++import type { LinkOnImport } from "mod";
++import type { LinkOnExpressionStatement } from "mod";
++import type { LinkTrailing } from "mod";
++import type { TypeOnExpressionStatement } from "mod";
++import type { LinkAtEndOfFile } from "mod";
++
++/** {@link LinkOnImport} */
++import { run } from "mod";
++
++/** Runs {@link LinkOnExpressionStatement}. */
++run();
++
++run(); /** See {@link LinkTrailing}. */
++
++/** @type {TypeOnExpressionStatement} */
++globalThis.value = run();
++
++/** {@link LinkAtEndOfFile} */
++
++```
+diff --git a/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762_package_documentation.ts b/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762_package_documentation.ts
+new file mode 100644
+index 00000000..2ed49be4
+--- /dev/null
++++ b/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762_package_documentation.ts
+@@ -0,0 +1,8 @@
++/**
++ * @packageDocumentation
++ * Helpers that work with {@link LinkBeforeImports}.
++ *
++ * should not generate diagnostics
++ */
++
++import type { LinkBeforeImports } from "mod";
+diff --git a/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762_package_documentation.ts.snap b/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762_package_documentation.ts.snap
+new file mode 100644
+index 00000000..6c8af38f
+--- /dev/null
++++ b/crates/biome_js_analyze/tests/specs/correctness/noUnusedImports/valid_issue_8762_package_documentation.ts.snap
+@@ -0,0 +1,16 @@
++---
++source: crates/biome_js_analyze/tests/spec_tests.rs
++expression: valid_issue_8762_package_documentation.ts
++---
++# Input
++```ts
++/**
++ * @packageDocumentation
++ * Helpers that work with {@link LinkBeforeImports}.
++ *
++ * should not generate diagnostics
++ */
++
++import type { LinkBeforeImports } from "mod";
++
++```
+-- 
+2.43.0
+

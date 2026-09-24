@@ -1,0 +1,228 @@
+From d4e770a16094284ed35aacb04460d876a059bfec Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:40:47 +0000
+Subject: [PATCH] refactor!: return Option<Result<..>> from
+ ContentTrait::get_ssvc_v2
+
+Align `get_ssvc_v2` with the typed CVSS accessors so that an absent SSVC
+metric (`None`) is distinguished from one that is present but fails to
+deserialize (`Some(Err(_))`). The CSAF 2.0 implementation no longer has to
+fabricate an error, and `has_ssvc_v2` is now a default trait method based
+on `get_ssvc_v2_raw`, mirroring `has_cvss_v2`/`has_cvss_v3`/`has_cvss_v4`.
+
+BREAKING CHANGE: `ContentTrait::get_ssvc_v2` now returns
+`Option<Result<SelectionList, serde_json::Error>>` instead of
+`Result<SelectionList, serde_json::Error>`.
+
+Closes #736
+---
+ .../traits/vulnerabilities/content_trait.rs   | 78 +++++++++++++++----
+ csaf-rs/src/validations/test_6_1_47.rs        |  6 +-
+ csaf-rs/src/validations/test_6_1_48.rs        |  4 +-
+ csaf-rs/src/validations/test_6_1_49.rs        |  4 +-
+ csaf-rs/src/validations/test_6_2_37.rs        |  8 +-
+ csaf-rs/src/validations/utils/ssvc.rs         |  2 +-
+ 6 files changed, 71 insertions(+), 31 deletions(-)
+
+diff --git a/csaf-rs/src/csaf/traits/vulnerabilities/content_trait.rs b/csaf-rs/src/csaf/traits/vulnerabilities/content_trait.rs
+index 1ca1896..73a59a7 100644
+--- a/csaf-rs/src/csaf/traits/vulnerabilities/content_trait.rs
++++ b/csaf-rs/src/csaf/traits/vulnerabilities/content_trait.rs
+@@ -5,7 +5,6 @@ use cvss_rs::v2_0::CvssV2;
+ use cvss_rs::v3::CvssV3;
+ use cvss_rs::v4_0::CvssV4;
+ use serde::Deserialize;
+-use serde::de::Error as SerdeError;
+ use serde_json::{Map, Value};
+ use ssvc::selection_list::SelectionList;
+ 
+@@ -48,11 +47,15 @@ pub trait ContentTrait {
+     }
+ 
+     /// Returns whether this content contains a non-empty SSVC metric.
+-    fn has_ssvc_v2(&self) -> bool;
++    fn has_ssvc_v2(&self) -> bool {
++        self.get_ssvc_v2_raw().is_some()
++    }
+ 
+-    /// Returns a parsed instance of the contained SSVC metric, or a `serde_json::Error`,
+-    /// encapsulated as a `Result`.
+-    fn get_ssvc_v2(&self) -> Result<SelectionList, serde_json::Error>;
++    /// Returns the contained SSVC v2 metric parsed into its typed representation, if any.
++    ///
++    /// Returns `None` if no SSVC metric is present, `Some(Err(_))` if it is present but
++    /// cannot be deserialized.
++    fn get_ssvc_v2(&self) -> Option<Result<SelectionList, serde_json::Error>>;
+ 
+     /// Returns a JSON representation of the contained SSVC v2 metric, if any.
+     fn get_ssvc_v2_raw(&self) -> Option<&Map<String, Value>>;
+@@ -144,12 +147,9 @@ pub trait ContentTrait {
+ }
+ 
+ impl ContentTrait for Score {
+-    fn has_ssvc_v2(&self) -> bool {
+-        false
+-    }
+-
+-    fn get_ssvc_v2(&self) -> Result<SelectionList, serde_json::Error> {
+-        Err(SerdeError::custom("SSVC metrics are not implemented in CSAF 2.0"))
++    fn get_ssvc_v2(&self) -> Option<Result<SelectionList, serde_json::Error>> {
++        // SSVC metrics do not exist in CSAF 2.0
++        None
+     }
+ 
+     fn get_ssvc_v2_raw(&self) -> Option<&Map<String, Value>> {
+@@ -190,12 +190,12 @@ impl ContentTrait for Score {
+ }
+ 
+ impl ContentTrait for Content {
+-    fn has_ssvc_v2(&self) -> bool {
+-        !self.ssvc_v2.is_empty()
+-    }
+-
+-    fn get_ssvc_v2(&self) -> Result<SelectionList, serde_json::Error> {
+-        SelectionList::deserialize(&self.ssvc_v2)
++    fn get_ssvc_v2(&self) -> Option<Result<SelectionList, serde_json::Error>> {
++        if self.ssvc_v2.is_empty() {
++            None
++        } else {
++            Some(SelectionList::deserialize(&self.ssvc_v2))
++        }
+     }
+ 
+     fn get_ssvc_v2_raw(&self) -> Option<&Map<String, Value>> {
+@@ -351,4 +351,48 @@ mod tests {
+             assert_typed_err(&score_with(key, &metric), key);
+         }
+     }
++
++    #[test]
++    fn ssvc_accessor_parses_a_present_metric() {
++        let metric = json!({
++            "schemaVersion": "2.0.0",
++            "selections": [{
++                "key": "E",
++                "name": "Exploitation",
++                "namespace": "ssvc",
++                "values": [{ "key": "A", "name": "Active" }],
++                "version": "1.1.0"
++            }],
++            "timestamp": "2024-01-24T10:00:00.000Z"
++        });
++        let content = content_with("ssvc_v2", &metric);
++        assert!(content.has_ssvc_v2());
++        let selection_list = content.get_ssvc_v2().expect("present").expect("parses");
++        assert_eq!(selection_list.selections.len(), 1);
++    }
++
++    #[test]
++    fn ssvc_accessor_reports_a_nonconforming_map() {
++        let content = content_with("ssvc_v2", &json!({ "schemaVersion": "2.0.0" }));
++        assert!(content.has_ssvc_v2());
++        assert!(content.get_ssvc_v2().expect("present").is_err());
++    }
++
++    #[test]
++    fn ssvc_accessor_returns_none_when_absent() {
++        let cvss_v3 = json!({
++            "version": "3.1",
++            "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
++            "baseScore": 9.8,
++            "baseSeverity": "CRITICAL"
++        });
++        // CSAF 2.1 content without an SSVC metric
++        let content = content_with("cvss_v3", &cvss_v3);
++        assert!(!content.has_ssvc_v2());
++        assert!(content.get_ssvc_v2().is_none());
++        // CSAF 2.0 has no SSVC metric at all
++        let score = score_with("cvss_v3", &cvss_v3);
++        assert!(!score.has_ssvc_v2());
++        assert!(score.get_ssvc_v2().is_none());
++    }
+ }
+diff --git a/csaf-rs/src/validations/test_6_1_47.rs b/csaf-rs/src/validations/test_6_1_47.rs
+index 9202ad9..61c4199 100644
+--- a/csaf-rs/src/validations/test_6_1_47.rs
++++ b/csaf-rs/src/validations/test_6_1_47.rs
+@@ -49,9 +49,9 @@ pub fn test_6_1_47_inconsistent_ssvc_id(doc: &impl CsafTrait) -> Result<(), Vec<
+         if let Some(metrics) = v.get_metrics() {
+             for (i_m, m) in metrics.iter().enumerate() {
+                 let content = m.get_content();
+-                if content.has_ssvc_v2() {
+-                    // try to parse ssvc_v2 content as SSVC
+-                    match content.get_ssvc_v2() {
++                // if ssvc_v2 is present, try to parse its content as SSVC
++                if let Some(ssvc_result) = content.get_ssvc_v2() {
++                    match ssvc_result {
+                         // parsing succeeded
+                         Ok(ssvc) => {
+                             // get the SSVC target_ids if they exist
+diff --git a/csaf-rs/src/validations/test_6_1_48.rs b/csaf-rs/src/validations/test_6_1_48.rs
+index 002f5c7..2251b06 100644
+--- a/csaf-rs/src/validations/test_6_1_48.rs
++++ b/csaf-rs/src/validations/test_6_1_48.rs
+@@ -25,8 +25,8 @@ fn test_6_1_48_ssvc_decision_points_internal(
+         if let Some(metrics) = v.get_metrics() {
+             for (i_m, m) in metrics.iter().enumerate() {
+                 let content = m.get_content();
+-                if content.has_ssvc_v2() {
+-                    match content.get_ssvc_v2() {
++                if let Some(ssvc_result) = content.get_ssvc_v2() {
++                    match ssvc_result {
+                         Ok(ssvc) => {
+                             let result = ssvc::validate_selection_list(&ssvc, allow_test_namespaces);
+                             if !result.success {
+diff --git a/csaf-rs/src/validations/test_6_1_49.rs b/csaf-rs/src/validations/test_6_1_49.rs
+index b658fdd..903e948 100644
+--- a/csaf-rs/src/validations/test_6_1_49.rs
++++ b/csaf-rs/src/validations/test_6_1_49.rs
+@@ -58,8 +58,8 @@ pub fn test_6_1_49_inconsistent_ssvc_timestamp(doc: &impl CsafTrait) -> Result<(
+         if let Some(metrics) = vulnerability.get_metrics() {
+             for (i_m, metric) in metrics.iter().enumerate() {
+                 let content = metric.get_content();
+-                if content.has_ssvc_v2() {
+-                    match content.get_ssvc_v2() {
++                if let Some(ssvc_result) = content.get_ssvc_v2() {
++                    match ssvc_result {
+                         Ok(ssvc) => {
+                             if ssvc.timestamp.fixed_offset() > newest_revision_date {
+                                 findings.push(create_ssvc_timestamp_too_late_error(
+diff --git a/csaf-rs/src/validations/test_6_2_37.rs b/csaf-rs/src/validations/test_6_2_37.rs
+index 046061c..76b7910 100644
+--- a/csaf-rs/src/validations/test_6_2_37.rs
++++ b/csaf-rs/src/validations/test_6_2_37.rs
+@@ -27,12 +27,8 @@ pub fn test_6_2_37_usage_of_unknown_ssvc_decision_point_namespace_without_resour
+ 
+     for (vuln_index, vuln) in doc.get_vulnerabilities().iter().enumerate() {
+         for (metric_index, metric) in vuln.get_metrics().into_iter().flatten().enumerate() {
+-            if !metric.get_content().has_ssvc_v2() {
+-                continue;
+-            }
+-
+-            // Parse failures are reported by test 6.1.46
+-            let Ok(selection_list) = metric.get_content().get_ssvc_v2() else {
++            // Skip absent SSVC metrics; parse failures are reported by test 6.1.46
++            let Some(Ok(selection_list)) = metric.get_content().get_ssvc_v2() else {
+                 continue;
+             };
+ 
+diff --git a/csaf-rs/src/validations/utils/ssvc.rs b/csaf-rs/src/validations/utils/ssvc.rs
+index d2230f9..8bec79c 100644
+--- a/csaf-rs/src/validations/utils/ssvc.rs
++++ b/csaf-rs/src/validations/utils/ssvc.rs
+@@ -38,11 +38,11 @@ pub(crate) fn iter_ssvc_namespaces<D: CsafTrait>(
+                 .enumerate()
+                 .map(move |(metric_index, metric)| (vuln_index, metric_index, metric))
+         })
+-        .filter(|(_, _, metric)| metric.get_content().has_ssvc_v2())
+         .flat_map(move |(vuln_index, metric_index, metric)| {
+             metric
+                 .get_content()
+                 .get_ssvc_v2()
++                .and_then(Result::ok)
+                 .into_iter()
+                 .flat_map(|selection_list| selection_list.selections.into_iter().enumerate())
+                 .map(move |(sl_item_index, sl_item)| SsvcNamespaceResultAndPath {
+-- 
+2.43.0
+
