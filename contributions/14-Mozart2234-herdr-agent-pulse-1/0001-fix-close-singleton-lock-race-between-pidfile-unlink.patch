@@ -1,0 +1,179 @@
+From fc3727338cb1788c3ce06f338f59964b5442e9c6 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:34:25 +0000
+Subject: [PATCH] fix: close singleton lock race between pidfile unlink and a
+ starting daemon
+
+SingletonLock.release() unlocked the pidfile before unlinking it, so a
+daemon starting in that gap could lock the same inode, after which the
+unlink left the next daemon free to create and lock a fresh pidfile:
+two daemons running at once. A daemon that opened the pidfile before the
+holder released and only reached flock() afterwards hit the same problem.
+
+Unlink the pidfile while the lock is still held, and after acquiring the
+lock verify (dev, inode) of the handle still matches the path, retrying on
+a mismatch. Add regression tests for both interleavings.
+
+Closes #1
+---
+ CHANGELOG.md          | 10 ++++++++++
+ agent_pulse/daemon.py | 36 +++++++++++++++++++++++++++------
+ tests/test_daemon.py  | 46 +++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 86 insertions(+), 6 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index e0f9cfd..e39f603 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,16 @@ All notable changes to this project are documented in this file.
+ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+ 
++## [Unreleased]
++
++### Fixed
++
++- Singleton lock: two daemons could both believe they held the lock when one
++  started while another was releasing it, because the pidfile was unlocked
++  before it was unlinked. The pidfile is now unlinked while the lock is still
++  held, and a starting daemon verifies that the pidfile it locked is still the
++  one at the path, retrying otherwise (#1).
++
+ ## [0.1.0] - 2026-09-24
+ 
+ Initial public release.
+diff --git a/agent_pulse/daemon.py b/agent_pulse/daemon.py
+index e58a5c7..5ba109f 100644
+--- a/agent_pulse/daemon.py
++++ b/agent_pulse/daemon.py
+@@ -42,6 +42,7 @@ TAB_LABELS_FILE_NAME = "tab_labels.json"
+ SUMMARY_FILE_NAME = "summary.txt"
+ LOG_FILE_NAME = "daemon.log"
+ LOG_MAX_BYTES = 256 * 1024
++LOCK_ACQUIRE_ATTEMPTS = 5  # retries when a releasing daemon unlinks the pidfile under us
+ 
+ TASK_TEXT_REFRESH_INTERVAL = 1.0  # seconds; how often working panes' task text is re-read
+ MAIN_LOOP_MAX_POLL = 0.25  # seconds; upper bound so we never block past a due schedule
+@@ -88,26 +89,49 @@ class SingletonLock(object):
+         self._handle = handle
+ 
+     def release(self):
++        # Unlink the pidfile while still holding the lock: a daemon starting
++        # in between then either fails to lock this inode or, if it wins the
++        # lock after we unlock, sees the path no longer points at it (see
++        # acquire_singleton_lock) and retries on a fresh pidfile.
+         try:
+-            fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
++            os.remove(self._path)
+         except OSError:
+             pass
+         try:
+-            os.remove(self._path)
++            fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
+         except OSError:
+             pass
+         self._handle.close()
+ 
+ 
++def _is_same_file(handle, path):
++    """True if `path` still names the inode `handle` has open."""
++    try:
++        path_stat = os.stat(path)
++    except OSError:
++        return False
++    handle_stat = os.fstat(handle.fileno())
++    return (path_stat.st_dev, path_stat.st_ino) == (handle_stat.st_dev, handle_stat.st_ino)
++
++
+ def acquire_singleton_lock(state_directory):
+     """Return a held SingletonLock, or None if another daemon already holds it."""
+     _ensure_dir(state_directory)
+     path = os.path.join(state_directory, PID_FILE_NAME)
+-    handle = open(path, "a+")
+-    try:
+-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+-    except OSError:
++    for _attempt in range(LOCK_ACQUIRE_ATTEMPTS):
++        handle = open(path, "a+")
++        try:
++            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
++        except OSError:
++            handle.close()
++            return None
++        if _is_same_file(handle, path):
++            break
++        # We locked a pidfile that a releasing daemon unlinked after we
++        # opened it; that inode no longer excludes anyone. Start over on
++        # whatever is at the path now.
+         handle.close()
++    else:
+         return None
+     handle.seek(0)
+     handle.truncate()
+diff --git a/tests/test_daemon.py b/tests/test_daemon.py
+index 43b6acc..69154d8 100644
+--- a/tests/test_daemon.py
++++ b/tests/test_daemon.py
+@@ -2,6 +2,7 @@ import json
+ import os
+ import tempfile
+ import unittest
++from unittest import mock
+ 
+ from agent_pulse import client as client_module
+ from agent_pulse import config as config_module
+@@ -108,6 +109,51 @@ class SingletonLockTests(unittest.TestCase):
+         lock.release()
+         self.assertFalse(os.path.exists(pid_path))
+ 
++    def _assert_single_holder(self, *locks):
++        held = [lock for lock in locks if lock is not None]
++        try:
++            self.assertEqual(len(held), 1, "two daemons hold the singleton lock at once")
++        finally:
++            for lock in held:
++                lock.release()
++
++    def test_daemon_starting_during_release_is_not_doubled(self):
++        # Issue #1: a daemon that starts while the holder is mid-release must
++        # not lock the pidfile inode that release() is about to unlink --
++        # otherwise a third daemon locks a fresh pidfile alongside it.
++        holder = daemon.acquire_singleton_lock(self.tmpdir)
++        started_during_release = []
++        real_remove = os.remove
++
++        def remove_while_a_daemon_starts(path):
++            started_during_release.append(daemon.acquire_singleton_lock(self.tmpdir))
++            real_remove(path)
++
++        with mock.patch.object(daemon.os, "remove", side_effect=remove_while_a_daemon_starts):
++            holder.release()
++        second = started_during_release[0]
++        third = daemon.acquire_singleton_lock(self.tmpdir)
++        self._assert_single_holder(second, third)
++
++    def test_daemon_that_opened_pidfile_before_release_is_not_doubled(self):
++        # Issue #1: a daemon that opened the pidfile before the holder
++        # released, but only reaches flock() after the file was unlinked,
++        # must not treat that orphaned inode as the singleton lock.
++        holder = daemon.acquire_singleton_lock(self.tmpdir)
++        real_flock = daemon.fcntl.flock
++        released = []
++
++        def flock_after_holder_releases(fd, operation):
++            if operation & daemon.fcntl.LOCK_EX and not released:
++                released.append(True)
++                holder.release()
++            return real_flock(fd, operation)
++
++        with mock.patch.object(daemon.fcntl, "flock", side_effect=flock_after_holder_releases):
++            second = daemon.acquire_singleton_lock(self.tmpdir)
++        third = daemon.acquire_singleton_lock(self.tmpdir)
++        self._assert_single_holder(second, third)
++
+ 
+ class DaemonTestCase(unittest.TestCase):
+     def setUp(self):
+-- 
+2.43.0
+
