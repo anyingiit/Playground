@@ -1,4 +1,4 @@
-From 50adfcf35f6f7801a3eec4bccb91090c62f8e3cd Mon Sep 17 00:00:00 2001
+From a50268d99c971dfced660247b6052ac0eb57df79 Mon Sep 17 00:00:00 2001
 From: anyingiit <winshyon@gmail.com>
 Date: Thu, 24 Sep 2026 19:05:05 +0000
 Subject: [PATCH] feat(sdk): expose `Tesseract.supported_device_transports`
@@ -77,7 +77,7 @@ index efc113a..d1206cd 100644
          self,
          endpoint: str,
 diff --git a/tests/sdk_tests/test_tesseract.py b/tests/sdk_tests/test_tesseract.py
-index ff9c17f..5558560 100644
+index ff9c17f..efb55a5 100644
 --- a/tests/sdk_tests/test_tesseract.py
 +++ b/tests/sdk_tests/test_tesseract.py
 @@ -505,6 +505,40 @@ def test_serve_lifecycle(mock_serving, mock_clients):
@@ -100,7 +100,7 @@ index ff9c17f..5558560 100644
 +
 +    # The transport is a property of the client, which only exists once served
 +    with pytest.raises(RuntimeError, match="context manager"):
-+        t.supported_device_transports
++        _ = t.supported_device_transports
 +
 +    with t:
 +        assert t.supported_device_transports == expected
