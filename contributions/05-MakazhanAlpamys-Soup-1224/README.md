@@ -36,6 +36,7 @@ issue 由维护者本人撰写，附带可复现脚本、根因行号、修复�
 | 同上，但回退 `src/` 改动 | **7 failed, 1 passed**（红→绿成立） |
 | `pytest tests/test_issue404_baseline_scorer_stamp.py tests/test_eval_gate.py tests/test_tracker.py tests/test_registry.py tests/test_ui.py tests/test_eval_platform.py` | 333 passed ✅ |
 | `ruff check src/soup_cli/ scripts/ tests/ benchmarks/` | All checks passed ✅ |
+| `pytest tests/test_issue487_changelog_fragments.py` | 用占位名 `PR_NUMBER.fixed.md` 时 **1 failed / 20 passed**（该测试要求片段名为数字 PR 号）；改成数字名后 **21 passed** ✅ —— 开 PR 后改名即可 |
 | 全量 `pytest tests/`（无 torch/`[train]` 环境） | FULL_SUITE_RESULT |
 
 ## 如何提交
@@ -43,7 +44,8 @@ issue 由维护者本人撰写，附带可复现脚本、根因行号、修复�
 git clone https://github.com/<you>/Soup && cd Soup
 git checkout -b fix/1224-registry-baseline-newest-row origin/main
 git am /path/to/0001-fix-eval-use-the-newest-eval-row-per-benchmark-for-r.patch
-# 开 PR 后：把 changelog.d/0.75.1/PR_NUMBER.fixed.md 重命名为 <PR号>.fixed.md，并替换正文中的 #PR_NUMBER
+# ⚠️ 开 PR 后必须：git mv changelog.d/0.75.1/PR_NUMBER.fixed.md changelog.d/0.75.1/<PR号>.fixed.md
+#    并把正文里的 #PR_NUMBER 换成 #<PR号>，否则 tests/test_issue487_changelog_fragments.py 会失败
 git push -u origin HEAD   # base: main
 ```
 仓库惯例：认领 issue 时在 issue 下留言（"the comment is the claim"）。
@@ -87,5 +89,6 @@ Closes #1224
       `test_eval_gate`, `test_tracker`, `test_registry`, `test_ui`, `test_eval_platform`: 333 passed;
       `ruff check src/soup_cli/ scripts/ tests/ benchmarks/` clean
 - [x] `CHANGELOG.md` is updated (if applicable) — via `changelog.d/0.75.1/<this PR>.fixed.md`
+      (`test_issue487_changelog_fragments.py` passes once the fragment carries this PR's number)
 - [x] Documentation is updated (if applicable) — `docs/evaluation.md`
 ```
