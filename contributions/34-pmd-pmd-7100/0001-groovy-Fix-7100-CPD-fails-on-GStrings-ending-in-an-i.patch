@@ -1,0 +1,258 @@
+From 9dcd04dfd1712ae10929a021f315ac806be3e1f8 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:32:54 +0000
+Subject: [PATCH] [groovy] Fix #7100: CPD fails on GStrings ending in an
+ interpolated variable
+
+GroovyCpdLexer used org.apache.groovy.parser.antlr4.GroovyLexer directly.
+That lexer depends on its subclass GroovyLangLexer (the one the Groovy
+compiler uses) to roll back one character after a GString path such as
+"$i". Without it the character after the variable is swallowed: for
+"x $i y" the following GString part lost its leading space, and for
+"$i" or "x-$i" the closing quote was consumed, which made lexing fail.
+
+Use GroovyLangLexer instead, and report GroovySyntaxError (an
+AssertionError thrown by the Groovy lexer for some errors) as a
+LexException so that it is handled like any other lexical error.
+---
+ .../ast/impl/antlr4/GroovyTokenManager.java   | 14 ++++-
+ .../pmd/lang/groovy/cpd/GroovyCpdLexer.java   |  7 ++-
+ .../lang/groovy/cpd/GroovyCpdLexerTest.java   | 18 ++++++
+ .../pmd/lang/groovy/cpd/testdata/cpdoff.txt   |  4 +-
+ .../lang/groovy/cpd/testdata/gstrings.groovy  |  7 +++
+ .../pmd/lang/groovy/cpd/testdata/gstrings.txt | 58 +++++++++++++++++++
+ .../pmd/lang/groovy/cpd/testdata/sample.txt   |  4 +-
+ 7 files changed, 105 insertions(+), 7 deletions(-)
+ create mode 100644 pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/gstrings.groovy
+ create mode 100644 pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/gstrings.txt
+
+diff --git a/pmd-groovy/src/main/java/net/sourceforge/pmd/lang/groovy/ast/impl/antlr4/GroovyTokenManager.java b/pmd-groovy/src/main/java/net/sourceforge/pmd/lang/groovy/ast/impl/antlr4/GroovyTokenManager.java
+index 79c3b5d..2f3dc38 100644
+--- a/pmd-groovy/src/main/java/net/sourceforge/pmd/lang/groovy/ast/impl/antlr4/GroovyTokenManager.java
++++ b/pmd-groovy/src/main/java/net/sourceforge/pmd/lang/groovy/ast/impl/antlr4/GroovyTokenManager.java
+@@ -5,6 +5,7 @@
+ package net.sourceforge.pmd.lang.groovy.ast.impl.antlr4;
+ 
+ import org.apache.groovy.parser.antlr4.GroovyLexer;
++import org.apache.groovy.parser.antlr4.GroovySyntaxError;
+ 
+ import net.sourceforge.pmd.lang.TokenManager;
+ import net.sourceforge.pmd.lang.ast.LexException;
+@@ -15,6 +16,7 @@ import groovyjarjarantlr4.v4.runtime.ANTLRErrorListener;
+ import groovyjarjarantlr4.v4.runtime.Lexer;
+ import groovyjarjarantlr4.v4.runtime.RecognitionException;
+ import groovyjarjarantlr4.v4.runtime.Recognizer;
++import groovyjarjarantlr4.v4.runtime.Token;
+ 
+ /**
+  * A Groovy specific token manager.
+@@ -58,7 +60,7 @@ public class GroovyTokenManager implements TokenManager<GroovyToken> {
+             previousComment = null;
+         }
+         
+-        final GroovyToken currentToken = new GroovyToken(lexer.nextToken(), previousComment, textDoc);
++        final GroovyToken currentToken = new GroovyToken(nextAntlrToken(), previousComment, textDoc);
+         if (previousToken != null) {
+             previousToken.next = currentToken;
+         }
+@@ -67,6 +69,16 @@ public class GroovyTokenManager implements TokenManager<GroovyToken> {
+         return currentToken;
+     }
+ 
++    private Token nextAntlrToken() {
++        try {
++            return lexer.nextToken();
++        } catch (GroovySyntaxError e) {
++            // The Groovy lexer reports some errors by throwing GroovySyntaxError
++            // (an AssertionError) instead of notifying the error listeners.
++            throw new LexException(e.getLine(), e.getColumn(), textDoc.getFileId(), e.getMessage(), e);
++        }
++    }
++
+     private void resetListeners() {
+         lexer.removeErrorListeners();
+         lexer.addErrorListener(new ErrorHandler());
+diff --git a/pmd-groovy/src/main/java/net/sourceforge/pmd/lang/groovy/cpd/GroovyCpdLexer.java b/pmd-groovy/src/main/java/net/sourceforge/pmd/lang/groovy/cpd/GroovyCpdLexer.java
+index b27a2d1..413a37f 100644
+--- a/pmd-groovy/src/main/java/net/sourceforge/pmd/lang/groovy/cpd/GroovyCpdLexer.java
++++ b/pmd-groovy/src/main/java/net/sourceforge/pmd/lang/groovy/cpd/GroovyCpdLexer.java
+@@ -6,7 +6,7 @@ package net.sourceforge.pmd.lang.groovy.cpd;
+ 
+ import java.io.IOException;
+ 
+-import org.apache.groovy.parser.antlr4.GroovyLexer;
++import org.apache.groovy.parser.antlr4.GroovyLangLexer;
+ 
+ import net.sourceforge.pmd.cpd.impl.CpdLexerBase;
+ import net.sourceforge.pmd.lang.TokenManager;
+@@ -27,6 +27,9 @@ public class GroovyCpdLexer extends CpdLexerBase<GroovyToken> {
+     @Override
+     protected final TokenManager<GroovyToken> makeLexerImpl(TextDocument doc) throws IOException {
+         CharStream charStream = CharStreams.fromReader(doc.newReader(), doc.getFileId().getAbsolutePath());
+-        return new GroovyTokenManager(new GroovyLexer(charStream), doc);
++        // GroovyLangLexer is the lexer the Groovy compiler itself uses. The plain
++        // GroovyLexer relies on it to roll back one char at the end of a GString
++        // value (e.g. "$i"), without that it fails on valid code (#7100).
++        return new GroovyTokenManager(new GroovyLangLexer(charStream), doc);
+     }
+ }
+diff --git a/pmd-groovy/src/test/java/net/sourceforge/pmd/lang/groovy/cpd/GroovyCpdLexerTest.java b/pmd-groovy/src/test/java/net/sourceforge/pmd/lang/groovy/cpd/GroovyCpdLexerTest.java
+index 38ddb03..b1ce22f 100644
+--- a/pmd-groovy/src/test/java/net/sourceforge/pmd/lang/groovy/cpd/GroovyCpdLexerTest.java
++++ b/pmd-groovy/src/test/java/net/sourceforge/pmd/lang/groovy/cpd/GroovyCpdLexerTest.java
+@@ -4,8 +4,11 @@
+ 
+ package net.sourceforge.pmd.lang.groovy.cpd;
+ 
++import static org.junit.jupiter.api.Assertions.assertEquals;
++
+ import org.junit.jupiter.api.Test;
+ 
++import net.sourceforge.pmd.lang.ast.LexException;
+ import net.sourceforge.pmd.lang.test.cpd.CpdTextComparisonTest;
+ 
+ class GroovyCpdLexerTest extends CpdTextComparisonTest {
+@@ -23,4 +26,19 @@ class GroovyCpdLexerTest extends CpdTextComparisonTest {
+     void testCpdOffAndOn() {
+         doTest("cpdoff");
+     }
++
++    @Test
++    void testGStringsEndingWithInterpolatedVariable() {
++        // https://github.com/pmd/pmd/issues/7100
++        doTest("gstrings");
++    }
++
++    @Test
++    void testLexerSyntaxErrorIsReportedAsLexException() {
++        // https://github.com/pmd/pmd/issues/7100
++        // Groovy's lexer throws GroovySyntaxError (an AssertionError) for some errors
++        LexException e = expectLexException("def a = `x`\n");
++        assertEquals(1, e.getLine());
++        assertEquals(9, e.getColumn());
++    }
+ }
+diff --git a/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/cpdoff.txt b/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/cpdoff.txt
+index 05a18a2..6fd1f48 100644
+--- a/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/cpdoff.txt
++++ b/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/cpdoff.txt
+@@ -122,7 +122,7 @@ L62
+     [(]                                     38        39
+     ["$]                                    39        41
+     [key]                                   41        44
+-    [is already in the tree"]               45        68
++    [ is already in the tree"]              44        68
+     [)]                                     68        69
+     [\n]                                    69        70
+ L63
+@@ -200,7 +200,7 @@ L74
+     [(]                                     38        39
+     ["$]                                    39        41
+     [key]                                   41        44
+-    [is not in the tree"]                   45        64
++    [ is not in the tree"]                  44        64
+     [)]                                     64        65
+     [\n]                                    65        66
+ L75
+diff --git a/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/gstrings.groovy b/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/gstrings.groovy
+new file mode 100644
+index 0000000..5ccd37e
+--- /dev/null
++++ b/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/gstrings.groovy
+@@ -0,0 +1,7 @@
++// https://github.com/pmd/pmd/issues/7100
++def a = "$i"
++f("x-$i", "y")
++def b = "x $i y"
++def c = "${i}"
++def d = "$i.name"
++def e = """multi $i"""
+diff --git a/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/gstrings.txt b/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/gstrings.txt
+new file mode 100644
+index 0000000..b08301f
+--- /dev/null
++++ b/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/gstrings.txt
+@@ -0,0 +1,58 @@
++    [Image] or [Truncated image[            Bcol      Ecol
++L1
++    [// https://github.com/pmd/pmd/issu[    1         42
++    [\n]                                    42        43
++L2
++    [def]                                   1         4
++    [a]                                     5         6
++    [=]                                     7         8
++    ["$]                                    9         11
++    [i]                                     11        12
++    ["]                                     12        13
++    [\n]                                    13        14
++L3
++    [f]                                     1         2
++    [(]                                     2         3
++    ["x-$]                                  3         7
++    [i]                                     7         8
++    ["]                                     8         9
++    [,]                                     9         10
++    ["y"]                                   11        14
++    [)]                                     14        15
++    [\n]                                    15        16
++L4
++    [def]                                   1         4
++    [b]                                     5         6
++    [=]                                     7         8
++    ["x $]                                  9         13
++    [i]                                     13        14
++    [ y"]                                   14        17
++    [\n]                                    17        18
++L5
++    [def]                                   1         4
++    [c]                                     5         6
++    [=]                                     7         8
++    ["$]                                    9         11
++    [{]                                     11        12
++    [i]                                     12        13
++    [}]                                     13        14
++    ["]                                     14        15
++    [\n]                                    15        16
++L6
++    [def]                                   1         4
++    [d]                                     5         6
++    [=]                                     7         8
++    ["$]                                    9         11
++    [i]                                     11        12
++    [.name]                                 12        17
++    ["]                                     17        18
++    [\n]                                    18        19
++L7
++    [def]                                   1         4
++    [e]                                     5         6
++    [=]                                     7         8
++    ["""multi $]                            9         19
++    [i]                                     19        20
++    ["""]                                   20        23
++    [\n]                                    23        24
++EOF
+diff --git a/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/sample.txt b/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/sample.txt
+index 2bc2b66..149e202 100644
+--- a/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/sample.txt
++++ b/pmd-groovy/src/test/resources/net/sourceforge/pmd/lang/groovy/cpd/testdata/sample.txt
+@@ -364,7 +364,7 @@ L60
+     [(]                                     38        39
+     ["$]                                    39        41
+     [key]                                   41        44
+-    [is already in the tree"]               45        68
++    [ is already in the tree"]              44        68
+     [)]                                     68        69
+     [\n]                                    69        70
+ L61
+@@ -442,7 +442,7 @@ L72
+     [(]                                     38        39
+     ["$]                                    39        41
+     [key]                                   41        44
+-    [is not in the tree"]                   45        64
++    [ is not in the tree"]                  44        64
+     [)]                                     64        65
+     [\n]                                    65        66
+ L73
+-- 
+2.43.0
+
