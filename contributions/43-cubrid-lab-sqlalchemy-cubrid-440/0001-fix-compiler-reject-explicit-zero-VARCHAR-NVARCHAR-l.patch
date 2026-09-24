@@ -1,0 +1,177 @@
+From 13634f9a0d9cf6ca5332dd2a707e48dd9c02302b Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 19:17:28 +0000
+Subject: [PATCH] fix(compiler): reject explicit zero VARCHAR/NVARCHAR length
+ instead of using 4096
+
+- CubridTypeCompiler.visit_VARCHAR / visit_NVARCHAR tested the length by
+  truthiness, so String(0) / VARCHAR(0) / NVARCHAR(0) compiled to the
+  VARCHAR(4096) / NCHAR VARYING(4096) default (#440)
+- length=None still renders the documented default; an explicit 0 now
+  raises CompileError because CUBRID has no zero-length VARCHAR
+- add regression tests for String, Unicode, VARCHAR and NVARCHAR with
+  length=0, plus String() keeping the default
+- note the behavior in docs/TYPES.md (en/ko), CHANGELOG and llms-full.txt
+
+Closes #440
+---
+ CHANGELOG.md                  |  3 +++
+ docs/TYPES.md                 |  2 +-
+ docs/ko/TYPES.md              |  2 +-
+ docs/llms-full.txt            |  2 +-
+ sqlalchemy_cubrid/compiler.py | 16 ++++++++++++++--
+ test/test_compiler.py         | 34 ++++++++++++++++++++++++++++++++++
+ 6 files changed, 54 insertions(+), 5 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 17fd2bc..f83e6f8 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ 
+ ## [Unreleased]
+ 
++### Fixed
++- **`String(0)` / `VARCHAR(0)` / `NVARCHAR(0)` no longer silently compile to the 4096 default (#440)** — the type compiler checked the length by truthiness, so an explicit `length=0` was treated as "no length" and rendered `VARCHAR(4096)` (or `NCHAR VARYING(4096)`). `length=None` still gets the documented default; an explicit zero now raises `CompileError`, since `VARCHAR(0)` is not a valid CUBRID length.
++
+ ## [1.7.1] - 2026-09-18
+ 
+ ### Added
+diff --git a/docs/TYPES.md b/docs/TYPES.md
+index 92f55b8..bc8bfa7 100644
+--- a/docs/TYPES.md
++++ b/docs/TYPES.md
+@@ -43,7 +43,7 @@ The dialect maps standard SQLAlchemy types to CUBRID SQL types:
+ | `DateTime`           | `DATETIME`        | Date and time combined                     |
+ | `TIMESTAMP`          | `TIMESTAMP`       | Timestamp with auto-update behavior        |
+ 
+-> **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`.
++> **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`. An explicit zero length (`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) is not a valid CUBRID length and raises `CompileError` instead of being widened to the default.
+ 
+ ---
+ 
+diff --git a/docs/ko/TYPES.md b/docs/ko/TYPES.md
+index 920e907..a0af625 100644
+--- a/docs/ko/TYPES.md
++++ b/docs/ko/TYPES.md
+@@ -45,7 +45,7 @@
+ | `DateTime`           | `DATETIME`        | 날짜와 시간 결합                            |
+ | `TIMESTAMP`          | `TIMESTAMP`       | 자동 갱신 동작을 갖는 타임스탬프            |
+ 
+-> **VARCHAR 기본 길이**: 길이 없이 `String()`을 사용하면 방언은 기본적으로 `VARCHAR(4096)`을 사용합니다.
++> **VARCHAR 기본 길이**: 길이 없이 `String()`을 사용하면 방언은 기본적으로 `VARCHAR(4096)`을 사용합니다. 길이를 명시적으로 0으로 지정하면(`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) CUBRID에서 유효한 길이가 아니므로 기본값으로 바뀌지 않고 `CompileError`가 발생합니다.
+ 
+ ---
+ 
+diff --git a/docs/llms-full.txt b/docs/llms-full.txt
+index d926629..6271dfd 100644
+--- a/docs/llms-full.txt
++++ b/docs/llms-full.txt
+@@ -2031,7 +2031,7 @@ The dialect maps standard SQLAlchemy types to CUBRID SQL types:
+ | `DateTime`           | `DATETIME`        | Date and time combined                     |
+ | `TIMESTAMP`          | `TIMESTAMP`       | Timestamp with auto-update behavior        |
+ 
+-> **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`.
++> **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`. An explicit zero length (`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) is not a valid CUBRID length and raises `CompileError` instead of being widened to the default.
+ 
+ ---
+ 
+diff --git a/sqlalchemy_cubrid/compiler.py b/sqlalchemy_cubrid/compiler.py
+index f82f0ed..aecdc2c 100644
+--- a/sqlalchemy_cubrid/compiler.py
++++ b/sqlalchemy_cubrid/compiler.py
+@@ -861,10 +861,21 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
+     def visit_DATETIMELTZ(self, type_: Any, **kw: Any) -> str:
+         return "DATETIMELTZ"
+ 
++    @staticmethod
++    def _reject_zero_length(type_: Any, ddl_name: str) -> None:
++        # ``length=None`` means "not specified" and gets the documented default;
++        # an explicit 0 is not a valid CUBRID length, so do not silently widen it.
++        if type_.length == 0:
++            raise CompileError(
++                f"CUBRID does not support {ddl_name}(0); use a length of at least 1, "
++                f"or omit the length to get the default {ddl_name}(4096)"
++            )
++
+     def visit_VARCHAR(self, type_: Any, **kw: Any) -> str:
+         if hasattr(type_, "national") and type_.national:
+             return self.visit_NVARCHAR(type_)
+-        elif type_.length:
++        self._reject_zero_length(type_, "VARCHAR")
++        if type_.length is not None:
+             return "VARCHAR(%d)" % type_.length
+         else:
+             return "VARCHAR(4096)"
+@@ -878,7 +889,8 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
+             return "CHAR"
+ 
+     def visit_NVARCHAR(self, type_: Any, **kw: Any) -> str:
+-        if type_.length:
++        self._reject_zero_length(type_, "NCHAR VARYING")
++        if type_.length is not None:
+             return f"NCHAR VARYING({type_.length})"
+         else:
+             return "NCHAR VARYING(4096)"
+diff --git a/test/test_compiler.py b/test/test_compiler.py
+index 5a1ba75..9424409 100644
+--- a/test/test_compiler.py
++++ b/test/test_compiler.py
+@@ -13,6 +13,7 @@ from typing import Any, cast
+ from sqlalchemy import Column, Integer, MetaData, String, Table, select
+ from sqlalchemy.exc import CompileError
+ 
++from sqlalchemy_cubrid import types as cubrid_types
+ from sqlalchemy_cubrid._compat import bind_with_type, is_literal_value
+ from sqlalchemy_cubrid.compiler import _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT
+ from sqlalchemy_cubrid.dialect import CubridDialect
+@@ -484,6 +485,24 @@ class TestTypeCompilation:
+         result = self._compile_type(VARCHAR())
+         assert result == "VARCHAR(4096)"
+ 
++    def test_string_no_length_uses_default(self):
++        result = self._compile_type(sa.String())
++        assert result == "VARCHAR(4096)"
++
++    @pytest.mark.parametrize(
++        "type_",
++        [
++            pytest.param(sa.String(0), id="String"),
++            pytest.param(sa.Unicode(0), id="Unicode"),
++            pytest.param(sa.VARCHAR(0), id="sa.VARCHAR"),
++            pytest.param(cubrid_types.VARCHAR(length=0), id="cubrid.VARCHAR"),
++        ],
++    )
++    def test_varchar_zero_length_raises(self, type_):
++        """Regression (#440): explicit length=0 must not become VARCHAR(4096)."""
++        with pytest.raises(CompileError, match=r"VARCHAR\(0\)"):
++            self._compile_type(type_)
++
+     def test_char_with_length(self):
+         from sqlalchemy_cubrid.types import CHAR
+ 
+@@ -705,6 +724,21 @@ class TestTypeCompilation:
+         result = self._compile_type(NVARCHAR())
+         assert result == "NCHAR VARYING(4096)"
+ 
++    @pytest.mark.parametrize(
++        "type_",
++        [
++            pytest.param(sa.NVARCHAR(0), id="sa.NVARCHAR"),
++            pytest.param(cubrid_types.NVARCHAR(length=0), id="cubrid.NVARCHAR"),
++            pytest.param(
++                cubrid_types.VARCHAR(length=0, national=True), id="cubrid.VARCHAR-national"
++            ),
++        ],
++    )
++    def test_nvarchar_zero_length_raises(self, type_):
++        """Regression (#440): explicit length=0 must not become NCHAR VARYING(4096)."""
++        with pytest.raises(CompileError, match=r"NCHAR VARYING\(0\)"):
++            self._compile_type(type_)
++
+     def test_nchar_no_length(self):
+         """Test NCHAR() without length."""
+         from sqlalchemy_cubrid.types import NCHAR
+-- 
+2.43.0
+
