@@ -1,4 +1,4 @@
-From 9c54f030354e2fb07e23e39d46a1c87d71debd9e Mon Sep 17 00:00:00 2001
+From 8be62bcc7326682d606b44a355a2f62ad16b40dc Mon Sep 17 00:00:00 2001
 From: anyingiit <winshyon@gmail.com>
 Date: Thu, 24 Sep 2026 18:53:29 +0000
 Subject: [PATCH] Add `message_html_display` option to show the plain text body
@@ -12,9 +12,9 @@ Closes #617
  config.example.toml |  1 +
  docs/iamb.5         |  7 +++++++
  src/config/mod.rs   |  4 ++++
- src/message/mod.rs  | 35 ++++++++++++++++++++++++++++++++++-
+ src/message/mod.rs  | 39 ++++++++++++++++++++++++++++++++++++++-
  src/tests.rs        |  1 +
- 5 files changed, 47 insertions(+), 1 deletion(-)
+ 5 files changed, 51 insertions(+), 1 deletion(-)
 
 diff --git a/config.example.toml b/config.example.toml
 index 53492d8..e25a76c 100644
@@ -83,7 +83,7 @@ index 6c78372..3dcc08d 100644
              normal_after_send: self.normal_after_send.unwrap_or(false),
              reaction_display: self.reaction_display.unwrap_or(true),
 diff --git a/src/message/mod.rs b/src/message/mod.rs
-index 61d0cdd..6998981 100644
+index 61d0cdd..04a04e6 100644
 --- a/src/message/mod.rs
 +++ b/src/message/mod.rs
 @@ -1400,7 +1400,9 @@ impl Message {
@@ -97,7 +97,7 @@ index 61d0cdd..6998981 100644
              text += html.to_text(width, style, settings, info);
          } else {
              let mut msg = self.event.body();
-@@ -2022,4 +2024,35 @@ pub mod tests {
+@@ -2022,4 +2024,39 @@ pub mod tests {
          info.set_receipt(ReceiptThread::Main, user_id, MSG1_EVID.clone());
          assert!(!msg.show_trackbar(Some(&prev), &info, &settings));
      }
@@ -117,11 +117,15 @@ index 61d0cdd..6998981 100644
 +        let render = |settings: &ApplicationSettings| -> String {
 +            let (text, _) = msg.show_msg(60, Style::default(), settings, &previews, &info);
 +
-+            text.lines
++            let s: String = text
++                .lines
 +                .iter()
 +                .flat_map(|line| line.spans.iter())
 +                .map(|span| span.content.as_ref())
-+                .collect()
++                .collect();
++
++            // The HTML renderer pads lines out to the full width.
++            s.trim_end().to_string()
 +        };
 +
 +        // By default, the formatted HTML body is rendered.
