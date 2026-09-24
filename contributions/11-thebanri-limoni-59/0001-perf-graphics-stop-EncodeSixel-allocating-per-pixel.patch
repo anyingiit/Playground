@@ -1,0 +1,249 @@
+From 204d22b8b7766ac67633728d9769c30d49be651b Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 17:20:24 +0000
+Subject: [PATCH] perf(graphics): stop EncodeSixel allocating per pixel
+
+buildPalette read every pixel through image.Image.At and
+color.RGBAModel.Convert, and the band loop did the same again before
+quantising each pixel with color.Palette.Convert: every read boxed a
+color.Color. Colour switches and runs were then formatted with
+fmt.Sprintf. BenchmarkEncodeSixel made ~51,000 allocations per frame.
+
+Pixels are now read with rgbaAt, as EncodeKitty's resize already does.
+buildPalette returns []color.RGBA plus each colour's index, and
+paletteIndex looks an exact 8-bit match up in that map and otherwise
+runs color.Palette.Index's nearest-colour search on the unboxed values,
+so the chosen index is the same for every image type. Numbers are
+appended with strconv.AppendInt.
+
+BenchmarkEncodeSixel: 51,211 allocs/op, 371 KB/op -> 11 allocs/op,
+166 KB/op. The escape sequence is unchanged byte for byte (checked on
+RGBA, NRGBA, RGBA64, Gray and >256-colour images, opaque and
+transparent). TestEncodeSixelDoesNotAllocatePerPixel keeps a 480x384
+frame under 100 allocations (it makes 41).
+
+Closes #59
+---
+ CHANGELOG.md              |   7 +++
+ graphics/graphics.go      | 105 ++++++++++++++++++++++++++------------
+ graphics/graphics_test.go |  19 +++++++
+ 3 files changed, 98 insertions(+), 33 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index b1d231d..4fc4ebe 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,6 +8,13 @@ a patch bump (`v0.x.y`) does not.
+ 
+ ## [Unreleased]
+ 
++### Changed
++- `EncodeSixel` no longer boxes a `color.Color` for every pixel when it builds
++  its palette and quantises the picture, nor formats numbers with
++  `fmt.Sprintf` per colour and run: `BenchmarkEncodeSixel` went from ~51,000
++  allocations to 11, and a 480×384 frame makes 41. The output is unchanged
++  byte for byte (#59).
++
+ ## [v0.9.0] — 2026-09-24
+ 
+ ### Added
+diff --git a/graphics/graphics.go b/graphics/graphics.go
+index 7c9d40c..3461d02 100644
+--- a/graphics/graphics.go
++++ b/graphics/graphics.go
+@@ -10,6 +10,7 @@ import (
+ 	"image/draw"
+ 	"image/png"
+ 	"os"
++	"strconv"
+ 	"strings"
+ 	"sync"
+ )
+@@ -311,24 +312,62 @@ func ResizeImageContain(img image.Image, w, h int, transparent bool) image.Image
+ 	return dst
+ }
+ 
+-// buildPalette creates a dynamic color palette from image pixels with a maximum of maxColors.
+-func buildPalette(img image.Image, maxColors int) color.Palette {
++// buildPalette creates a dynamic color palette from image pixels with a maximum
++// of maxColors, in order of first appearance, and returns each colour's index.
++// Pixels are read with rgbaAt, so building it does not allocate per pixel.
++func buildPalette(img image.Image, maxColors int) ([]color.RGBA, map[color.RGBA]int) {
+ 	bounds := img.Bounds()
+-	var pal color.Palette
+-	colorMap := make(map[color.RGBA]bool)
++	var pal []color.RGBA
++	index := make(map[color.RGBA]int)
+ 
+ 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+ 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+-			c := color.RGBAModel.Convert(img.At(x, y)).(color.RGBA)
+-			if !colorMap[c] {
+-				if len(pal) < maxColors {
+-					pal = append(pal, c)
+-					colorMap[c] = true
+-				}
++			if len(pal) >= maxColors {
++				return pal, index
++			}
++			r, g, b, a := rgbaAt(img, x, y)
++			c := color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)}
++			if _, ok := index[c]; !ok {
++				index[c] = len(pal)
++				pal = append(pal, c)
+ 			}
+ 		}
+ 	}
+-	return pal
++	return pal, index
++}
++
++// paletteIndex returns the index of the palette colour closest to the 16-bit
++// premultiplied pixel r, g, b, a. It is color.Palette.Index without the
++// color.Color boxing: an exact 8-bit match is looked up in index, anything
++// else (a pixel with more than 8 bits of precision, or a colour that did not
++// fit in the palette) takes the same nearest-colour search, so the chosen
++// index is identical.
++func paletteIndex(pal []color.RGBA, index map[color.RGBA]int, r, g, b, a uint32) int {
++	c := color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: uint8(a >> 8)}
++	if r == uint32(c.R)*0x101 && g == uint32(c.G)*0x101 && b == uint32(c.B)*0x101 && a == uint32(c.A)*0x101 {
++		if idx, ok := index[c]; ok {
++			return idx
++		}
++	}
++	ret, bestSum := 0, uint32(1<<32-1)
++	for i, v := range pal {
++		vr, vg, vb, va := v.RGBA()
++		sum := sqDiff(r, vr) + sqDiff(g, vg) + sqDiff(b, vb) + sqDiff(a, va)
++		if sum < bestSum {
++			if sum == 0 {
++				return i
++			}
++			ret, bestSum = i, sum
++		}
++	}
++	return ret
++}
++
++// sqDiff is image/color's: the squared difference of two 16-bit values,
++// shifted right by 2 so that four of them add up without overflowing.
++func sqDiff(x, y uint32) uint32 {
++	d := x - y
++	return (d * d) >> 2
+ }
+ 
+ // chunkKittyPayload encodes base64 data for the Kitty protocol by splitting it into 4096-byte chunks.
+@@ -408,26 +447,30 @@ func EncodeSixel(img image.Image, cols, rows uint16, cellW, cellH uint16, transp
+ 	targetH := int(rows) * int(cellH)
+ 
+ 	resized := ResizeImageContain(img, targetW, targetH, transparent)
+-	pal := buildPalette(resized, 256)
++	pal, palIndex := buildPalette(resized, 256)
+ 	if len(pal) == 0 {
+-		pal = color.Palette{color.RGBA{0, 0, 0, 255}}
+-	}
+-
+-	colorToIndex := make(map[color.Color]int, len(pal))
+-	for idx, col := range pal {
+-		colorToIndex[col] = idx
++		pal = []color.RGBA{{0, 0, 0, 255}}
+ 	}
+ 
+ 	var buf bytes.Buffer
++	// Numbers are appended through num rather than fmt.Sprintf, which
++	// allocates for every colour switch and run of the picture.
++	var num [20]byte
++	writeInt := func(n int) { buf.Write(strconv.AppendInt(num[:0], int64(n), 10)) }
++
+ 	// Sixel initialization sequence
+ 	buf.WriteString("\x1bPq\"1;1;")
+ 
+ 	for idx, col := range pal {
+ 		r, g, b, _ := col.RGBA()
+-		pctR := int(r * 100 / 65535)
+-		pctG := int(g * 100 / 65535)
+-		pctB := int(b * 100 / 65535)
+-		buf.WriteString(fmt.Sprintf("#%d;2;%d;%d;%d", idx, pctR, pctG, pctB))
++		buf.WriteByte('#')
++		writeInt(idx)
++		buf.WriteString(";2;")
++		writeInt(int(r * 100 / 65535))
++		buf.WriteByte(';')
++		writeInt(int(g * 100 / 65535))
++		buf.WriteByte(';')
++		writeInt(int(b * 100 / 65535))
+ 	}
+ 
+ 	width := resized.Bounds().Dx()
+@@ -447,18 +490,11 @@ func EncodeSixel(img image.Image, cols, rows uint16, cellW, cellH uint16, transp
+ 			for dy := 0; dy < 6; dy++ {
+ 				y := bandY + dy
+ 				if y < height {
+-					pix := resized.At(x, y)
+-					_, _, _, a := pix.RGBA()
++					r, g, b, a := rgbaAt(resized, x, y)
+ 					if transparent && a < 32768 {
+ 						bandIndices[x][dy] = -1 // Transparent pixel
+ 					} else {
+-						var colIdx int
+-						c := pal.Convert(pix)
+-						if idx, ok := colorToIndex[c]; ok {
+-							colIdx = idx
+-						} else {
+-							colIdx = 0
+-						}
++						colIdx := paletteIndex(pal, palIndex, r, g, b, a)
+ 						bandIndices[x][dy] = int16(colIdx)
+ 						colorsInBand[colIdx] = true
+ 					}
+@@ -473,7 +509,8 @@ func EncodeSixel(img image.Image, cols, rows uint16, cellW, cellH uint16, transp
+ 				continue
+ 			}
+ 
+-			buf.WriteString(fmt.Sprintf("#%d", colorIdx))
++			buf.WriteByte('#')
++			writeInt(colorIdx)
+ 
+ 			targetIdx := int16(colorIdx)
+ 			repeatCount := 0
+@@ -482,7 +519,9 @@ func EncodeSixel(img image.Image, cols, rows uint16, cellW, cellH uint16, transp
+ 			flushRepeat := func() {
+ 				if repeatCount > 0 {
+ 					if repeatCount > 3 {
+-						buf.WriteString(fmt.Sprintf("!%d%c", repeatCount, lastChar))
++						buf.WriteByte('!')
++						writeInt(repeatCount)
++						buf.WriteByte(lastChar)
+ 					} else {
+ 						for k := 0; k < repeatCount; k++ {
+ 							buf.WriteByte(lastChar)
+diff --git a/graphics/graphics_test.go b/graphics/graphics_test.go
+index 0fb3300..2173de8 100644
+--- a/graphics/graphics_test.go
++++ b/graphics/graphics_test.go
+@@ -227,3 +227,22 @@ func TestImagePlacementsKeepTheCursor(t *testing.T) {
+ 		t.Errorf("iTerm2 placement without doNotMoveCursor=1: %.80q", seq)
+ 	}
+ }
++
++// Building the Sixel palette and quantising each band used to read every
++// pixel through image.Image.At, which boxes a color.Color: ~51,000
++// allocations for BenchmarkEncodeSixel's 160×160 frame. What is left is
++// the resize, the output buffer growing and the palette map: 41 for a
++// 480×384 frame, and it must not grow with the number of pixels.
++func TestEncodeSixelDoesNotAllocatePerPixel(t *testing.T) {
++	img := image.NewRGBA(image.Rect(0, 0, 480, 384))
++	for y := 0; y < 384; y++ {
++		for x := 0; x < 480; x++ {
++			img.SetRGBA(x, y, color.RGBA{R: uint8(x / 32 * 16), G: uint8(y / 32 * 20), B: 128, A: 255})
++		}
++	}
++	// 60×24 cells of 8×16 pixels: a 480×384 frame, 184,320 pixels.
++	allocs := testing.AllocsPerRun(5, func() { _ = EncodeSixel(img, 60, 24, 8, 16, false) })
++	if allocs > 100 {
++		t.Fatalf("EncodeSixel made %.0f allocations for a 480×384 frame; it should not allocate per pixel", allocs)
++	}
++}
+-- 
+2.43.0
+
