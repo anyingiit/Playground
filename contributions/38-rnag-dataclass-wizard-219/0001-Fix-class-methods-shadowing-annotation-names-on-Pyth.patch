@@ -1,0 +1,268 @@
+From d05583a81f6151ac8cac320023195790dc05065d Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 24 Sep 2026 18:59:45 +0000
+Subject: [PATCH] Fix class methods shadowing annotation names on Python 3.14
+ (fixes #219)
+
+On Python 3.14, a forward reference created by annotationlib is
+evaluated against the namespace of the class that owns the annotation.
+A method such as `def list(self)` then shadows the builtin `list` in
+an annotation like `items: list[str]`, and loading the dataclass fails
+with "TypeError: 'function' object is not subscriptable".
+
+When evaluating such a forward reference, use the owner's namespace
+without members that can never be a type (functions, class/static
+methods, properties), so those names resolve from the module globals or
+builtins instead, while nested classes are still resolved from the
+class namespace. Applied to both the v1 and v0 code paths.
+---
+ dataclass_wizard/utils/_typing_compat.py   | 44 +++++++++++++++++++++-
+ dataclass_wizard/v0/utils/typing_compat.py | 44 +++++++++++++++++++++-
+ tests/unit/test_loaders.py                 | 42 +++++++++++++++++++++
+ tests/unit/v0/test_load.py                 | 33 ++++++++++++++++
+ 4 files changed, 159 insertions(+), 4 deletions(-)
+
+diff --git a/dataclass_wizard/utils/_typing_compat.py b/dataclass_wizard/utils/_typing_compat.py
+index 528ee44..466db87 100644
+--- a/dataclass_wizard/utils/_typing_compat.py
++++ b/dataclass_wizard/utils/_typing_compat.py
+@@ -18,6 +18,7 @@ __all__ = [
+ 
+ import functools
+ import sys
++import types
+ import typing
+ 
+ # noinspection PyUnresolvedReferences,PyProtectedMember
+@@ -30,7 +31,7 @@ from .._type_def import (
+     PyReadOnly,
+     PyRequired,
+ )
+-from ..constants import PY310_OR_ABOVE, PY313_OR_ABOVE
++from ..constants import PY310_OR_ABOVE, PY313_OR_ABOVE, PY314_OR_ABOVE
+ from ._string_conv import repl_or_with_union
+ 
+ # noinspection PyTypedDict
+@@ -209,6 +210,45 @@ else:
+     _eval_type = typing._eval_type
+ 
+ 
++if PY314_OR_ABOVE:  # pragma: no cover
++    # Objects bound in a class body which can never be used as a type
++    # (methods, properties, and similar descriptors).
++    _NON_TYPE_CLASS_ATTRS = (
++        types.FunctionType,
++        types.BuiltinFunctionType,
++        classmethod,
++        staticmethod,
++        property,
++        functools.cached_property,
++    )
++
++    def _get_typing_locals(base_type):
++        """
++        Return the local namespace to evaluate a forward reference with.
++
++        Starting with Python 3.14 (PEP 649 / PEP 749), a forward reference
++        created by :mod:`annotationlib` is evaluated against the namespace
++        of the class that owns the annotation. A method defined on that class,
++        such as ``def list(self)``, would then shadow the builtin ``list`` in
++        an annotation like ``items: list[str]``.
++
++        To avoid that, use the owner's namespace *without* any members which
++        can never be a type, so that such names are resolved from the module
++        globals or builtins instead.
++        """
++        owner = getattr(base_type, '__owner__', None)
++
++        if not isinstance(owner, type):
++            return _TYPING_LOCALS
++
++        return {name: value for name, value in vars(owner).items()
++                if not isinstance(value, _NON_TYPE_CLASS_ATTRS)}
++
++else:  # pragma: no cover
++    def _get_typing_locals(_base_type):
++        return _TYPING_LOCALS
++
++
+ def eval_forward_ref(base_type: FREF,
+                      cls: type):
+     """
+@@ -222,7 +262,7 @@ def eval_forward_ref(base_type: FREF,
+     # Evaluate the ForwardRef here
+     base_globals = sys.modules[cls.__module__].__dict__
+ 
+-    return _eval_type(base_type, base_globals, _TYPING_LOCALS)
++    return _eval_type(base_type, base_globals, _get_typing_locals(base_type))
+ 
+ 
+ _ForwardRefTypes = frozenset(FREF.__constraints__)
+diff --git a/dataclass_wizard/v0/utils/typing_compat.py b/dataclass_wizard/v0/utils/typing_compat.py
+index 6a3ecf9..109094a 100644
+--- a/dataclass_wizard/v0/utils/typing_compat.py
++++ b/dataclass_wizard/v0/utils/typing_compat.py
+@@ -19,12 +19,13 @@ __all__ = [
+ 
+ import functools
+ import sys
++import types
+ import typing
+ # noinspection PyUnresolvedReferences,PyProtectedMember
+ from typing import Literal, Union, _AnnotatedAlias
+ 
+ from .string_conv import repl_or_with_union
+-from ..constants import PY310_OR_ABOVE, PY313_OR_ABOVE
++from ..constants import PY310_OR_ABOVE, PY313_OR_ABOVE, PY314_OR_ABOVE
+ from ..type_def import (FREF,
+                         PyRequired,
+                         PyNotRequired,
+@@ -212,6 +213,45 @@ else:
+     _eval_type = typing._eval_type
+ 
+ 
++if PY314_OR_ABOVE:  # pragma: no cover
++    # Objects bound in a class body which can never be used as a type
++    # (methods, properties, and similar descriptors).
++    _NON_TYPE_CLASS_ATTRS = (
++        types.FunctionType,
++        types.BuiltinFunctionType,
++        classmethod,
++        staticmethod,
++        property,
++        functools.cached_property,
++    )
++
++    def _get_typing_locals(base_type):
++        """
++        Return the local namespace to evaluate a forward reference with.
++
++        Starting with Python 3.14 (PEP 649 / PEP 749), a forward reference
++        created by :mod:`annotationlib` is evaluated against the namespace
++        of the class that owns the annotation. A method defined on that class,
++        such as ``def list(self)``, would then shadow the builtin ``list`` in
++        an annotation like ``items: list[str]``.
++
++        To avoid that, use the owner's namespace *without* any members which
++        can never be a type, so that such names are resolved from the module
++        globals or builtins instead.
++        """
++        owner = getattr(base_type, '__owner__', None)
++
++        if not isinstance(owner, type):
++            return _TYPING_LOCALS
++
++        return {name: value for name, value in vars(owner).items()
++                if not isinstance(value, _NON_TYPE_CLASS_ATTRS)}
++
++else:  # pragma: no cover
++    def _get_typing_locals(_base_type):
++        return _TYPING_LOCALS
++
++
+ def eval_forward_ref(base_type: FREF,
+                      cls: type):
+     """
+@@ -225,7 +265,7 @@ def eval_forward_ref(base_type: FREF,
+     # Evaluate the ForwardRef here
+     base_globals = sys.modules[cls.__module__].__dict__
+ 
+-    return _eval_type(base_type, base_globals, _TYPING_LOCALS)
++    return _eval_type(base_type, base_globals, _get_typing_locals(base_type))
+ 
+ 
+ _ForwardRefTypes = frozenset(FREF.__constraints__)
+diff --git a/tests/unit/test_loaders.py b/tests/unit/test_loaders.py
+index 2f5c174..a7429d7 100644
+--- a/tests/unit/test_loaders.py
++++ b/tests/unit/test_loaders.py
+@@ -3646,3 +3646,45 @@ def test_str_and_int_enum():
+     t2 = Test.from_dict(t.to_dict())
+     assert t2.str_e is MyStrEnum.B
+     assert t2.int_e is MyIntEnum.Z
++
++
++def test_class_methods_do_not_shadow_types_in_annotations():
++    """
++    Methods defined on a class (e.g. ``list()``, ``List()``, ``dict()``)
++    should not shadow builtins or ``typing`` names used in its annotations.
++
++    With Python 3.14+ (PEP 649), such annotations are resolved against the
++    class namespace, which previously raised a ``TypeError``. See #219.
++    """
++
++    @dataclass
++    class Test(JSONWizard):
++        # nested classes are still resolved from the class namespace
++        @dataclass
++        class Inner:
++            a: int
++
++        items: list[str]
++        old_items: List[int]
++        mapping: dict[str, int]
++        inners: list[Inner]
++
++        def list(self):
++            return self.items
++
++        def List(self):
++            return self.old_items
++
++        @property
++        def dict(self):
++            return self.mapping
++
++    d = {'items': ['a', 'b'],
++         'old_items': [1, 2],
++         'mapping': {'x': 1},
++         'inners': [{'a': 3}]}
++
++    t = Test.from_dict(d)
++    assert t == Test(['a', 'b'], [1, 2], {'x': 1}, [Test.Inner(3)])
++    assert t.list() == ['a', 'b']
++    assert t.to_dict() == d
+diff --git a/tests/unit/v0/test_load.py b/tests/unit/v0/test_load.py
+index b59b811..36a3e14 100644
+--- a/tests/unit/v0/test_load.py
++++ b/tests/unit/v0/test_load.py
+@@ -2581,3 +2581,36 @@ def test_dataclass_decorator_is_automatically_applied():
+ 
+     with pytest.raises(TypeError, match=".*Test\.__init__\(\) missing 1 required positional argument: 'my_field'"):
+         Test()
++
++
++def test_class_methods_do_not_shadow_types_in_annotations():
++    """
++    Methods defined on a class (e.g. ``list()``, ``List()``, ``dict()``)
++    should not shadow builtins or ``typing`` names used in its annotations.
++
++    With Python 3.14+ (PEP 649), such annotations are resolved against the
++    class namespace, which previously raised a ``TypeError``. See #219.
++    """
++
++    @dataclass
++    class Test(JSONWizard):
++        items: list[str]
++        numbers: List[int]
++        mapping: dict[str, int]
++
++        def list(self):
++            return self.items
++
++        def List(self):
++            return self.numbers
++
++        @property
++        def dict(self):
++            return self.mapping
++
++    d = {'items': ['a', 'b'], 'numbers': [1, 2], 'mapping': {'x': 1}}
++
++    t = Test.from_dict(d)
++    assert t == Test(['a', 'b'], [1, 2], {'x': 1})
++    assert t.list() == ['a', 'b']
++    assert t.to_dict() == d
+-- 
+2.43.0
+
