@@ -10,7 +10,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 03 | [mloda-ai/mloda#1642](https://github.com/mloda-ai/mloda/issues/1642) | [mloda-ai/mloda#1649](https://github.com/mloda-ai/mloda/pull/1649) |  |
 | 04 | [aethersdr/AetherSDR#5944](https://github.com/aethersdr/AetherSDR/issues/5944) | — | 放弃：项目自有 AI 流程按标签审批（aetherclaude-eligible），维护者待定设计 |
 | 05 | [MakazhanAlpamys/Soup#1224](https://github.com/MakazhanAlpamys/Soup/issues/1224) | [MakazhanAlpamys/Soup#1260](https://github.com/MakazhanAlpamys/Soup/pull/1260) | 维护者 CHANGES_REQUESTED（给了现成修复）→ 已推送 d22de0c；owner 已回复，待复审 |
-| 06 | [uutils/coreutils#9060](https://github.com/uutils/coreutils/issues/9060) | [uutils/coreutils#14853](https://github.com/uutils/coreutils/pull/14853) |  |
+| 06 | [uutils/coreutils#9060](https://github.com/uutils/coreutils/issues/9060) | [uutils/coreutils#14853](https://github.com/uutils/coreutils/pull/14853) | ✅ 已合并（2026-09-25） |
 | 07 | [MakazhanAlpamys/Soup#1221](https://github.com/MakazhanAlpamys/Soup/issues/1221) | [MakazhanAlpamys/Soup#1261](https://github.com/MakazhanAlpamys/Soup/pull/1261) | 维护者 CHANGES_REQUESTED → changelog 署名（1470e7b）+ 3 条测试断言（debe805）已推送；待 owner 回复 |
 | 08 | [mloda-ai/mloda-registry#742](https://github.com/mloda-ai/mloda-registry/issues/742) | [mloda-ai/mloda-registry#752](https://github.com/mloda-ai/mloda-registry/pull/752) |  |
 | 09 | [getsotto/sotto#393](https://github.com/getsotto/sotto/issues/393) | [getsotto/sotto#400](https://github.com/getsotto/sotto/pull/400) | ✅ 已合并（2026-09-25） |
@@ -39,20 +39,20 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 33 | [brig-sh/brig#176](https://github.com/brig-sh/brig/issues/176) | [brig-sh/brig#326](https://github.com/brig-sh/brig/pull/326) | draft：CI 跑通后需 `gh pr ready` |
 | 34 | [pmd/pmd#7100](https://github.com/pmd/pmd/issues/7100) | [pmd/pmd#7110](https://github.com/pmd/pmd/pull/7110) |  |
 | 35 | [csaf-rs/csaf#736](https://github.com/csaf-rs/csaf/issues/736) | [csaf-rs/csaf#1122](https://github.com/csaf-rs/csaf/pull/1122) |  |
-| 36 | [complytime/complyctl#881](https://github.com/complytime/complyctl/issues/881) | [complytime/complyctl#883](https://github.com/complytime/complyctl/pull/883) |  |
+| 36 | [complytime/complyctl#881](https://github.com/complytime/complyctl/issues/881) | [complytime/complyctl#883](https://github.com/complytime/complyctl/pull/883) | 维护者 CHANGES_REQUESTED（IsAbs 守卫 + GoDoc）→ 已推送 5a4f609（含 DCO + Assisted-by）；待 owner 回复 |
 | 37 | [ruby/rdoc#1743](https://github.com/ruby/rdoc/issues/1743) | [ruby/rdoc#1833](https://github.com/ruby/rdoc/pull/1833) | kou 已 approve，待合并 |
 | 38 | [rnag/dataclass-wizard#219](https://github.com/rnag/dataclass-wizard/issues/219) | [rnag/dataclass-wizard#258](https://github.com/rnag/dataclass-wizard/pull/258) |  |
-| 39 | [vimeo/psalm#6866](https://github.com/vimeo/psalm/issues/6866) | [vimeo/psalm#11990](https://github.com/vimeo/psalm/pull/11990) |  |
+| 39 | [vimeo/psalm#6866](https://github.com/vimeo/psalm/issues/6866) | [vimeo/psalm#11990](https://github.com/vimeo/psalm/pull/11990) | ✅ 已合并（2026-09-25） |
 | 40 | [ulyssa/iamb#617](https://github.com/ulyssa/iamb/issues/617) | [ulyssa/iamb#745](https://github.com/ulyssa/iamb/pull/745) | ✅ 已合并（2026-09-25） |
 | 41 | [pyrite-wiki/pyrite#363](https://github.com/pyrite-wiki/pyrite/issues/363) | [pyrite-wiki/pyrite#398](https://github.com/pyrite-wiki/pyrite/pull/398) | 已关闭（放弃）：需按维护者 groom 评论返工，按 owner 决定不做 |
 | 42 | [ProjectMirador/mirador#4071](https://github.com/ProjectMirador/mirador/issues/4071) | [ProjectMirador/mirador#4553](https://github.com/ProjectMirador/mirador/pull/4553) |  |
 | 43 | [cubrid-lab/sqlalchemy-cubrid#440](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/440) | [cubrid-lab/sqlalchemy-cubrid#456](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/456) |  |
-| 44 | [pasteurlabs/tesseract-core#768](https://github.com/pasteurlabs/tesseract-core/issues/768) | [pasteurlabs/tesseract-core#793](https://github.com/pasteurlabs/tesseract-core/pull/793) | CLA 已签（通过） |
+| 44 | [pasteurlabs/tesseract-core#768](https://github.com/pasteurlabs/tesseract-core/issues/768) | [pasteurlabs/tesseract-core#793](https://github.com/pasteurlabs/tesseract-core/pull/793) | ✅ 已合并（2026-09-25） |
 | 45 | [fsspec/projspec#69](https://github.com/fsspec/projspec/issues/69) | [fsspec/projspec#111](https://github.com/fsspec/projspec/pull/111) |  |
 
 ## 接续说明（2026-09-25 快照）
 
-状态（2026-09-25 更新）：2 个已合并（sotto#400、iamb#745），28 个开着；spotatui#576、pyrite#398 已关闭（需返工，按 owner 决定放弃）。所有 CLA/ECA 已签并通过。
+状态（2026-09-25 11:50 UTC）：5 个已合并（sotto#400、iamb#745、coreutils#14853、psalm#11990、tesseract-core#793），其余开着
 
 **待办 / 下次会话从这里继续**
 1. 跑 `python3 tools/pr_status.py`（需 `gh auth login`；脚本会自动去掉受限的 Codespaces `GITHUB_TOKEN`），看 review、CI、合并情况。
