@@ -33,13 +33,13 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 27 | [webgpu-tools/wesl-rs#256](https://github.com/webgpu-tools/wesl-rs/issues/256) | [webgpu-tools/wesl-rs#304](https://github.com/webgpu-tools/wesl-rs/pull/304) | 维护者要求精简：错误内联、删测试 → 已推送 a63d123；待 owner 回复 |
 | 28 | [LargeModGames/spotatui#554](https://github.com/LargeModGames/spotatui/issues/554) | [LargeModGames/spotatui#576](https://github.com/LargeModGames/spotatui/pull/576) | 已关闭（放弃）：CodeRabbit 请求修改，按 owner 决定不返工 |
 | 29 | [biomejs/biome#8762](https://github.com/biomejs/biome/issues/8762) | — | 跳过：要求 PR 描述人写 |
-| 30 | [librasn/rasn#55](https://github.com/librasn/rasn/issues/55) | [librasn/rasn#573](https://github.com/librasn/rasn/pull/573) | CI 失败非本改动所致（上游 main 的 `view_bits` 32 位编译错误） |
+| 30 | [librasn/rasn#55](https://github.com/librasn/rasn/issues/55) | [librasn/rasn#573](https://github.com/librasn/rasn/pull/573) | ✅ 已合并（2026-09-25） |
 | 31 | [MudBlazor/MudBlazor#3461](https://github.com/MudBlazor/MudBlazor/issues/3461) | — | 跳过：要求 before/after 录像 |
 | 32 | [celler-cache/celler#75](https://github.com/celler-cache/celler/issues/75) | [celler-cache/celler#96](https://github.com/celler-cache/celler/pull/96) |  |
 | 33 | [brig-sh/brig#176](https://github.com/brig-sh/brig/issues/176) | [brig-sh/brig#326](https://github.com/brig-sh/brig/pull/326) | draft：CI 跑通后需 `gh pr ready` |
 | 34 | [pmd/pmd#7100](https://github.com/pmd/pmd/issues/7100) | [pmd/pmd#7110](https://github.com/pmd/pmd/pull/7110) |  |
-| 35 | [csaf-rs/csaf#736](https://github.com/csaf-rs/csaf/issues/736) | [csaf-rs/csaf#1122](https://github.com/csaf-rs/csaf/pull/1122) |  |
-| 36 | [complytime/complyctl#881](https://github.com/complytime/complyctl/issues/881) | [complytime/complyctl#883](https://github.com/complytime/complyctl/pull/883) | 维护者 CHANGES_REQUESTED（IsAbs 守卫 + GoDoc）→ 已推送 5a4f609（含 DCO + Assisted-by）；待 owner 回复 |
+| 35 | [csaf-rs/csaf#736](https://github.com/csaf-rs/csaf/issues/736) | [csaf-rs/csaf#1122](https://github.com/csaf-rs/csaf/pull/1122) | Gronner：LGTM，待第二位维护者 |
+| 36 | [complytime/complyctl#881](https://github.com/complytime/complyctl/issues/881) | [complytime/complyctl#883](https://github.com/complytime/complyctl/pull/883) | marcusburghardt 已 approve（5a4f609 修复后）；需两位维护者，待 sedonnel |
 | 37 | [ruby/rdoc#1743](https://github.com/ruby/rdoc/issues/1743) | [ruby/rdoc#1833](https://github.com/ruby/rdoc/pull/1833) | kou 已 approve，待合并 |
 | 38 | [rnag/dataclass-wizard#219](https://github.com/rnag/dataclass-wizard/issues/219) | [rnag/dataclass-wizard#258](https://github.com/rnag/dataclass-wizard/pull/258) |  |
 | 39 | [vimeo/psalm#6866](https://github.com/vimeo/psalm/issues/6866) | [vimeo/psalm#11990](https://github.com/vimeo/psalm/pull/11990) | ✅ 已合并（2026-09-25） |
@@ -52,7 +52,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 
 ## 接续说明（2026-09-25 快照）
 
-状态（2026-09-25 11:50 UTC）：5 个已合并（sotto#400、iamb#745、coreutils#14853、psalm#11990、tesseract-core#793），其余开着
+状态（2026-09-25 18:10 UTC）：6 个已合并（sotto#400、iamb#745、coreutils#14853、psalm#11990、tesseract-core#793、rasn#573），其余开着
 
 **待办 / 下次会话从这里继续**
 1. 跑 `python3 tools/pr_status.py`（需 `gh auth login`；脚本会自动去掉受限的 Codespaces `GITHUB_TOKEN`），看 review、CI、合并情况。
