@@ -49,3 +49,20 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 43 | [cubrid-lab/sqlalchemy-cubrid#440](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/440) | [cubrid-lab/sqlalchemy-cubrid#456](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/456) |  |
 | 44 | [pasteurlabs/tesseract-core#768](https://github.com/pasteurlabs/tesseract-core/issues/768) | [pasteurlabs/tesseract-core#793](https://github.com/pasteurlabs/tesseract-core/pull/793) | CLA 已签（通过） |
 | 45 | [fsspec/projspec#69](https://github.com/fsspec/projspec/issues/69) | [fsspec/projspec#111](https://github.com/fsspec/projspec/pull/111) |  |
+
+## 接续说明（2026-09-25 快照）
+
+状态：30 个 PR 开着；spotatui#576、pyrite#398 已关闭（需返工，按 owner 决定放弃）。所有 CLA/ECA 已签并通过。
+
+**待办 / 下次会话从这里继续**
+1. 跑 `python3 tools/pr_status.py`（需 `gh auth login`；脚本会自动去掉受限的 Codespaces `GITHUB_TOKEN`），看 review、CI、合并情况。
+2. **taffy #835（26）**：owner 已留言认领 → 被 assign 后用 `tools/submit_pr.sh` 开 PR（base `main`）。
+3. **brig#326（33）**：draft；CI 获批并通过后 `gh pr ready 326 -R brig-sh/brig`（CONTRIBUTING 要求）。
+4. **pycubrid #371（16）**：xuezhongyu01 于 2026-09-21 认领；若约 2026-10-02 仍无其 PR，问 owner 是否提交。
+5. rasn#573 的 CI 失败来自上游 main（32 位 `view_bits`），非本改动；上游修复后可 rebase 以得到绿色 CI。
+
+**处理规则（owner 决定）**
+- 需要返工的 PR（review 要求改动 / CI 因本改动失败）→ 直接关闭并简短致歉，不返工。
+- 需要 owner 本人做的事（签协议、在 issue 留言、人写描述）→ 列出并引导 owner 操作；不代发评论。
+- commit 作者、Signed-off-by 等公开邮箱一律用 `anyingiit <49945850+anyingiit@users.noreply.github.com>`。
+- DCO 可代签；上游要求 AI trailer 时按上游（`Assisted-by: Claude Code (claude-opus-5-5)`）。
