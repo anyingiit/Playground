@@ -17,19 +17,19 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 10 | [go-git/go-git#1518](https://github.com/go-git/go-git/issues/1518) | [go-git/go-git#2423](https://github.com/go-git/go-git/pull/2423) |  |
 | 11 | [thebanri/limoni#59](https://github.com/thebanri/limoni/issues/59) | — | 放弃：竞争 PR #64 于 2026-09-25 开出 |
 | 12 | [openeverest/provider-cassandra#23](https://github.com/openeverest/provider-cassandra/issues/23) | [openeverest/provider-cassandra#30](https://github.com/openeverest/provider-cassandra/pull/30) |  |
-| 13 | [fadyehabamer/qr-zero#4](https://github.com/fadyehabamer/qr-zero/issues/4) | [fadyehabamer/qr-zero#13](https://github.com/fadyehabamer/qr-zero/pull/13) | 已 rebase（见 0001-rebased-as-submitted.patch） |
+| 13 | [fadyehabamer/qr-zero#4](https://github.com/fadyehabamer/qr-zero/issues/4) | [fadyehabamer/qr-zero#13](https://github.com/fadyehabamer/qr-zero/pull/13) | 已 rebase（见 0001-rebased-as-submitted.patch）；owner 已在 issue 留言 |
 | 14 | [Mozart2234/herdr-agent-pulse#1](https://github.com/Mozart2234/herdr-agent-pulse/issues/1) | [Mozart2234/herdr-agent-pulse#12](https://github.com/Mozart2234/herdr-agent-pulse/pull/12) |  |
 | 15 | [ezedike-evan/corridor-in-a-box#239](https://github.com/ezedike-evan/corridor-in-a-box/issues/239) | [ezedike-evan/corridor-in-a-box#313](https://github.com/ezedike-evan/corridor-in-a-box/pull/313) |  |
 | 16 | [cubrid-lab/pycubrid#371](https://github.com/cubrid-lab/pycubrid/issues/371) | — | 暂缓：xuezhongyu01 于 2026-09-21 留言认领，尚无 PR；过几天复查 |
 | 17 | [smol-machines/smolvm#1385](https://github.com/smol-machines/smolvm/issues/1385) | — | 放弃：竞争 PR #1392 |
 | 18 | [inokawa/remark-pdf#61](https://github.com/inokawa/remark-pdf/issues/61) | [inokawa/remark-pdf#73](https://github.com/inokawa/remark-pdf/pull/73) |  |
-| 19 | [eclipse-paho/paho.mqtt.golang#798](https://github.com/eclipse-paho/paho.mqtt.golang/issues/798) | — | 等待：需 owner 先签 Eclipse ECA（邮箱须与 noreply 作者一致或在 Eclipse 账号中） |
+| 19 | [eclipse-paho/paho.mqtt.golang#798](https://github.com/eclipse-paho/paho.mqtt.golang/issues/798) | [eclipse-paho/paho.mqtt.golang#801](https://github.com/eclipse-paho/paho.mqtt.golang/pull/801) | ECA 已签并通过校验（noreply 邮箱 + Eclipse 资料中的 GitHub ID） |
 | 20 | [BfArM-MVH/grz-tools#622](https://github.com/BfArM-MVH/grz-tools/issues/622) | — | 阻塞：仓库只允许协作者创建 PR（FORBIDDEN）；分支 anyingiit/grz-tools:fix/alembic-url-password 已推送 |
 | 22 | [etiennebacher/jarl#491](https://github.com/etiennebacher/jarl/issues/491) | — | 跳过：要求 PR 描述人写 |
-| 23 | [denoland/std#3964](https://github.com/denoland/std/issues/3964) | [denoland/std#7332](https://github.com/denoland/std/pull/7332) | 需 owner：签 CLA（cla-assistant.io 链接见 PR） |
+| 23 | [denoland/std#3964](https://github.com/denoland/std/issues/3964) | [denoland/std#7332](https://github.com/denoland/std/pull/7332) | CLA 已签（通过） |
 | 24 | [flint-fyi/flint#2164](https://github.com/flint-fyi/flint/issues/2164) | — | 跳过：要求 PR 描述人写 |
 | 25 | [Smaug6739/Alexandrie#781](https://github.com/Smaug6739/Alexandrie/issues/781) | [Smaug6739/Alexandrie#786](https://github.com/Smaug6739/Alexandrie/pull/786) |  |
-| 26 | [DioxusLabs/taffy#835](https://github.com/DioxusLabs/taffy/issues/835) | — | 等待：CONTRIBUTING 要求先在 issue 留言认领并由团队 assign（需 owner 留言） |
+| 26 | [DioxusLabs/taffy#835](https://github.com/DioxusLabs/taffy/issues/835) | — | 等待：owner 已在 issue 留言认领，待团队 assign 后开 PR |
 | 27 | [webgpu-tools/wesl-rs#256](https://github.com/webgpu-tools/wesl-rs/issues/256) | [webgpu-tools/wesl-rs#304](https://github.com/webgpu-tools/wesl-rs/pull/304) |  |
 | 28 | [LargeModGames/spotatui#554](https://github.com/LargeModGames/spotatui/issues/554) | [LargeModGames/spotatui#576](https://github.com/LargeModGames/spotatui/pull/576) | 已关闭（放弃）：CodeRabbit 请求修改，按 owner 决定不返工 |
 | 29 | [biomejs/biome#8762](https://github.com/biomejs/biome/issues/8762) | — | 跳过：要求 PR 描述人写 |
@@ -47,5 +47,5 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 41 | [pyrite-wiki/pyrite#363](https://github.com/pyrite-wiki/pyrite/issues/363) | [pyrite-wiki/pyrite#398](https://github.com/pyrite-wiki/pyrite/pull/398) | 已关闭（放弃）：需按维护者 groom 评论返工，按 owner 决定不做 |
 | 42 | [ProjectMirador/mirador#4071](https://github.com/ProjectMirador/mirador/issues/4071) | [ProjectMirador/mirador#4553](https://github.com/ProjectMirador/mirador/pull/4553) |  |
 | 43 | [cubrid-lab/sqlalchemy-cubrid#440](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/440) | [cubrid-lab/sqlalchemy-cubrid#456](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/456) |  |
-| 44 | [pasteurlabs/tesseract-core#768](https://github.com/pasteurlabs/tesseract-core/issues/768) | [pasteurlabs/tesseract-core#793](https://github.com/pasteurlabs/tesseract-core/pull/793) | 需 owner：在 PR 评论 `@PasteurBot I have read the CLA Document and I hereby sign the CLA` |
+| 44 | [pasteurlabs/tesseract-core#768](https://github.com/pasteurlabs/tesseract-core/issues/768) | [pasteurlabs/tesseract-core#793](https://github.com/pasteurlabs/tesseract-core/pull/793) | CLA 已签（通过） |
 | 45 | [fsspec/projspec#69](https://github.com/fsspec/projspec/issues/69) | [fsspec/projspec#111](https://github.com/fsspec/projspec/pull/111) |  |
