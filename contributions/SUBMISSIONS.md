@@ -9,9 +9,9 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 02 | [wasmCloud/wasmCloud#5607](https://github.com/wasmCloud/wasmCloud/issues/5607) | — | 放弃：已由 #5609 修复并关闭 |
 | 03 | [mloda-ai/mloda#1642](https://github.com/mloda-ai/mloda/issues/1642) | [mloda-ai/mloda#1649](https://github.com/mloda-ai/mloda/pull/1649) |  |
 | 04 | [aethersdr/AetherSDR#5944](https://github.com/aethersdr/AetherSDR/issues/5944) | — | 放弃：项目自有 AI 流程按标签审批（aetherclaude-eligible），维护者待定设计 |
-| 05 | [MakazhanAlpamys/Soup#1224](https://github.com/MakazhanAlpamys/Soup/issues/1224) | [MakazhanAlpamys/Soup#1260](https://github.com/MakazhanAlpamys/Soup/pull/1260) |  |
+| 05 | [MakazhanAlpamys/Soup#1224](https://github.com/MakazhanAlpamys/Soup/issues/1224) | [MakazhanAlpamys/Soup#1260](https://github.com/MakazhanAlpamys/Soup/pull/1260) | 维护者 CHANGES_REQUESTED（给了现成修复）→ 已推送 d22de0c：Rich 转义 + 回归测试 + changelog 署名 + docstring；待 owner 回复并请求复审 |
 | 06 | [uutils/coreutils#9060](https://github.com/uutils/coreutils/issues/9060) | [uutils/coreutils#14853](https://github.com/uutils/coreutils/pull/14853) |  |
-| 07 | [MakazhanAlpamys/Soup#1221](https://github.com/MakazhanAlpamys/Soup/issues/1221) | [MakazhanAlpamys/Soup#1261](https://github.com/MakazhanAlpamys/Soup/pull/1261) |  |
+| 07 | [MakazhanAlpamys/Soup#1221](https://github.com/MakazhanAlpamys/Soup/issues/1221) | [MakazhanAlpamys/Soup#1261](https://github.com/MakazhanAlpamys/Soup/pull/1261) | 预先补 changelog 署名 `by @anyingiit`（1470e7b） |
 | 08 | [mloda-ai/mloda-registry#742](https://github.com/mloda-ai/mloda-registry/issues/742) | [mloda-ai/mloda-registry#752](https://github.com/mloda-ai/mloda-registry/pull/752) |  |
 | 09 | [getsotto/sotto#393](https://github.com/getsotto/sotto/issues/393) | [getsotto/sotto#400](https://github.com/getsotto/sotto/pull/400) | ✅ 已合并（2026-09-25） |
 | 10 | [go-git/go-git#1518](https://github.com/go-git/go-git/issues/1518) | [go-git/go-git#2423](https://github.com/go-git/go-git/pull/2423) |  |
@@ -23,7 +23,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 16 | [cubrid-lab/pycubrid#371](https://github.com/cubrid-lab/pycubrid/issues/371) | — | 暂缓：xuezhongyu01 于 2026-09-21 留言认领，尚无 PR；过几天复查 |
 | 17 | [smol-machines/smolvm#1385](https://github.com/smol-machines/smolvm/issues/1385) | — | 放弃：竞争 PR #1392 |
 | 18 | [inokawa/remark-pdf#61](https://github.com/inokawa/remark-pdf/issues/61) | [inokawa/remark-pdf#73](https://github.com/inokawa/remark-pdf/pull/73) |  |
-| 19 | [eclipse-paho/paho.mqtt.golang#798](https://github.com/eclipse-paho/paho.mqtt.golang/issues/798) | [eclipse-paho/paho.mqtt.golang#801](https://github.com/eclipse-paho/paho.mqtt.golang/pull/801) | ECA 通过；维护者 codex 审查无阻塞问题；已推送测试小修正 bd72adc（subtest T）；待 owner 回复维护者 |
+| 19 | [eclipse-paho/paho.mqtt.golang#798](https://github.com/eclipse-paho/paho.mqtt.golang/issues/798) | [eclipse-paho/paho.mqtt.golang#801](https://github.com/eclipse-paho/paho.mqtt.golang/pull/801) | ECA 通过；owner 已回复；维护者：下周审查；已推送测试小修正 bd72adc |
 | 20 | [BfArM-MVH/grz-tools#622](https://github.com/BfArM-MVH/grz-tools/issues/622) | — | 阻塞：仓库只允许协作者创建 PR（FORBIDDEN）；分支 anyingiit/grz-tools:fix/alembic-url-password 已推送 |
 | 22 | [etiennebacher/jarl#491](https://github.com/etiennebacher/jarl/issues/491) | — | 跳过：要求 PR 描述人写 |
 | 23 | [denoland/std#3964](https://github.com/denoland/std/issues/3964) | [denoland/std#7332](https://github.com/denoland/std/pull/7332) | CLA 已签（通过） |
