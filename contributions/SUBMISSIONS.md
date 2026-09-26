@@ -48,7 +48,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 42 | [ProjectMirador/mirador#4071](https://github.com/ProjectMirador/mirador/issues/4071) | [ProjectMirador/mirador#4553](https://github.com/ProjectMirador/mirador/pull/4553) |  |
 | 43 | [cubrid-lab/sqlalchemy-cubrid#440](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/440) | [cubrid-lab/sqlalchemy-cubrid#456](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/456) |  |
 | 44 | [pasteurlabs/tesseract-core#768](https://github.com/pasteurlabs/tesseract-core/issues/768) | [pasteurlabs/tesseract-core#793](https://github.com/pasteurlabs/tesseract-core/pull/793) | ✅ 已合并（2026-09-25） |
-| 45 | [fsspec/projspec#69](https://github.com/fsspec/projspec/issues/69) | [fsspec/projspec#111](https://github.com/fsspec/projspec/pull/111) | 维护者要求去掉校验、内联辅助函数 → 已推送；待 owner 回复 |
+| 45 | [fsspec/projspec#69](https://github.com/fsspec/projspec/issues/69) | [fsspec/projspec#111](https://github.com/fsspec/projspec/pull/111) | 维护者要求去掉校验、内联辅助函数 → 已推送 809fee8，PR 描述已同步；全量 589 passed（含 Rust round-trip）；待 owner 回复 |
 
 ## 接续说明（2026-09-25 快照）
 
