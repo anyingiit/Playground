@@ -40,7 +40,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 34 | [pmd/pmd#7100](https://github.com/pmd/pmd/issues/7100) | [pmd/pmd#7110](https://github.com/pmd/pmd/pull/7110) |  |
 | 35 | [csaf-rs/csaf#736](https://github.com/csaf-rs/csaf/issues/736) | [csaf-rs/csaf#1122](https://github.com/csaf-rs/csaf/pull/1122) | Gronner：LGTM，待第二位维护者 |
 | 36 | [complytime/complyctl#881](https://github.com/complytime/complyctl/issues/881) | [complytime/complyctl#883](https://github.com/complytime/complyctl/pull/883) | marcusburghardt 已 approve（5a4f609 修复后）；需两位维护者，待 sedonnel |
-| 37 | [ruby/rdoc#1743](https://github.com/ruby/rdoc/issues/1743) | [ruby/rdoc#1833](https://github.com/ruby/rdoc/pull/1833) | kou 已 approve，待合并 |
+| 37 | [ruby/rdoc#1743](https://github.com/ruby/rdoc/issues/1743) | [ruby/rdoc#1833](https://github.com/ruby/rdoc/pull/1833) | ✅ 已合并（2026-09-25） |
 | 38 | [rnag/dataclass-wizard#219](https://github.com/rnag/dataclass-wizard/issues/219) | [rnag/dataclass-wizard#258](https://github.com/rnag/dataclass-wizard/pull/258) |  |
 | 39 | [vimeo/psalm#6866](https://github.com/vimeo/psalm/issues/6866) | [vimeo/psalm#11990](https://github.com/vimeo/psalm/pull/11990) | ✅ 已合并（2026-09-25） |
 | 40 | [ulyssa/iamb#617](https://github.com/ulyssa/iamb/issues/617) | [ulyssa/iamb#745](https://github.com/ulyssa/iamb/pull/745) | ✅ 已合并（2026-09-25） |
@@ -48,11 +48,11 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 42 | [ProjectMirador/mirador#4071](https://github.com/ProjectMirador/mirador/issues/4071) | [ProjectMirador/mirador#4553](https://github.com/ProjectMirador/mirador/pull/4553) |  |
 | 43 | [cubrid-lab/sqlalchemy-cubrid#440](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/440) | [cubrid-lab/sqlalchemy-cubrid#456](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/456) |  |
 | 44 | [pasteurlabs/tesseract-core#768](https://github.com/pasteurlabs/tesseract-core/issues/768) | [pasteurlabs/tesseract-core#793](https://github.com/pasteurlabs/tesseract-core/pull/793) | ✅ 已合并（2026-09-25） |
-| 45 | [fsspec/projspec#69](https://github.com/fsspec/projspec/issues/69) | [fsspec/projspec#111](https://github.com/fsspec/projspec/pull/111) |  |
+| 45 | [fsspec/projspec#69](https://github.com/fsspec/projspec/issues/69) | [fsspec/projspec#111](https://github.com/fsspec/projspec/pull/111) | 维护者要求去掉校验、内联辅助函数 → 已推送；待 owner 回复 |
 
 ## 接续说明（2026-09-25 快照）
 
-状态（2026-09-25 18:10 UTC）：6 个已合并（sotto#400、iamb#745、coreutils#14853、psalm#11990、tesseract-core#793、rasn#573），其余开着
+状态（2026-09-26 05:20 UTC）：7 个已合并（sotto#400、iamb#745、coreutils#14853、psalm#11990、tesseract-core#793、rasn#573、rdoc#1833），其余开着
 
 **待办 / 下次会话从这里继续**
 1. 跑 `python3 tools/pr_status.py`（需 `gh auth login`；脚本会自动去掉受限的 Codespaces `GITHUB_TOKEN`），看 review、CI、合并情况。
