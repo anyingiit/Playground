@@ -20,7 +20,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 13 | [fadyehabamer/qr-zero#4](https://github.com/fadyehabamer/qr-zero/issues/4) | [fadyehabamer/qr-zero#13](https://github.com/fadyehabamer/qr-zero/pull/13) | 维护者 CHANGES_REQUESTED（--module-size 需 isSafeInteger）→ 已推送修复 + 用例（红→绿，114/114）；待 owner 回复 |
 | 14 | [Mozart2234/herdr-agent-pulse#1](https://github.com/Mozart2234/herdr-agent-pulse/issues/1) | [Mozart2234/herdr-agent-pulse#12](https://github.com/Mozart2234/herdr-agent-pulse/pull/12) |  |
 | 15 | [ezedike-evan/corridor-in-a-box#239](https://github.com/ezedike-evan/corridor-in-a-box/issues/239) | [ezedike-evan/corridor-in-a-box#313](https://github.com/ezedike-evan/corridor-in-a-box/pull/313) | ✅ 已合并 |
-| 16 | [cubrid-lab/pycubrid#371](https://github.com/cubrid-lab/pycubrid/issues/371) | — | 暂缓：xuezhongyu01 于 2026-09-21 留言认领，尚无 PR；过几天复查 |
+| 16 | [cubrid-lab/pycubrid#371](https://github.com/cubrid-lab/pycubrid/issues/371) | — | 放弃（2026-09-29）：上游 API 清单（#438 决策）要求 fetchmany(0/-1) 保留返回 []，补丁与之冲突，且异步游标失效语义已变；在最新 main 上 9 个测试失败，返工代价大 |
 | 17 | [smol-machines/smolvm#1385](https://github.com/smol-machines/smolvm/issues/1385) | — | 放弃：竞争 PR #1392 |
 | 18 | [inokawa/remark-pdf#61](https://github.com/inokawa/remark-pdf/issues/61) | [inokawa/remark-pdf#73](https://github.com/inokawa/remark-pdf/pull/73) |  |
 | 19 | [eclipse-paho/paho.mqtt.golang#798](https://github.com/eclipse-paho/paho.mqtt.golang/issues/798) | [eclipse-paho/paho.mqtt.golang#801](https://github.com/eclipse-paho/paho.mqtt.golang/pull/801) | ECA 通过；owner 已回复；维护者：下周审查；已推送测试小修正 bd72adc |
@@ -58,7 +58,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 1. 跑 `python3 tools/pr_status.py`（需 `gh auth login`；脚本会自动去掉受限的 Codespaces `GITHUB_TOKEN`），看 review、CI、合并情况。
 2. ~~taffy #835（26）~~：已跳过（需人写文档）。
 3. **brig#326（33）**：draft；CI 获批并通过后 `gh pr ready 326 -R brig-sh/brig`（CONTRIBUTING 要求）。
-4. **pycubrid #371（16）**：xuezhongyu01 于 2026-09-21 认领；若约 2026-10-02 仍无其 PR，问 owner 是否提交。
+4. ~~pycubrid #371（16）~~：已放弃（上游约定变更）。
 5. rasn#573 的 CI 失败来自上游 main（32 位 `view_bits`），非本改动；上游修复后可 rebase 以得到绿色 CI。
 
 **处理规则（owner 决定）**
