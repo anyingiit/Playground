@@ -1,0 +1,1 @@
+getfacl: implement --absolute-names

@@ -1,0 +1,1 @@
+feat(widgets): add blurred text shadow to SVG status badges

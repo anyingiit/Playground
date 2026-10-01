@@ -38,7 +38,7 @@ Rust SDK 有 `SegmentClient::delete_segments`（命令码 503），Java SDK 没�
 
 环境：OpenJDK 21，Gradle wrapper 9.7.1；server 为 `apache/iggy:edge` docker 容器（本地 dockerd，去掉了 memlock ulimit/SYS_NICE），`USE_EXTERNAL_SERVER=1`。Maven Central 有 429 限流，临时在私有 GRADLE_USER_HOME 中加了 Google Maven Central 镜像 init 脚本（不影响仓库）。
 
-- RED（stash 掉 main 改动）：`./gradlew :iggy:compileTestJava` → `PartitionsClientBaseTest.java:81: error: cannot find symbol`（deleteSegments），BUILD FAILED
+- RED（stash 掉 main 改动）：`./gradlew :iggy:compileTestJava` → `PartitionsClientBaseTest.java:84: error: cannot find symbol`（deleteSegments），BUILD FAILED
 - GREEN：`./gradlew :iggy:test --tests '*PartitionsTcpClientTest' --tests '*PartitionsHttpClientTest'` → 两个类各 2 个测试全过
 - 全量：`./gradlew :iggy:spotlessCheck :iggy:checkstyleMain :iggy:checkstyleTest :iggy:test` → BUILD SUCCESSFUL，138 suites / 1355 tests，0 failures，0 errors，4 skipped（已 spotlessApply）
 - `prek run --files <7 个改动文件>`（装了 typos、hawkeye 7.0.1）→ 所有适用 hook Passed

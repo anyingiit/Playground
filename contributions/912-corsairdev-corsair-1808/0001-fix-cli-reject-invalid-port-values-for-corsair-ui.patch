@@ -1,0 +1,119 @@
+From 6ffa7283fc33f657ef42620915eb12c2a9a01093 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 21:32:56 +0000
+Subject: [PATCH] fix(cli): reject invalid --port values for corsair ui
+
+`corsair ui --port` parsed the value with Number.parseInt, so `3000abc`
+was silently accepted as 3000 and `abc` became NaN, which slipped past
+the `?? 4317` default in the Studio server and crashed in server.listen.
+
+Validate the whole value as a decimal integer in 1-65535 (same rule as
+`corsair http`) and exit with a clear error otherwise. Adds tests for
+valid ports and for `3000abc`, `abc` and other malformed values.
+
+Closes #1808
+---
+ .../cli/src/commands/studio.command.test.ts   | 50 +++++++++++++++++++
+ packages/cli/src/commands/studio.command.ts   | 22 +++++++-
+ 2 files changed, 71 insertions(+), 1 deletion(-)
+ create mode 100644 packages/cli/src/commands/studio.command.test.ts
+
+diff --git a/packages/cli/src/commands/studio.command.test.ts b/packages/cli/src/commands/studio.command.test.ts
+new file mode 100644
+index 0000000..cd7e9af
+--- /dev/null
++++ b/packages/cli/src/commands/studio.command.test.ts
+@@ -0,0 +1,50 @@
++import StudioCommand, { parsePortOption } from './studio.command';
++
++describe('parsePortOption', () => {
++	it('returns undefined when no port is given', () => {
++		expect(parsePortOption(undefined)).toBeUndefined();
++	});
++
++	it.each([
++		['1', 1],
++		['3000', 3000],
++		['4317', 4317],
++		['65535', 65535],
++	])('accepts %p', (raw, expected) => {
++		expect(parsePortOption(raw)).toBe(expected);
++	});
++
++	it.each(['3000abc', 'abc', '', '0', '65536', '-1', '30.5', '1e3', ' 3000'])(
++		'rejects %p',
++		(raw) => {
++			expect(parsePortOption(raw)).toBeNull();
++		},
++	);
++});
++
++describe('StudioCommand', () => {
++	afterEach(() => {
++		jest.restoreAllMocks();
++	});
++
++	it.each(['3000abc', 'abc'])(
++		'exits with an error for --port %p before starting Studio',
++		async (port) => {
++			const exit = jest.spyOn(process, 'exit').mockImplementation(((
++				code?: number,
++			) => {
++				throw new Error(`process.exit(${code})`);
++			}) as never);
++			const error = jest.spyOn(console, 'error').mockImplementation(() => {});
++
++			await expect(
++				new StudioCommand().action({ args: [], options: { port } }),
++			).rejects.toThrow('process.exit(1)');
++
++			expect(exit).toHaveBeenCalledWith(1);
++			expect(error).toHaveBeenCalledWith(
++				expect.stringContaining(`Invalid --port "${port}"`),
++			);
++		},
++	);
++});
+diff --git a/packages/cli/src/commands/studio.command.ts b/packages/cli/src/commands/studio.command.ts
+index 069beca..c2f60a5 100644
+--- a/packages/cli/src/commands/studio.command.ts
++++ b/packages/cli/src/commands/studio.command.ts
+@@ -8,6 +8,20 @@ type StartStudio = (opts: {
+ 	open?: boolean;
+ }) => Promise<unknown>;
+ 
++/**
++ * Parses the `--port` option. Returns `undefined` when no port was given,
++ * the port number when the whole value is a decimal integer in 1–65535, and
++ * `null` otherwise (e.g. `3000abc`, `abc`, `0`, `65536`).
++ */
++export function parsePortOption(
++	raw: string | undefined,
++): number | null | undefined {
++	if (raw === undefined) return undefined;
++	const port = Number(raw);
++	if (!/^\d+$/.test(raw) || port < 1 || port > 65535) return null;
++	return port;
++}
++
+ export default class StudioCommand extends BaseCommand {
+ 	getName(): string {
+ 		return 'ui';
+@@ -39,7 +53,13 @@ export default class StudioCommand extends BaseCommand {
+ 
+ 	async action({ options }: CommandActionData) {
+ 		const cwd = process.cwd();
+-		const port = options.port ? Number.parseInt(options.port, 10) : undefined;
++		const port = parsePortOption(options.port);
++		if (port === null) {
++			console.error(
++				`[#corsair]: Invalid --port "${options.port}". Expected an integer between 1 and 65535.`,
++			);
++			process.exit(1);
++		}
+ 
+ 		let startStudio: StartStudio;
+ 		try {
+-- 
+2.43.0
+

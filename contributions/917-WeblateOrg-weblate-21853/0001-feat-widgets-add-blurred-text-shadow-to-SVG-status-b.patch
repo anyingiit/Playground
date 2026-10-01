@@ -1,0 +1,114 @@
+From 4ac60e9baf97d9c6ea8dd98189ccf110fa7076f5 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 21:50:45 +0000
+Subject: [PATCH] feat(widgets): add blurred text shadow to SVG status badges
+
+shields.io added a blurred shadow behind badge text to improve the
+contrast (WCAG) of white text on lighter backgrounds. Render the same
+blurred shadow in the Weblate SVG status badges so they keep matching
+the shields.io look. The shadow texts are hidden from assistive
+technologies.
+
+Fixes #21853
+---
+ docs/changes.rst                    |  1 +
+ weblate/templates/svg/badge.svg     | 11 ++++++--
+ weblate/trans/tests/test_widgets.py | 43 +++++++++++++++++++++++++++++
+ 3 files changed, 53 insertions(+), 2 deletions(-)
+
+diff --git a/docs/changes.rst b/docs/changes.rst
+index 5fd7a6c..6847e87 100644
+--- a/docs/changes.rst
++++ b/docs/changes.rst
+@@ -7,6 +7,7 @@ Weblate 2026.10.1
+ 
+ .. rubric:: Improvements
+ 
++* :ref:`SVG status badges <promotion>` now use a blurred text shadow to improve contrast, matching shields.io.
+ * Made unused components and glossary languages warning :ref:`diagnostics <alerts>` and enabled dismissal for them and suspected monolingual or bilingual file-format misconfiguration.
+ 
+ .. rubric:: Security fixes
+diff --git a/weblate/templates/svg/badge.svg b/weblate/templates/svg/badge.svg
+index d2ea0b3..006a905 100644
+--- a/weblate/templates/svg/badge.svg
++++ b/weblate/templates/svg/badge.svg
+@@ -1,13 +1,20 @@
+ <svg xmlns="http://www.w3.org/2000/svg" width="{{ width }}" height="20" xml:lang="en" role="img" aria-label="{{ label }} {{ value }}">
+     <title>{{ label }} {{value }}</title>
+     <linearGradient id="a" x2="0" y2="100%"><stop offset="0" stop-color="#bbb" stop-opacity=".1"/><stop offset="1" stop-opacity=".1"/></linearGradient>
++    <filter id="b"><feGaussianBlur stdDeviation="1.6"/></filter>
+     <rect width="{{ width }}" height="20" fill="#555" rx="3"/>
+     <rect width="{{ value_width }}" height="20" x="{{ label_width }}" fill="{{ color }}" rx="3"/>
+     <path fill="{{ color }}" d="M{{ label_width }} 0h4v20h-4z"/><rect width="{{ width }}" height="20" fill="url(#a)" rx="3"/>
+     <g fill="#fff" font-family="Source Sans,Kurinto Sans,DejaVu Sans,Verdana,Geneva,sans-serif" font-size="11" text-anchor="middle">
+-        <text x="{{ translated_offset }}" y="15" fill="#010101" fill-opacity=".3">{{ label }}</text>
++        <g fill="#010101" aria-hidden="true">
++            <text x="{{ translated_offset }}" y="15" fill-opacity=".8" filter="url(#b)">{{ label }}</text>
++            <text x="{{ translated_offset }}" y="15" fill-opacity=".3">{{ label }}</text>
++        </g>
+         <text x="{{ translated_offset }}" y="14">{{ label }}</text>
+-        <text x="{{ percent_offset }}" y="15" fill="#010101" fill-opacity=".3">{{ value }}</text>
++        <g fill="#010101" aria-hidden="true">
++            <text x="{{ percent_offset }}" y="15" fill-opacity=".8" filter="url(#b)">{{ value }}</text>
++            <text x="{{ percent_offset }}" y="15" fill-opacity=".3">{{ value }}</text>
++        </g>
+         <text x="{{ percent_offset }}" y="14">{{ value }}</text>
+     </g>
+ </svg>
+diff --git a/weblate/trans/tests/test_widgets.py b/weblate/trans/tests/test_widgets.py
+index a4d414b..6450956 100644
+--- a/weblate/trans/tests/test_widgets.py
++++ b/weblate/trans/tests/test_widgets.py
+@@ -369,6 +369,49 @@ class WidgetsTest(FixtureTestCase):
+             mocked_draw_text.call_args_list[0].args[1],
+         )
+ 
++    def test_svg_badge_text_has_blurred_shadow(self) -> None:
++        response = self.client.get(
++            reverse(
++                "widget-image",
++                kwargs={
++                    "path": self.project.get_url_path(),
++                    "widget": "svg",
++                    "color": "badge",
++                    "extension": "svg",
++                },
++            )
++        )
++
++        self.assert_svg(response)
++        svg_ns = "{http://www.w3.org/2000/svg}"
++        tree = parse_xml(response.content)
++        blur_filters = [
++            element
++            for element in tree.iter(f"{svg_ns}filter")
++            if element.find(f"{svg_ns}feGaussianBlur") is not None
++        ]
++        self.assertEqual(len(blur_filters), 1)
++        filter_reference = f"url(#{blur_filters[0].attrib['id']})"
++
++        # Every visible text (label and value) has a blurred shadow
++        blurred_texts = [
++            element.text
++            for element in tree.iter(f"{svg_ns}text")
++            if element.attrib.get("filter") == filter_reference
++        ]
++        visible_texts = [
++            element.text
++            for element in tree.iter(f"{svg_ns}text")
++            if "fill-opacity" not in element.attrib
++        ]
++        self.assertEqual(len(visible_texts), 2)
++        self.assertEqual(blurred_texts, visible_texts)
++
++        # Shadows are hidden from assistive technologies
++        for group in tree.iter(f"{svg_ns}g"):
++            if group.find(f"{svg_ns}text[@filter]") is not None:
++                self.assertEqual(group.attrib.get("aria-hidden"), "true")
++
+     def test_png_badge_dimensions(self) -> None:
+         response = self.client.get(
+             reverse(
+-- 
+2.43.0
+

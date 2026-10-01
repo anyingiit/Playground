@@ -1,0 +1,103 @@
+From b4b3a14a3068476c03860ea998f427b3e28e37ae Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 21:35:59 +0000
+Subject: [PATCH] fix(python-sdk): resolve wallet address before include in
+ escrow.withdrawals
+
+Escrow.withdrawals in the Python SDK validated `include` before resolving
+the wallet address, the reverse of the TypeScript SDK. Calling
+withdrawals(include="") with no wallet address therefore raised
+ValidationError in Python but MissingWalletAddress in TypeScript.
+
+Resolve the wallet address first, matching the TypeScript SDK (and
+Python's own approve_tx), and add regression tests for the validation
+order.
+
+Closes #2353
+---
+ sdks/python/pmxt/escrow.py                   |  4 +-
+ sdks/python/tests/test_escrow_withdrawals.py | 53 ++++++++++++++++++++
+ 2 files changed, 56 insertions(+), 1 deletion(-)
+ create mode 100644 sdks/python/tests/test_escrow_withdrawals.py
+
+diff --git a/sdks/python/pmxt/escrow.py b/sdks/python/pmxt/escrow.py
+index 7a2d7a0..977a301 100644
+--- a/sdks/python/pmxt/escrow.py
++++ b/sdks/python/pmxt/escrow.py
+@@ -173,11 +173,13 @@ class Escrow:
+         address: str | None = None,
+     ) -> dict[str, Any]:
+         """Return pending withdrawal state and/or withdrawal events for an address."""
++        # Resolve the wallet address before validating ``include`` so the error
++        # raised for invalid inputs matches the TypeScript SDK.
++        wallet_address = quote(self._wallet_address(address), safe="")
+         include_value = include.strip()
+         if not include_value:
+             raise ValidationError("include must not be empty", field="include")
+ 
+-        wallet_address = quote(self._wallet_address(address), safe="")
+         include_query = quote(include_value, safe=",")
+         path = f"/v0/escrow/{wallet_address}/withdrawals?include={include_query}"
+         return self._request("GET", path)
+diff --git a/sdks/python/tests/test_escrow_withdrawals.py b/sdks/python/tests/test_escrow_withdrawals.py
+new file mode 100644
+index 0000000..eb1e646
+--- /dev/null
++++ b/sdks/python/tests/test_escrow_withdrawals.py
+@@ -0,0 +1,53 @@
++"""Validation-order tests for ``Escrow.withdrawals``.
++
++The TypeScript SDK resolves the wallet address before validating
++``include``; the Python SDK must raise the same error for the same inputs
++(see pmxt-dev/pmxt#2353).
++"""
++
++from __future__ import annotations
++
++from types import SimpleNamespace
++from typing import Any, Dict
++
++import pytest
++
++import pmxt.escrow as escrow_module
++from pmxt._hosted_errors import MissingWalletAddress
++from pmxt.errors import ValidationError
++from pmxt.escrow import Escrow
++
++WALLET_ADDRESS = "0x000000000000000000000000000000000000aBc1"
++
++
++def test_missing_wallet_address_is_checked_before_empty_include() -> None:
++    escrow = Escrow(SimpleNamespace(wallet_address=None))
++
++    with pytest.raises(MissingWalletAddress):
++        escrow.withdrawals(include="")
++
++
++def test_empty_include_raises_validation_error_when_address_resolves() -> None:
++    escrow = Escrow(SimpleNamespace(wallet_address=WALLET_ADDRESS))
++
++    with pytest.raises(ValidationError) as exc_info:
++        escrow.withdrawals(include="   ")
++    assert exc_info.value.field == "include"
++
++
++def test_withdrawals_builds_request_path(monkeypatch: pytest.MonkeyPatch) -> None:
++    calls: Dict[str, Any] = {}
++
++    def fake_trading_request(client: Any, *, method: str, path: str, body: Any) -> Dict[str, Any]:
++        calls.update(method=method, path=path, body=body)
++        return {"ok": True}
++
++    monkeypatch.setattr(escrow_module, "_trading_request", fake_trading_request)
++    escrow = Escrow(SimpleNamespace(wallet_address=None))
++
++    assert escrow.withdrawals(include=" pending ", address=WALLET_ADDRESS) == {"ok": True}
++    assert calls == {
++        "method": "GET",
++        "path": f"/v0/escrow/{WALLET_ADDRESS}/withdrawals?include=pending",
++        "body": None,
++    }
+-- 
+2.43.0
+

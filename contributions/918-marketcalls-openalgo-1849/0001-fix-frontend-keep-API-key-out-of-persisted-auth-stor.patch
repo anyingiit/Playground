@@ -1,0 +1,159 @@
+From b1530e9915d27b1b9950af375ef522a2395a857e Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 21:49:21 +0000
+Subject: [PATCH] fix(frontend): keep API key out of persisted auth store
+
+The auth Zustand store persisted its whole state, so the OpenAlgo API key
+was written to localStorage, where any script on the origin can read it and
+where it survives browser restarts.
+
+Persist only user and isAuthenticated via partialize. Bump the persist
+version to 1 with a migration that drops apiKey from v0 snapshots (the
+post-migration rewrite removes it from storage), and a merge that never lets
+a stored key overwrite the in-memory one. AuthSync already re-fetches the
+key from the Flask session on every load, and logout still clears it.
+
+Closes #1849
+---
+ frontend/src/stores/authStore.persist.test.ts | 85 +++++++++++++++++++
+ frontend/src/stores/authStore.ts              | 25 ++++++
+ 2 files changed, 110 insertions(+)
+ create mode 100644 frontend/src/stores/authStore.persist.test.ts
+
+diff --git a/frontend/src/stores/authStore.persist.test.ts b/frontend/src/stores/authStore.persist.test.ts
+new file mode 100644
+index 0000000..f508df3
+--- /dev/null
++++ b/frontend/src/stores/authStore.persist.test.ts
+@@ -0,0 +1,85 @@
++import { beforeEach, describe, expect, it } from 'vitest'
++import { useAuthStore } from './authStore'
++
++/**
++ * The OpenAlgo API key must stay in memory only. localStorage is readable by
++ * any script running on the origin and survives browser restarts, so the
++ * persisted auth snapshot may carry the user but never the key. AuthSync
++ * fetches the key from the Flask session on every load.
++ */
++
++const STORAGE_KEY = 'openalgo-auth'
++const DUMMY_KEY = 'dummy-api-key-not-a-real-secret'
++const LEGACY_KEY = 'dummy-legacy-api-key-not-a-real-secret'
++
++const persisted = () => window.localStorage.getItem(STORAGE_KEY) ?? ''
++
++describe('authStore persistence', () => {
++  beforeEach(() => {
++    window.localStorage.clear()
++    useAuthStore.setState({ user: null, apiKey: null, isAuthenticated: false })
++  })
++
++  it('keeps the API key usable in memory but never writes it to localStorage', () => {
++    useAuthStore.getState().login('dummy-user', 'dummy-broker')
++    useAuthStore.getState().setApiKey(DUMMY_KEY)
++
++    expect(useAuthStore.getState().apiKey).toBe(DUMMY_KEY)
++    expect(persisted()).toContain('dummy-user')
++    expect(persisted()).not.toContain(DUMMY_KEY)
++    expect(JSON.parse(persisted()).state).not.toHaveProperty('apiKey')
++  })
++
++  it('ignores and removes an API key left in storage by an older build', async () => {
++    window.localStorage.setItem(
++      STORAGE_KEY,
++      JSON.stringify({
++        state: {
++          user: {
++            username: 'dummy-user',
++            broker: 'dummy-broker',
++            isLoggedIn: true,
++            loginTime: '2026-01-01T00:00:00.000Z',
++          },
++          apiKey: LEGACY_KEY,
++          isAuthenticated: true,
++        },
++        version: 0,
++      })
++    )
++
++    await useAuthStore.persist.rehydrate()
++
++    const state = useAuthStore.getState()
++    expect(state.apiKey).toBeNull()
++    expect(state.user?.username).toBe('dummy-user')
++    expect(state.isAuthenticated).toBe(true)
++    expect(persisted()).not.toContain(LEGACY_KEY)
++  })
++
++  it('does not let a stored API key overwrite the in-memory one on rehydrate', async () => {
++    useAuthStore.getState().setApiKey(DUMMY_KEY)
++    window.localStorage.setItem(
++      STORAGE_KEY,
++      JSON.stringify({
++        state: { user: null, apiKey: LEGACY_KEY, isAuthenticated: false },
++        version: 1,
++      })
++    )
++
++    await useAuthStore.persist.rehydrate()
++
++    expect(useAuthStore.getState().apiKey).toBe(DUMMY_KEY)
++  })
++
++  it('clears the in-memory API key on logout', () => {
++    useAuthStore.getState().login('dummy-user', 'dummy-broker')
++    useAuthStore.getState().setApiKey(DUMMY_KEY)
++
++    useAuthStore.getState().logout()
++
++    expect(useAuthStore.getState().apiKey).toBeNull()
++    expect(useAuthStore.getState().user).toBeNull()
++    expect(persisted()).not.toContain(DUMMY_KEY)
++  })
++})
+diff --git a/frontend/src/stores/authStore.ts b/frontend/src/stores/authStore.ts
+index 697b581..10e846b 100644
+--- a/frontend/src/stores/authStore.ts
++++ b/frontend/src/stores/authStore.ts
+@@ -21,6 +21,14 @@ interface AuthStore {
+   checkSession: () => boolean
+ }
+ 
++type PersistedAuthState = Pick<AuthStore, 'user' | 'isAuthenticated'>
++
++function stripApiKey(persistedState: unknown): Partial<PersistedAuthState> {
++  if (!persistedState || typeof persistedState !== 'object') return {}
++  const { apiKey: _apiKey, ...rest } = persistedState as Partial<AuthStore>
++  return rest
++}
++
+ export const useAuthStore = create<AuthStore>()(
+   persist(
+     (set, get) => ({
+@@ -88,6 +96,23 @@ export const useAuthStore = create<AuthStore>()(
+     }),
+     {
+       name: 'openalgo-auth',
++      // v1 stopped persisting the API key. AuthSync fetches it from the Flask
++      // session on every load, so it only ever needs to live in memory.
++      version: 1,
++      // Persist only non-sensitive fields: localStorage is readable by any
++      // script on the origin and survives browser restarts.
++      partialize: (state): PersistedAuthState => ({
++        user: state.user,
++        isAuthenticated: state.isAuthenticated,
++      }),
++      // v0 snapshots carried the API key. Drop it; the rewrite that follows a
++      // migration removes it from storage too.
++      migrate: (persistedState) => stripApiKey(persistedState) as PersistedAuthState,
++      // Never let a stored key (legacy or hand-edited) overwrite the in-memory one.
++      merge: (persistedState, currentState) => ({
++        ...currentState,
++        ...stripApiKey(persistedState),
++      }),
+     }
+   )
+ )
+-- 
+2.43.0
+

@@ -12,8 +12,6 @@ The `--- Original` / `+++ New` header lines (everything before the first `@@`) a
 
 Implementation: `BaseTextFileReporter` gets a `formatDiff()` hook that returns the diff unchanged, so the plain `TextFileReporter` (and any log written to a file) produces exactly the same output as before. `GitHubActionsLogTextFileReporter` overrides it.
 
-Note for the MSI gate: removing the `continue` after the red branch is an equivalent mutant (a line starting with `-` never starts with `+`).
-
 **Motivation / disclosure:** I had some spare AI-assistant quota (Claude Code) and am using it to try to
 help projects with open good-first-issues. The change was prepared with Claude Code and verified as listed
 below. If it doesn't fit, isn't up to your bar, or you'd simply rather not take it — please feel free to
@@ -25,7 +23,7 @@ close it, no hard feelings at all 🙂
 - `GitHubActionsLogTextFileReporter` colors the diff lines with ANSI escape sequences.
 - Updates `GitHubActionsLogTextFileReporterTest` expectations and adds a test for the header / context / header-looking change lines.
 
-## Related issue
+## Related issues
 
 Fixes https://github.com/infection/infection/issues/2582.
 

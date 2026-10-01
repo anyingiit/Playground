@@ -52,3 +52,9 @@ fix(storage): Place 8-byte trace IDs in the low half in remote gRPC storage
 
 ## PR body
 见 pr_body.md
+
+## 独立复核 (2026-10-01)
+- 竞品 PR：issue 无评论/关联 PR；open PR 搜索 "9717" / "trace ID" 无 M1 相关 PR。
+- 新鲜浅克隆 main @ a58fb8e，`git am` 干净应用。
+- Red/Green：还原实现后三个测试均 FAIL；应用补丁后 `go test ./internal/storage/v2/grpc/...` ok，`go vet`、gofmt 干净。
+- 修复与 issue M1 描述一致；PR 文本准确。结论：ok。

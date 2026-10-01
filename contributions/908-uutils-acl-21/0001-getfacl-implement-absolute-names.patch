@@ -1,0 +1,168 @@
+From ce3b32c051f5dca7ec31ef81e2b40292e9188cd2 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 21:05:42 +0000
+Subject: [PATCH] getfacl: implement --absolute-names
+
+Like GNU getfacl, strip leading '/' characters (and a leading './')
+from the file name shown in the '# file:' header, and print a one-time
+warning "Removing leading '/' from absolute path names" to stderr.
+With -p/--absolute-names the name is kept as given.
+
+Closes #21
+---
+ src/uu/getfacl/src/getfacl.rs | 52 ++++++++++++++++++++++++++++++++++-
+ tests/by-util/test_getfacl.rs | 43 +++++++++++++++++++++++++++++
+ 2 files changed, 94 insertions(+), 1 deletion(-)
+
+diff --git a/src/uu/getfacl/src/getfacl.rs b/src/uu/getfacl/src/getfacl.rs
+index 7b5f0f8..9cfdfc7 100644
+--- a/src/uu/getfacl/src/getfacl.rs
++++ b/src/uu/getfacl/src/getfacl.rs
+@@ -7,6 +7,7 @@ use clap::{Arg, ArgAction, ArgMatches, Command, crate_version};
+ use std::fs::{self, Metadata};
+ use std::os::unix::fs::{MetadataExt, PermissionsExt};
+ use uucore::error::UResult;
++use uucore::show_error;
+ use uzers::{get_group_by_gid, get_user_by_uid};
+ 
+ /// Configuration structure to hold all getfacl options
+@@ -14,6 +15,7 @@ use uzers::{get_group_by_gid, get_user_by_uid};
+ struct Config {
+     omit_header: bool,
+     show_access: bool,
++    absolute_names: bool,
+ }
+ 
+ impl Config {
+@@ -23,6 +25,7 @@ impl Config {
+             omit_header: matches.get_flag("omit-header"),
+             // Always show access ACL (either by default or when --access flag is set)
+             show_access: true,
++            absolute_names: matches.get_flag("absolute-names"),
+         }
+     }
+ }
+@@ -87,6 +90,24 @@ fn print_output(file_path: &str, config: &Config, metadata: &Metadata) -> std::i
+     Ok(())
+ }
+ 
++/// Strip leading slash characters (and a leading `./`) from `path`, like GNU
++/// getfacl does unless `--absolute-names` is given. Returns the stripped path
++/// and whether a leading `/` was removed.
++fn strip_leading_slash(path: &str) -> (&str, bool) {
++    let (stripped, removed_slash) = if path.starts_with('/') {
++        (path.trim_start_matches('/'), true)
++    } else if let Some(rest) = path.strip_prefix("./") {
++        (rest.trim_start_matches('/'), false)
++    } else {
++        (path, false)
++    };
++    if stripped.is_empty() {
++        (".", removed_slash)
++    } else {
++        (stripped, removed_slash)
++    }
++}
++
+ #[uucore::main]
+ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
+     let matches = uu_app().try_get_matches_from(args)?;
+@@ -96,10 +117,22 @@ pub fn uumain(args: impl uucore::Args) -> UResult<()> {
+ 
+     // Handle file arguments
+     if let Some(files) = matches.get_many::<String>("file") {
++        let mut warned_absolute = false;
+         for file in files {
+             let metadata = fs::metadata(file)?;
+ 
+-            print_output(file, &config, &metadata)?;
++            let display_name = if config.absolute_names {
++                file.as_str()
++            } else {
++                let (stripped, removed_slash) = strip_leading_slash(file);
++                if removed_slash && !warned_absolute {
++                    show_error!("Removing leading '/' from absolute path names");
++                    warned_absolute = true;
++                }
++                stripped
++            };
++
++            print_output(display_name, &config, &metadata)?;
+ 
+             // Implement the logic to fetch and display the ACLs using xattr
+             match xattr::list(file) {
+@@ -225,3 +258,20 @@ pub fn uu_app() -> Command {
+                 .value_name("FILE"),
+         )
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::strip_leading_slash;
++
++    #[test]
++    fn test_strip_leading_slash() {
++        assert_eq!(strip_leading_slash("/tmp/foo"), ("tmp/foo", true));
++        assert_eq!(strip_leading_slash("///tmp/foo"), ("tmp/foo", true));
++        assert_eq!(strip_leading_slash("/"), (".", true));
++        assert_eq!(strip_leading_slash("./foo"), ("foo", false));
++        assert_eq!(strip_leading_slash(".//foo"), ("foo", false));
++        assert_eq!(strip_leading_slash("./"), (".", false));
++        assert_eq!(strip_leading_slash("foo/bar"), ("foo/bar", false));
++        assert_eq!(strip_leading_slash("."), (".", false));
++    }
++}
+diff --git a/tests/by-util/test_getfacl.rs b/tests/by-util/test_getfacl.rs
+index 2e4ff58..01fee81 100644
+--- a/tests/by-util/test_getfacl.rs
++++ b/tests/by-util/test_getfacl.rs
+@@ -74,3 +74,46 @@ fn test_basic_output_with_file_with_access_flag() {
+     assert!(stdout.contains("group:"));
+     assert!(stdout.contains("other:"));
+ }
++
++#[test]
++fn test_absolute_path_strips_leading_slash() {
++    let scene = TestScenario::new(util_name!());
++    let at = &scene.fixtures;
++    at.touch("test_file");
++    let abs_path = at.plus_as_string("test_file");
++    assert!(abs_path.starts_with('/'));
++
++    let res = scene.ucmd().arg(&abs_path).arg(&abs_path).succeeds();
++    // The warning is printed only once, even for several absolute paths
++    res.stderr_is("getfacl: Removing leading '/' from absolute path names\n");
++    let stdout = res.stdout_str();
++
++    let expected = format!("# file: {}\n", abs_path.trim_start_matches('/'));
++    assert_eq!(stdout.matches(&expected).count(), 2);
++    assert!(!stdout.contains(&format!("# file: {abs_path}\n")));
++}
++
++#[test]
++fn test_absolute_names_keeps_leading_slash() {
++    let scene = TestScenario::new(util_name!());
++    let at = &scene.fixtures;
++    at.touch("test_file");
++    let abs_path = at.plus_as_string("test_file");
++
++    for flag in ["-p", "--absolute-names"] {
++        let res = scene.ucmd().arg(flag).arg(&abs_path).succeeds();
++        let stdout = res.no_stderr().stdout_str();
++        assert!(stdout.contains(&format!("# file: {abs_path}\n")));
++    }
++}
++
++#[test]
++fn test_relative_path_strips_dot_slash() {
++    let scene = TestScenario::new(util_name!());
++    let at = &scene.fixtures;
++    at.touch("test_file");
++
++    let res = scene.ucmd().arg("./test_file").succeeds();
++    let stdout = res.no_stderr().stdout_str();
++    assert!(stdout.contains("# file: test_file\n"));
++}
+-- 
+2.43.0
+

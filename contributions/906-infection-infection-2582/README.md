@@ -6,7 +6,7 @@
 | Tier | 自由 |
 | Labels | Component / Reporter, Enhancement, Feature, Help Wanted, Integration / GitHub |
 | Status | ✅ ready — patch + PR text written |
-| 重复 PR 检查 | 2026-10-01：issue open、无 assignee、无评论、无关联 PR；PR 搜索 `2582` 0 结果；open PR 仅 #3108 / #1794（无关）。#2292（staabm，"colored diffs in GitHub Actions *annotations*"）已关闭——annotations 不支持 ANSI，与本 issue（*日志*里的 diff）不同 |
+| 重复 PR 检查 | 2026-10-01：issue open、无 assignee、无评论、无关联 PR；PR 搜索 `2582` 0 结果；复核 2026-10-01：open PR 列表与 `GitHubActionsLog`/`color diff` 搜索均无相关 open PR。#2292（staabm，"colored diffs in GitHub Actions *annotations*"）已关闭——annotations 不支持 ANSI，与本 issue（*日志*里的 diff）不同 |
 | Base | `master` @ 8fc651d |
 
 ## 问题理解
@@ -45,7 +45,7 @@ review 时 theofidry 提议 diff 也加颜色，staabm 指出 GitHub Actions 日
 
 - PR 标题即 squash 后的 commit 标题，格式 `type(scope): Sentence-case`（已按此写）。
 - 仓库**不要求 DCO**，commit 无 Signed-off-by。
-- CI 有自变异 MSI 门槛：去掉红色分支后的 `continue` 是等价变异（PR 正文已说明）；若 CI 报其他 escaped mutant 需补测试。
+- CI 有自变异 MSI 门槛：Infection 的 `Continue_` 变异把 `continue` 换成 `break`，三处均被新测试杀死（复核时纠正了原先"等价变异"的说法并从 PR 正文删除）；若 CI 报其他 escaped mutant 需补测试。
 - CI 会跑 `make mago`；本机 mago 的 8 个问题 master 同样存在，CI（dist 安装）应不会出现，如出现请对比 master。
 - PR 模板要求文档 PR 链接；本改动仅日志样式，写了 n/a，维护者若要求再去 infection/site 补。
 - 建议标签：Feature/DX、Component / Reporter、Integration / GitHub（维护者打）。
@@ -70,3 +70,9 @@ gh pr create --repo infection/infection --head anyingiit:gh-actions-colored-diff
 ## PR body
 
 见 `pr_body.md`。
+
+## 独立复核（2026-10-01）
+
+- 新鲜 clone（master @ 8fc651d）`git am` 成功；`GitHubActionsLogTextFileReporterTest` 去掉 src 修复 → 2 failures，含修复 → OK (7 tests)；`tests/phpunit/Reporter/` 133 tests OK。
+- `phpstan --configuration devTools/phpstan.neon` [OK]；php-cs-fixer v3.92.5 check 0 files；`git diff --check` 干净；`mago analyze` 仅 MakefileTest.php 的 8 个既有问题。
+- 修正：PR 正文删掉不准确的"等价变异"说明；`## Related issue` → `## Related issues`（对齐仓库模板）。补丁本身未改。

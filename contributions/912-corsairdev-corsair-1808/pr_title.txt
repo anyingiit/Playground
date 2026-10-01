@@ -1,0 +1,1 @@
+fix(cli): reject invalid --port values for corsair ui

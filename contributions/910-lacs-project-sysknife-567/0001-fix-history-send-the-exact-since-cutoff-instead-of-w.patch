@@ -1,0 +1,1019 @@
+From 90b8828a86790213bcc9263c708e1666f2126712 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 21:27:29 +0000
+Subject: [PATCH] fix(history): send the exact --since cutoff instead of whole
+ hours
+
+`sysknife history --since <datetime>` and the MCP `sysknife_history` tool
+converted the datetime into a whole-hour count with integer division, and
+the daemon filtered on `now - N hours`. A cutoff 30 minutes ago became
+`since_hours = 0` and matched nothing; 90 minutes ago became 1 hour and
+dropped every row between 60 and 90 minutes old.
+
+The CLI now normalises `--since` to an RFC 3339 UTC timestamp and sends it
+as `since` on both the `ListJobHistory` query and the structured
+`query_history` request. The store layer takes a `HistorySince` lower
+bound that is either the planner's `Hours(n)` (unchanged semantics for
+`query_job_history`'s `since_hours`) or an exact `Cutoff(instant)`.
+SQLite compares through julianday() and Postgres through ::timestamptz,
+so stored `Z`, offset and legacy `datetime('now')` rows are all compared
+in UTC. Sending both `since` and `since_hours` is rejected as ambiguous.
+
+Closes #567
+---
+ apps/sysknife-cli/src/client.rs               |   4 +-
+ apps/sysknife-cli/src/mcp_server.rs           |   8 +-
+ apps/sysknife-cli/src/runner.rs               | 104 ++++++----
+ crates/sysknife-daemon/src/dispatcher.rs      | 194 +++++++++++++++++-
+ crates/sysknife-daemon/src/store.rs           |  16 +-
+ crates/sysknife-daemon/src/store/postgres.rs  |  56 +++--
+ crates/sysknife-daemon/src/transactions.rs    | 146 ++++++++++++-
+ .../sysknife-daemon/tests/postgres_store.rs   |  35 +++-
+ 8 files changed, 469 insertions(+), 94 deletions(-)
+
+diff --git a/apps/sysknife-cli/src/client.rs b/apps/sysknife-cli/src/client.rs
+index c83ccf2..542450f 100644
+--- a/apps/sysknife-cli/src/client.rs
++++ b/apps/sysknife-cli/src/client.rs
+@@ -549,7 +549,7 @@ impl DaemonClient {
+         limit: Option<u32>,
+         status_filter: Option<&str>,
+         action_filter: Option<&str>,
+-        since_hours: Option<u32>,
++        since: Option<&str>,
+     ) -> Result<Vec<sysknife_daemon::transactions::JobHistoryEntry>, PlanningError> {
+         let mut stream = self.connect_sync()?;
+ 
+@@ -559,7 +559,7 @@ impl DaemonClient {
+             "limit": limit,
+             "status_filter": status_filter,
+             "action_filter": action_filter,
+-            "since_hours": since_hours,
++            "since": since,
+         }))
+         .map_err(|e| PlanningError::StateUnavailable(format!("serialize: {e}")))?;
+ 
+diff --git a/apps/sysknife-cli/src/mcp_server.rs b/apps/sysknife-cli/src/mcp_server.rs
+index 01c1765..92eb229 100644
+--- a/apps/sysknife-cli/src/mcp_server.rs
++++ b/apps/sysknife-cli/src/mcp_server.rs
+@@ -1124,10 +1124,10 @@ async fn history_with_client(
+         limit,
+     } = input;
+ 
+-    let since_hours = match since.as_deref() {
++    let since = match since.as_deref() {
+         None => None,
+-        Some(s) => match crate::runner::since_to_hours(s) {
+-            Some(h) => Some(h),
++        Some(s) => match crate::runner::since_to_cutoff(s) {
++            Some(cutoff) => Some(cutoff),
+             None => {
+                 return Err(format!(
+                     "since: {s:?} is not a valid past ISO-8601 date or datetime \
+@@ -1143,7 +1143,7 @@ async fn history_with_client(
+             Some(limit),
+             status.as_deref(),
+             action.as_deref(),
+-            since_hours,
++            since.as_deref(),
+         )
+     })
+     .await
+diff --git a/apps/sysknife-cli/src/runner.rs b/apps/sysknife-cli/src/runner.rs
+index 91353cf..902d459 100644
+--- a/apps/sysknife-cli/src/runner.rs
++++ b/apps/sysknife-cli/src/runner.rs
+@@ -389,27 +389,27 @@ fn unattended_marker_present(warnings: &[String]) -> bool {
+ }
+ 
+ // ---------------------------------------------------------------------------
+-// since_to_hours
++// since_to_cutoff
+ // ---------------------------------------------------------------------------
+ 
+-/// Parse an ISO-8601 datetime or calendar date and return the number of
+-/// whole hours that have elapsed since that moment.
++/// Parse an ISO-8601 datetime or calendar date into the exact history cutoff
++/// sent to the daemon, normalised to an RFC 3339 UTC timestamp.
+ ///
+ /// Datetimes may use Z or an explicit UTC offset. A bare YYYY-MM-DD is
+ /// interpreted as midnight UTC on that date.
+ ///
+-/// Returns None when the value is invalid, in the future, or too large to
+-/// fit in u32.
+-pub fn since_to_hours(s: &str) -> Option<u32> {
++/// The cutoff is kept to the second rather than rounded to whole hours: a
++/// whole-hour count turned "30 minutes ago" into zero hours and matched
++/// nothing (#567).
++///
++/// Returns None when the value is invalid or in the future.
++pub fn since_to_cutoff(s: &str) -> Option<String> {
+     let epoch = iso8601_to_unix(s)?;
+-    let now = std::time::SystemTime::now()
+-        .duration_since(std::time::UNIX_EPOCH)
+-        .ok()?
+-        .as_secs() as i64;
+-    if epoch > now {
++    if epoch > chrono::Utc::now().timestamp() {
+         return None;
+     }
+-    u32::try_from((now - epoch) / 3600).ok()
++    let cutoff = chrono::DateTime::<chrono::Utc>::from_timestamp(epoch, 0)?;
++    Some(cutoff.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+ }
+ 
+ fn iso8601_to_unix(s: &str) -> Option<i64> {
+@@ -622,7 +622,7 @@ pub(crate) fn build_history_params(
+     limit: u32,
+     status: Option<&str>,
+     action: Option<&str>,
+-    since_hours: Option<u32>,
++    since: Option<&str>,
+ ) -> Value {
+     let mut params = json!({ "limit": limit });
+     if let Some(s) = status {
+@@ -631,8 +631,8 @@ pub(crate) fn build_history_params(
+     if let Some(a) = action {
+         params["action_filter"] = json!(a);
+     }
+-    if let Some(h) = since_hours {
+-        params["since_hours"] = json!(h);
++    if let Some(cutoff) = since {
++        params["since"] = json!(cutoff);
+     }
+     params
+ }
+@@ -780,7 +780,7 @@ pub async fn run_history(
+     socket: SocketTarget,
+     log: &Logger,
+ ) -> Result<(), CliError> {
+-    let since_hours = match args.since.as_deref() {
++    let since = match args.since.as_deref() {
+         None => None,
+         Some(s) => {
+             // Distinguish the two failure modes so the user knows how to fix each.
+@@ -790,8 +790,8 @@ pub async fn run_history(
+                      (accepted formats: 2026-01-15, 2026-01-15T10:30:00Z, or 2026-01-15T12:30:00+02:00)"
+                 )));
+             }
+-            match since_to_hours(s) {
+-                Some(h) => Some(h),
++            match since_to_cutoff(s) {
++                Some(cutoff) => Some(cutoff),
+                 None => {
+                     return Err(CliError::ConfigOrDaemon(format!(
+                         "--since: {s:?} is in the future"
+@@ -805,7 +805,7 @@ pub async fn run_history(
+         args.limit,
+         args.status.as_deref(),
+         args.action.as_deref(),
+-        since_hours,
++        since.as_deref(),
+     );
+ 
+     let client = DaemonClient::new(socket);
+@@ -3385,41 +3385,53 @@ mod tests {
+     }
+ 
+     // -----------------------------------------------------------------------
+-    // since_to_hours
++    // since_to_cutoff
+     // -----------------------------------------------------------------------
+ 
+     #[test]
+-    fn since_to_hours_y2k_is_many_hours_ago() {
+-        // Y2K was well over 200_000 hours ago (as of 2026).
+-        let h = since_to_hours("2000-01-01T00:00:00Z").expect("should parse");
+-        assert!(h > 200_000, "expected >200000 hours, got {h}");
++    fn since_to_cutoff_keeps_utc_datetime() {
++        assert_eq!(
++            since_to_cutoff("2000-01-01T00:00:00Z").as_deref(),
++            Some("2000-01-01T00:00:00Z")
++        );
+     }
+ 
+     #[test]
+-    fn since_to_hours_far_future_returns_none() {
+-        // Year 9999 is in the future.
+-        assert!(since_to_hours("9999-12-31T23:59:59Z").is_none());
++    fn since_to_cutoff_normalises_offset_to_utc() {
++        assert_eq!(
++            since_to_cutoff("2026-01-15T12:30:00+02:00").as_deref(),
++            Some("2026-01-15T10:30:00Z")
++        );
++    }
++
++    #[test]
++    fn since_to_cutoff_bare_date_is_midnight_utc() {
++        assert_eq!(
++            since_to_cutoff("2026-01-15").as_deref(),
++            Some("2026-01-15T00:00:00Z")
++        );
+     }
+ 
+     #[test]
+-    fn since_to_hours_garbage_returns_none() {
+-        assert!(since_to_hours("not-a-date").is_none());
++    fn since_to_cutoff_far_future_returns_none() {
++        // Year 9999 is in the future.
++        assert!(since_to_cutoff("9999-12-31T23:59:59Z").is_none());
+     }
+ 
+     #[test]
+-    fn since_to_hours_epoch_returns_many_hours() {
+-        // Unix epoch (1970-01-01) is always ≥ 486000 hours ago (as of 2026).
+-        let h = since_to_hours("1970-01-01T00:00:00Z").expect("should parse");
+-        assert!(h > 486_000, "expected >486000, got {h}");
++    fn since_to_cutoff_garbage_returns_none() {
++        assert!(since_to_cutoff("not-a-date").is_none());
+     }
+ 
+     #[test]
+-    fn since_to_hours_integer_division_not_modulo() {
+-        // Two timestamps exactly 1 hour apart must differ by 1 in since_to_hours.
+-        // A `% 3600` regression would produce wildly different results for these.
+-        let h0 = since_to_hours("1970-01-01T00:00:00Z").unwrap();
+-        let h1 = since_to_hours("1970-01-01T01:00:00Z").unwrap();
+-        assert_eq!(h0, h1 + 1, "timestamps 1 h apart must differ by exactly 1");
++    fn since_to_cutoff_keeps_sub_hour_precision() {
++        // Regression for #567: 30 and 90 minutes ago used to become 0 and 1
++        // whole hours. The cutoff must carry the exact instant instead.
++        for minutes in [30, 90] {
++            let at = chrono::Utc::now() - chrono::Duration::minutes(minutes);
++            let input = at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
++            assert_eq!(since_to_cutoff(&input), Some(input.clone()));
++        }
+     }
+ 
+     // -----------------------------------------------------------------------
+@@ -3757,16 +3769,22 @@ mod tests {
+         assert_eq!(p["limit"], json!(20));
+         assert!(p.get("status_filter").is_none());
+         assert!(p.get("action_filter").is_none());
+-        assert!(p.get("since_hours").is_none());
++        assert!(p.get("since").is_none());
+     }
+ 
+     #[test]
+     fn build_history_params_all_fields() {
+-        let p = build_history_params(5, Some("succeeded"), Some("InstallPackages"), Some(48));
++        let p = build_history_params(
++            5,
++            Some("succeeded"),
++            Some("InstallPackages"),
++            Some("2026-01-15T10:30:00Z"),
++        );
+         assert_eq!(p["limit"], json!(5));
+         assert_eq!(p["status_filter"], json!("succeeded"));
+         assert_eq!(p["action_filter"], json!("InstallPackages"));
+-        assert_eq!(p["since_hours"], json!(48));
++        assert_eq!(p["since"], json!("2026-01-15T10:30:00Z"));
++        assert!(p.get("since_hours").is_none());
+     }
+ 
+     #[test]
+@@ -3775,7 +3793,7 @@ mod tests {
+         assert_eq!(p["limit"], json!(10));
+         assert_eq!(p["status_filter"], json!("failed"));
+         assert!(p.get("action_filter").is_none());
+-        assert!(p.get("since_hours").is_none());
++        assert!(p.get("since").is_none());
+     }
+ 
+     // -----------------------------------------------------------------------
+diff --git a/crates/sysknife-daemon/src/dispatcher.rs b/crates/sysknife-daemon/src/dispatcher.rs
+index ec60432..97cce3c 100644
+--- a/crates/sysknife-daemon/src/dispatcher.rs
++++ b/crates/sysknife-daemon/src/dispatcher.rs
+@@ -187,7 +187,7 @@ use crate::{
+     preview::preview_action,
+     state::DaemonState,
+     state_collector::{collect_state, CollectedState, CommandRunner},
+-    transactions::NewTransaction,
++    transactions::{HistorySince, NewTransaction},
+     transport::framing::{FramedStream, FramingError},
+ };
+ 
+@@ -300,6 +300,9 @@ enum DaemonRequest {
+         status_filter: Option<String>,
+         action_filter: Option<String>,
+         since_hours: Option<u32>,
++        /// Exact RFC 3339 lower bound on `created_at` (the CLI's `--since`).
++        /// Mutually exclusive with `since_hours`.
++        since: Option<String>,
+     },
+     Describe {
+         request_id: String,
+@@ -1571,6 +1574,7 @@ async fn dispatch_loop<S>(
+                 status_filter,
+                 action_filter,
+                 since_hours,
++                since,
+             } => {
+                 handle_query_history(
+                     framed,
+@@ -1580,6 +1584,7 @@ async fn dispatch_loop<S>(
+                     status_filter.clone(),
+                     action_filter.clone(),
+                     *since_hours,
++                    since.as_deref(),
+                 )
+                 .await
+             }
+@@ -1862,6 +1867,25 @@ async fn handle_cancel(
+     }
+ }
+ 
++/// Turn the two wire spellings of a history lower bound into the store's
++/// [`HistorySince`]. `since_hours` is the planner's whole-hour window; `since`
++/// is an exact RFC 3339 instant (normalised to UTC) so a sub-hour cutoff is not
++/// rounded away. Supplying both is ambiguous and rejected.
++fn resolve_history_since(
++    since_hours: Option<u32>,
++    since: Option<&str>,
++) -> Result<Option<HistorySince>, String> {
++    match (since_hours, since) {
++        (Some(_), Some(_)) => Err("'since' and 'since_hours' are mutually exclusive".to_string()),
++        (Some(hours), None) => Ok(Some(HistorySince::Hours(hours))),
++        (None, Some(raw)) => chrono::DateTime::parse_from_rfc3339(raw)
++            .map(|at| Some(HistorySince::Cutoff(at.with_timezone(&chrono::Utc))))
++            .map_err(|e| format!("'since' must be an RFC 3339 datetime, got {raw:?}: {e}")),
++        (None, None) => Ok(None),
++    }
++}
++
++#[allow(clippy::too_many_arguments)]
+ async fn handle_query_history(
+     framed: &mut FramedStream<impl AsyncRead + AsyncWrite + Unpin>,
+     state: &DaemonState,
+@@ -1870,6 +1894,7 @@ async fn handle_query_history(
+     status_filter: Option<String>,
+     action_filter: Option<String>,
+     since_hours: Option<u32>,
++    since: Option<&str>,
+ ) -> Result<(), HandlerError> {
+     // Honour the SAME `[policy.risk_overrides]` gate as the `ListJobHistory`
+     // action (see handle_query_action): if an operator raised history above
+@@ -1899,13 +1924,20 @@ async fn handle_query_history(
+         }
+     }
+ 
++    let since = match resolve_history_since(since_hours, since) {
++        Ok(since) => since,
++        Err(message) => {
++            return send_error(framed, request_id, "validation_failure", message).await;
++        }
++    };
++
+     let entries = match state
+         .audit
+         .list_history(
+             limit.unwrap_or(DEFAULT_HISTORY_LIMIT),
+             status_filter.as_deref(),
+             action_filter.as_deref(),
+-            since_hours,
++            since,
+         )
+         .await
+     {
+@@ -2038,13 +2070,34 @@ async fn handle_query_action(
+             },
+             None => None,
+         };
++        let since_cutoff = match params.get("since") {
++            Some(v) => match v.as_str() {
++                Some(s) => Some(s),
++                None => {
++                    return send_error(
++                        framed,
++                        request_id,
++                        "validation_failure",
++                        format!("'since' must be an RFC 3339 datetime string, got: {v}"),
++                    )
++                    .await;
++                }
++            },
++            None => None,
++        };
++        let since = match resolve_history_since(since_hours, since_cutoff) {
++            Ok(since) => since,
++            Err(message) => {
++                return send_error(framed, request_id, "validation_failure", message).await;
++            }
++        };
+ 
+         let records = match audit
+             .list_transactions(
+                 limit,
+                 status_filter.as_deref(),
+                 action_filter.as_deref(),
+-                since_hours,
++                since,
+             )
+             .await
+         {
+@@ -2072,6 +2125,9 @@ async fn handle_query_action(
+             if let Some(h) = since_hours {
+                 filters.push(format!("since_hours={h}"));
+             }
++            if let Some(c) = since_cutoff {
++                filters.push(format!("since={c}"));
++            }
+             if !filters.is_empty() {
+                 msg.push_str(&format!(" (filters: {})", filters.join(", ")));
+             }
+@@ -4654,6 +4710,134 @@ mod tests {
+         );
+     }
+ 
++    /// Seed one audit row created 75 minutes ago and one created 20 minutes
++    /// ago, then return a framed connection to a daemon over that store.
++    async fn history_daemon_with_20_and_75_minute_rows(
++        dir: &tempfile::TempDir,
++    ) -> FramedStream<tokio::net::UnixStream> {
++        let state = test_state(dir);
++        let (client, server) = tokio::net::UnixStream::pair().unwrap();
++        tokio::spawn(async move {
++            unix_connection_handler(
++                server,
++                state,
++                runner(),
++                uid_caller_with(1000, CallerRole::Observer),
++            )
++            .await;
++        });
++        let mut framed = FramedStream::new(client);
++        let db = rusqlite::Connection::open(dir.path().join("sysknife-test.db")).unwrap();
++        for (i, minutes_ago) in [75, 20].into_iter().enumerate() {
++            framed
++                .send(
++                    &serde_json::to_vec(&json!({
++                        "type": "preview",
++                        "request_id": format!("preview-since-{i}"),
++                        "action_name": "GetMemoryInfo",
++                        "params": {},
++                    }))
++                    .unwrap(),
++                )
++                .await
++                .unwrap();
++            let _ = framed.recv().await.unwrap();
++            // Only the row just written is newer than five minutes.
++            db.execute(
++                "UPDATE transactions \
++                 SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?1) \
++                 WHERE julianday(created_at) > julianday('now', '-5 minutes')",
++                rusqlite::params![format!("-{minutes_ago} minutes")],
++            )
++            .unwrap();
++        }
++        framed
++    }
++
++    fn minutes_ago_rfc3339(minutes: i64) -> String {
++        (chrono::Utc::now() - chrono::Duration::minutes(minutes))
++            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
++    }
++
++    #[test]
++    fn resolve_history_since_parses_and_rejects_ambiguity() {
++        assert_eq!(resolve_history_since(None, None), Ok(None));
++        assert_eq!(
++            resolve_history_since(Some(24), None),
++            Ok(Some(HistorySince::Hours(24)))
++        );
++        let expected = chrono::DateTime::parse_from_rfc3339("2026-01-15T10:30:00Z")
++            .unwrap()
++            .with_timezone(&chrono::Utc);
++        assert_eq!(
++            resolve_history_since(None, Some("2026-01-15T12:30:00+02:00")),
++            Ok(Some(HistorySince::Cutoff(expected)))
++        );
++        assert!(resolve_history_since(None, Some("yesterday")).is_err());
++        assert!(resolve_history_since(Some(1), Some("2026-01-15T10:30:00Z")).is_err());
++    }
++
++    #[tokio::test]
++    async fn query_history_since_keeps_sub_hour_precision() {
++        // Regression for #567: `--since` used to be rounded down to whole
++        // hours, so a cutoff 30 minutes ago became `since_hours = 0` (nothing
++        // returned) and 90 minutes ago became `since_hours = 1` (the 75-minute
++        // row was lost). The exact cutoff must reach the store.
++        let dir = tempdir().unwrap();
++        let mut framed = history_daemon_with_20_and_75_minute_rows(&dir).await;
++
++        for (cutoff_minutes, expected) in [(30, 1), (90, 2), (10, 0)] {
++            framed
++                .send(
++                    &serde_json::to_vec(&json!({
++                        "type": "query_history",
++                        "request_id": format!("hist-since-{cutoff_minutes}"),
++                        "since": minutes_ago_rfc3339(cutoff_minutes),
++                    }))
++                    .unwrap(),
++                )
++                .await
++                .unwrap();
++            let response: Value = serde_json::from_slice(&framed.recv().await.unwrap()).unwrap();
++            assert_eq!(response["type"], "history_response", "{response}");
++            let entries = response["entries"].as_array().expect("entries array");
++            assert_eq!(
++                entries.len(),
++                expected,
++                "cutoff {cutoff_minutes} minutes ago: {response}"
++            );
++        }
++    }
++
++    #[tokio::test]
++    async fn list_job_history_since_keeps_sub_hour_precision() {
++        // Same regression through the text `ListJobHistory` query path.
++        let dir = tempdir().unwrap();
++        let mut framed = history_daemon_with_20_and_75_minute_rows(&dir).await;
++
++        for (cutoff_minutes, expect_rows) in [(30, true), (10, false)] {
++            framed
++                .send(
++                    &serde_json::to_vec(&json!({
++                        "type": "query_action",
++                        "request_id": format!("ljh-since-{cutoff_minutes}"),
++                        "action_name": "ListJobHistory",
++                        "params": { "since": minutes_ago_rfc3339(cutoff_minutes) },
++                    }))
++                    .unwrap(),
++                )
++                .await
++                .unwrap();
++            let response: Value = serde_json::from_slice(&framed.recv().await.unwrap()).unwrap();
++            let output = response["output"].as_str().expect("output text");
++            assert_eq!(
++                !output.starts_with("No transactions found"),
++                expect_rows,
++                "cutoff {cutoff_minutes} minutes ago: {output}"
++            );
++        }
++    }
++
+     #[tokio::test]
+     async fn query_history_honours_policy_override_raising_history_above_observer() {
+         // Authorization consistency: if an operator raises ListJobHistory above
+@@ -6025,7 +6209,7 @@ mod tests {
+                 limit: u32,
+                 status: Option<&str>,
+                 action: Option<&str>,
+-                since: Option<u32>,
++                since: Option<HistorySince>,
+             ) -> Result<Vec<TransactionRecord>, TransactionStoreError> {
+                 self.0.list_transactions(limit, status, action, since).await
+             }
+@@ -6034,7 +6218,7 @@ mod tests {
+                 limit: u32,
+                 status: Option<&str>,
+                 action: Option<&str>,
+-                since: Option<u32>,
++                since: Option<HistorySince>,
+             ) -> Result<Vec<crate::transactions::JobHistoryEntry>, TransactionStoreError>
+             {
+                 self.0.list_history(limit, status, action, since).await
+diff --git a/crates/sysknife-daemon/src/store.rs b/crates/sysknife-daemon/src/store.rs
+index 5affdf0..6aee507 100644
+--- a/crates/sysknife-daemon/src/store.rs
++++ b/crates/sysknife-daemon/src/store.rs
+@@ -182,7 +182,7 @@ pub trait AuditStore: Send + Sync + std::fmt::Debug {
+         limit: u32,
+         status_filter: Option<&str>,
+         action_filter: Option<&str>,
+-        since_hours: Option<u32>,
++        since: Option<crate::transactions::HistorySince>,
+     ) -> Result<Vec<TransactionRecord>, TransactionStoreError>;
+ 
+     /// Structured history rows (with `created_at` and typed `risk_level`) for
+@@ -192,7 +192,7 @@ pub trait AuditStore: Send + Sync + std::fmt::Debug {
+         limit: u32,
+         status_filter: Option<&str>,
+         action_filter: Option<&str>,
+-        since_hours: Option<u32>,
++        since: Option<crate::transactions::HistorySince>,
+     ) -> Result<Vec<crate::transactions::JobHistoryEntry>, TransactionStoreError>;
+ 
+     async fn fetch_chain_row(
+@@ -378,13 +378,13 @@ impl AuditStore for SqliteStore {
+         limit: u32,
+         status_filter: Option<&str>,
+         action_filter: Option<&str>,
+-        since_hours: Option<u32>,
++        since: Option<crate::transactions::HistorySince>,
+     ) -> Result<Vec<TransactionRecord>, TransactionStoreError> {
+         let inner = Arc::clone(&self.inner);
+         let status = status_filter.map(str::to_string);
+         let action = action_filter.map(str::to_string);
+         blocking(move || {
+-            inner.list_transactions(limit, status.as_deref(), action.as_deref(), since_hours)
++            inner.list_transactions(limit, status.as_deref(), action.as_deref(), since)
+         })
+         .await
+     }
+@@ -394,15 +394,13 @@ impl AuditStore for SqliteStore {
+         limit: u32,
+         status_filter: Option<&str>,
+         action_filter: Option<&str>,
+-        since_hours: Option<u32>,
++        since: Option<crate::transactions::HistorySince>,
+     ) -> Result<Vec<crate::transactions::JobHistoryEntry>, TransactionStoreError> {
+         let inner = Arc::clone(&self.inner);
+         let status = status_filter.map(str::to_string);
+         let action = action_filter.map(str::to_string);
+-        blocking(move || {
+-            inner.list_history(limit, status.as_deref(), action.as_deref(), since_hours)
+-        })
+-        .await
++        blocking(move || inner.list_history(limit, status.as_deref(), action.as_deref(), since))
++            .await
+     }
+ 
+     async fn fetch_chain_row(
+diff --git a/crates/sysknife-daemon/src/store/postgres.rs b/crates/sysknife-daemon/src/store/postgres.rs
+index 52f0901..ac2a108 100644
+--- a/crates/sysknife-daemon/src/store/postgres.rs
++++ b/crates/sysknife-daemon/src/store/postgres.rs
+@@ -43,7 +43,7 @@ use crate::audit_watermark::emit_chain_tip_watermark;
+ use crate::auth::CallerPrincipal;
+ use crate::store::AuditStore;
+ use crate::transactions::{
+-    NewTransaction, RecordedPreviewedTransaction, TransactionStoreError,
++    HistorySince, NewTransaction, RecordedPreviewedTransaction, TransactionStoreError,
+     APPROVAL_RECEIPT_TTL_MINUTES,
+ };
+ 
+@@ -833,7 +833,7 @@ impl AuditStore for PostgresStore {
+         limit: u32,
+         status_filter: Option<&str>,
+         action_filter: Option<&str>,
+-        since_hours: Option<u32>,
++        since: Option<HistorySince>,
+     ) -> Result<Vec<TransactionRecord>, TransactionStoreError> {
+         let limit = limit.min(100) as i64;
+ 
+@@ -860,11 +860,20 @@ impl AuditStore for PostgresStore {
+             sql.push_str(&format!(" AND action_name = ${idx}"));
+             idx += 1;
+         }
+-        if since_hours.is_some() {
+-            sql.push_str(&format!(
+-                " AND created_at::timestamptz > now() - (${idx} || ' hours')::INTERVAL"
+-            ));
+-            idx += 1;
++        match since {
++            Some(HistorySince::Hours(_)) => {
++                sql.push_str(&format!(
++                    " AND created_at::timestamptz > now() - (${idx} || ' hours')::INTERVAL"
++                ));
++                idx += 1;
++            }
++            Some(HistorySince::Cutoff(_)) => {
++                sql.push_str(&format!(
++                    " AND created_at::timestamptz >= ${idx}::timestamptz"
++                ));
++                idx += 1;
++            }
++            None => {}
+         }
+         sql.push_str(&format!(" ORDER BY seq DESC LIMIT ${idx}"));
+ 
+@@ -875,8 +884,10 @@ impl AuditStore for PostgresStore {
+         if let Some(a) = action_filter {
+             q = q.bind(a);
+         }
+-        if let Some(h) = since_hours {
+-            q = q.bind(h.to_string());
++        match since {
++            Some(HistorySince::Hours(h)) => q = q.bind(h.to_string()),
++            Some(HistorySince::Cutoff(at)) => q = q.bind(HistorySince::cutoff_rfc3339(&at)),
++            None => {}
+         }
+         q = q.bind(limit);
+ 
+@@ -889,7 +900,7 @@ impl AuditStore for PostgresStore {
+         limit: u32,
+         status_filter: Option<&str>,
+         action_filter: Option<&str>,
+-        since_hours: Option<u32>,
++        since: Option<HistorySince>,
+     ) -> Result<Vec<crate::transactions::JobHistoryEntry>, TransactionStoreError> {
+         // Parallels list_transactions but selects created_at and returns the
+         // structured JobHistoryEntry DTO. Same filter/validation semantics.
+@@ -914,11 +925,20 @@ impl AuditStore for PostgresStore {
+             sql.push_str(&format!(" AND action_name = ${idx}"));
+             idx += 1;
+         }
+-        if since_hours.is_some() {
+-            sql.push_str(&format!(
+-                " AND created_at::timestamptz > now() - (${idx} || ' hours')::INTERVAL"
+-            ));
+-            idx += 1;
++        match since {
++            Some(HistorySince::Hours(_)) => {
++                sql.push_str(&format!(
++                    " AND created_at::timestamptz > now() - (${idx} || ' hours')::INTERVAL"
++                ));
++                idx += 1;
++            }
++            Some(HistorySince::Cutoff(_)) => {
++                sql.push_str(&format!(
++                    " AND created_at::timestamptz >= ${idx}::timestamptz"
++                ));
++                idx += 1;
++            }
++            None => {}
+         }
+         sql.push_str(&format!(" ORDER BY seq DESC LIMIT ${idx}"));
+ 
+@@ -929,8 +949,10 @@ impl AuditStore for PostgresStore {
+         if let Some(a) = action_filter {
+             q = q.bind(a);
+         }
+-        if let Some(h) = since_hours {
+-            q = q.bind(h.to_string());
++        match since {
++            Some(HistorySince::Hours(h)) => q = q.bind(h.to_string()),
++            Some(HistorySince::Cutoff(at)) => q = q.bind(HistorySince::cutoff_rfc3339(&at)),
++            None => {}
+         }
+         q = q.bind(limit);
+ 
+diff --git a/crates/sysknife-daemon/src/transactions.rs b/crates/sysknife-daemon/src/transactions.rs
+index dd86acb..2b5f877 100644
+--- a/crates/sysknife-daemon/src/transactions.rs
++++ b/crates/sysknife-daemon/src/transactions.rs
+@@ -41,6 +41,29 @@ pub struct JobHistoryEntry {
+     pub created_at: String,
+ }
+ 
++/// Lower bound on `created_at` for the history queries.
++///
++/// The planner's `query_job_history` tool speaks in whole hours, while the
++/// CLI's `--since <datetime>` names an exact instant. Rounding that instant to
++/// hours lost anything newer than the remainder (a cutoff 30 minutes ago became
++/// zero hours and matched nothing), so the exact cutoff travels as its own
++/// variant instead of being squeezed into an hour count.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum HistorySince {
++    /// Rows created within the last N hours, measured from the store's clock.
++    Hours(u32),
++    /// Rows created at or after this instant.
++    Cutoff(chrono::DateTime<chrono::Utc>),
++}
++
++impl HistorySince {
++    /// The cutoff rendered as an RFC 3339 UTC timestamp with millisecond
++    /// precision, the same shape `created_at` is written in.
++    pub fn cutoff_rfc3339(at: &chrono::DateTime<chrono::Utc>) -> String {
++        at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
++    }
++}
++
+ /// Data provided by the caller when recording a new transaction.
+ ///
+ /// The initial `status` is always `Queued` — it is not caller-controllable.
+@@ -946,17 +969,19 @@ impl TransactionStore {
+     ///   (must be a valid `JobState` variant: `"succeeded"`, `"failed"`,
+     ///   `"queued"`, `"running"`, `"canceled"`, `"rolled_back"`, `"needs_reboot"`)
+     /// - `action_filter`: if set, only return rows with this exact action name
+-    /// - `since_hours`: if set, only return rows created within the last N hours
++    /// - `since`: if set, only return rows created within the last N hours
++    ///   ([`HistorySince::Hours`]) or at/after an exact instant
++    ///   ([`HistorySince::Cutoff`])
+     pub fn list_transactions(
+         &self,
+         limit: u32,
+         status_filter: Option<&str>,
+         action_filter: Option<&str>,
+-        since_hours: Option<u32>,
++        since: Option<HistorySince>,
+     ) -> Result<Vec<TransactionRecord>, TransactionStoreError> {
+         let conn = self.connection()?;
+         let (filter_sql, param_values) =
+-            Self::build_history_filter(limit, status_filter, action_filter, since_hours)?;
++            Self::build_history_filter(limit, status_filter, action_filter, since)?;
+         let sql = format!(
+             "SELECT transaction_id, request_id, request_hash, action_name, \
+              risk_level, status, approval_id, summary, warnings_json \
+@@ -984,11 +1009,11 @@ impl TransactionStore {
+         limit: u32,
+         status_filter: Option<&str>,
+         action_filter: Option<&str>,
+-        since_hours: Option<u32>,
++        since: Option<HistorySince>,
+     ) -> Result<Vec<JobHistoryEntry>, TransactionStoreError> {
+         let conn = self.connection()?;
+         let (filter_sql, param_values) =
+-            Self::build_history_filter(limit, status_filter, action_filter, since_hours)?;
++            Self::build_history_filter(limit, status_filter, action_filter, since)?;
+         let sql = format!(
+             "SELECT transaction_id, action_name, risk_level, status, summary, created_at \
+              FROM transactions WHERE 1=1{filter_sql}"
+@@ -1025,7 +1050,7 @@ impl TransactionStore {
+         limit: u32,
+         status_filter: Option<&str>,
+         action_filter: Option<&str>,
+-        since_hours: Option<u32>,
++        since: Option<HistorySince>,
+     ) -> Result<(String, Vec<Box<dyn rusqlite::types::ToSql>>), TransactionStoreError> {
+         let mut sql = String::new();
+         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+@@ -1045,9 +1070,18 @@ impl TransactionStore {
+             param_values.push(Box::new(action.to_string()));
+         }
+ 
+-        if let Some(hours) = since_hours {
+-            sql.push_str(" AND julianday(created_at) > julianday('now', '-' || ? || ' hours')");
+-            param_values.push(Box::new(hours));
++        // julianday() normalises every stored shape to UTC: the RFC 3339
++        // `...Z` rows, explicit offsets, and legacy `datetime('now')` rows.
++        match since {
++            Some(HistorySince::Hours(hours)) => {
++                sql.push_str(" AND julianday(created_at) > julianday('now', '-' || ? || ' hours')");
++                param_values.push(Box::new(hours));
++            }
++            Some(HistorySince::Cutoff(at)) => {
++                sql.push_str(" AND julianday(created_at) >= julianday(?)");
++                param_values.push(Box::new(HistorySince::cutoff_rfc3339(&at)));
++            }
++            None => {}
+         }
+ 
+         sql.push_str(" ORDER BY seq DESC LIMIT ?");
+@@ -3411,14 +3445,104 @@ mod tests {
+         store.record(queued_transaction()).unwrap();
+ 
+         // since_hours=24 should only return the fresh one.
+-        let results = store.list_transactions(10, None, None, Some(24)).unwrap();
++        let results = store
++            .list_transactions(10, None, None, Some(HistorySince::Hours(24)))
++            .unwrap();
+         assert_eq!(results.len(), 1);
+ 
+         // since_hours=72 should return both.
+-        let results = store.list_transactions(10, None, None, Some(72)).unwrap();
++        let results = store
++            .list_transactions(10, None, None, Some(HistorySince::Hours(72)))
++            .unwrap();
+         assert_eq!(results.len(), 2);
+     }
+ 
++    #[test]
++    fn list_history_filters_by_exact_cutoff_below_one_hour() {
++        // Regression for #567: rows 20 and 75 minutes old, filtered by an exact
++        // cutoff. Rounding the cutoff to whole hours returned nothing for 30
++        // minutes and dropped the 75-minute row for 90 minutes.
++        let dir = tempdir().unwrap();
++        let store = test_store(dir.path().join("tx.db"));
++        let conn = store.connection().unwrap();
++        for minutes_ago in [75, 20] {
++            let tx = store.record(queued_transaction()).unwrap();
++            conn.execute(
++                "UPDATE transactions \
++                 SET created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?1) \
++                 WHERE transaction_id = ?2",
++                params![format!("-{minutes_ago} minutes"), tx.transaction_id],
++            )
++            .unwrap();
++        }
++
++        let cutoff = |minutes: i64| {
++            Some(HistorySince::Cutoff(
++                chrono::Utc::now() - chrono::Duration::minutes(minutes),
++            ))
++        };
++        assert_eq!(
++            store
++                .list_history(10, None, None, cutoff(30))
++                .unwrap()
++                .len(),
++            1
++        );
++        assert_eq!(
++            store
++                .list_history(10, None, None, cutoff(90))
++                .unwrap()
++                .len(),
++            2
++        );
++        assert_eq!(
++            store
++                .list_history(10, None, None, cutoff(10))
++                .unwrap()
++                .len(),
++            0
++        );
++        assert_eq!(
++            store
++                .list_transactions(10, None, None, cutoff(30))
++                .unwrap()
++                .len(),
++            1
++        );
++    }
++
++    #[test]
++    fn list_history_cutoff_normalises_offsets_and_legacy_rows() {
++        // The cutoff is compared in UTC whatever shape `created_at` has: an
++        // explicit +02:00 offset or the legacy `datetime('now')` form.
++        let dir = tempdir().unwrap();
++        let store = test_store(dir.path().join("tx.db"));
++        let conn = store.connection().unwrap();
++        let ten_min_ago = chrono::Utc::now() - chrono::Duration::minutes(10);
++        let shapes = [
++            ten_min_ago
++                .with_timezone(&chrono::FixedOffset::east_opt(2 * 3600).unwrap())
++                .to_rfc3339(),
++            ten_min_ago.format("%Y-%m-%d %H:%M:%S").to_string(),
++        ];
++        for created_at in &shapes {
++            let tx = store.record(queued_transaction()).unwrap();
++            conn.execute(
++                "UPDATE transactions SET created_at = ?1 WHERE transaction_id = ?2",
++                params![created_at, tx.transaction_id],
++            )
++            .unwrap();
++        }
++
++        let at = |minutes: i64| {
++            Some(HistorySince::Cutoff(
++                chrono::Utc::now() - chrono::Duration::minutes(minutes),
++            ))
++        };
++        assert_eq!(store.list_history(10, None, None, at(15)).unwrap().len(), 2);
++        assert_eq!(store.list_history(10, None, None, at(5)).unwrap().len(), 0);
++    }
++
+     #[test]
+     fn list_transactions_rejects_invalid_status_filter() {
+         let dir = tempdir().unwrap();
+diff --git a/crates/sysknife-daemon/tests/postgres_store.rs b/crates/sysknife-daemon/tests/postgres_store.rs
+index 92892f8..8833d84 100644
+--- a/crates/sysknife-daemon/tests/postgres_store.rs
++++ b/crates/sysknife-daemon/tests/postgres_store.rs
+@@ -7,7 +7,7 @@ use sysknife_daemon::audit_chain::{AuditKey, BindingOutcome, VerifyOutcome};
+ use sysknife_daemon::auth::CallerPrincipal;
+ use sysknife_daemon::store::postgres::{PostgresConfig, PostgresStore};
+ use sysknife_daemon::store::AuditStore;
+-use sysknife_daemon::transactions::NewTransaction;
++use sysknife_daemon::transactions::{HistorySince, NewTransaction};
+ use sysknife_types::{CallerRole, JobState, PreviewEnvelope, RequestHash, RiskLevel};
+ 
+ fn test_url() -> Option<String> {
+@@ -293,7 +293,12 @@ async fn migrates_legacy_schema_and_enforces_store_contract() {
+         .expect("transaction exists");
+     assert_eq!(loaded.status, JobState::Running);
+     let history = store
+-        .list_transactions(10, Some("running"), Some("RestartService"), Some(1))
++        .list_transactions(
++            10,
++            Some("running"),
++            Some("RestartService"),
++            Some(HistorySince::Hours(1)),
++        )
+         .await
+         .expect("query history");
+     assert_eq!(history.len(), 1);
+@@ -302,10 +307,34 @@ async fn migrates_legacy_schema_and_enforces_store_contract() {
+     // typed risk_level. Exercises the Postgres list_history $idx/bind order and
+     // row_to_history_entry mapping against a real server.
+     let structured = store
+-        .list_history(10, Some("running"), Some("RestartService"), Some(1))
++        .list_history(
++            10,
++            Some("running"),
++            Some("RestartService"),
++            Some(HistorySince::Hours(1)),
++        )
+         .await
+         .expect("query structured history");
+     assert_eq!(structured.len(), 1);
++    // An exact cutoff (#567) keeps sub-hour precision: one minute ago still
++    // matches the fresh row, one minute ahead matches nothing.
++    for (offset_minutes, expected) in [(-1, 1), (1, 0)] {
++        let cutoff = chrono::Utc::now() + chrono::Duration::minutes(offset_minutes);
++        let rows = store
++            .list_history(
++                10,
++                None,
++                Some("RestartService"),
++                Some(HistorySince::Cutoff(cutoff)),
++            )
++            .await
++            .expect("query history by exact cutoff");
++        assert_eq!(
++            rows.len(),
++            expected,
++            "cutoff offset {offset_minutes} minutes"
++        );
++    }
+     assert_eq!(structured[0].action_name, "RestartService");
+     assert_eq!(structured[0].status, JobState::Running);
+     assert!(
+-- 
+2.43.0
+
