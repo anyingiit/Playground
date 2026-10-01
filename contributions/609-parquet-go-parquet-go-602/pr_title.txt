@@ -1,0 +1,1 @@
+fix(writer): keep path_in_schema and sorting columns across Reset

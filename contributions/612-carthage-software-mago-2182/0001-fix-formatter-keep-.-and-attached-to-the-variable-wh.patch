@@ -1,0 +1,164 @@
+From 5769d45136fadf0f9d909eb829e9385b73ff6b9d Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:30:10 +0000
+Subject: [PATCH] fix(formatter): keep `...` and `&` attached to the variable
+ when aligning parameters
+
+When `align-parameters` is enabled, the alignment padding was inserted
+between the variadic operator / by-reference sigil and the variable name,
+producing `string ...          $renders`, which violates PSR-12 ("There
+MUST NOT be a space between the variadic three dot operator and the
+argument name"). The padding is now emitted before `&` / `...`, so the
+variable names stay aligned and the sigils stay attached to them.
+
+closes #2182
+---
+ crates/formatter/src/internal/format/mod.rs   | 18 +++++-----
+ .../after.php                                 | 33 +++++++++++++++++++
+ .../before.php                                | 33 +++++++++++++++++++
+ .../settings.inc                              |  4 +++
+ crates/formatter/tests/mod.rs                 |  1 +
+ 5 files changed, 81 insertions(+), 8 deletions(-)
+ create mode 100644 crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/after.php
+ create mode 100644 crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/before.php
+ create mode 100644 crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/settings.inc
+
+diff --git a/crates/formatter/src/internal/format/mod.rs b/crates/formatter/src/internal/format/mod.rs
+index b06f37f..7fcc0bf 100644
+--- a/crates/formatter/src/internal/format/mod.rs
++++ b/crates/formatter/src/internal/format/mod.rs
+@@ -2006,14 +2006,8 @@ where
+                 contents.push(Document::space());
+             }
+ 
+-            if self.ampersand.is_some() {
+-                contents.push(Document::String(b"&"));
+-            }
+-
+-            if self.ellipsis.is_some() {
+-                contents.push(Document::String(b"..."));
+-            }
+-
++            // The alignment padding goes before `&` / `...` so that they stay attached to the
++            // variable name (PSR-12: no space between the variadic operator and the argument name).
+             if let (Some(padding), Some(list_id)) =
+                 (f.parameter_state.variable_padding, f.parameter_state.list_group_id)
+                 && padding > 0
+@@ -2022,6 +2016,14 @@ where
+                 contents.push(Document::IfBreak(IfBreak::new(f.arena, spaces, Document::empty()).with_id(list_id)));
+             }
+ 
++            if self.ampersand.is_some() {
++                contents.push(Document::String(b"&"));
++            }
++
++            if self.ellipsis.is_some() {
++                contents.push(Document::String(b"..."));
++            }
++
+             contents.push(self.variable.format(f));
+             if let Some(default_value) = &self.default_value {
+                 contents.push(Document::space());
+diff --git a/crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/after.php b/crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/after.php
+new file mode 100644
+index 0000000..f595268
+--- /dev/null
++++ b/crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/after.php
+@@ -0,0 +1,33 @@
++<?php
++
++final class Variadic
++{
++    public function __construct(
++        public readonly int $priority = 0,
++        string           ...$renders,
++    ) {}
++}
++
++final class ByReference
++{
++    public function __construct(
++        public readonly int $priority = 0,
++        array              &$items,
++    ) {}
++}
++
++final class VariadicByReference
++{
++    public function __construct(
++        public readonly int $priority = 0,
++        string          &...$renders,
++    ) {}
++}
++
++final class UntypedVariadic
++{
++    public function __construct(
++        public readonly int $priority = 0,
++                         ...$renders,
++    ) {}
++}
+diff --git a/crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/before.php b/crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/before.php
+new file mode 100644
+index 0000000..dae1b22
+--- /dev/null
++++ b/crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/before.php
+@@ -0,0 +1,33 @@
++<?php
++
++final class Variadic
++{
++    public function __construct(
++        public readonly int $priority = 0,
++        string ...$renders,
++    ) {}
++}
++
++final class ByReference
++{
++    public function __construct(
++        public readonly int $priority = 0,
++        array &$items,
++    ) {}
++}
++
++final class VariadicByReference
++{
++    public function __construct(
++        public readonly int $priority = 0,
++        string &...$renders,
++    ) {}
++}
++
++final class UntypedVariadic
++{
++    public function __construct(
++        public readonly int $priority = 0,
++        ...$renders,
++    ) {}
++}
+diff --git a/crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/settings.inc b/crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/settings.inc
+new file mode 100644
+index 0000000..5c4601d
+--- /dev/null
++++ b/crates/formatter/tests/cases/align_parameters_variadic_and_by_reference/settings.inc
+@@ -0,0 +1,4 @@
++FormatSettings {
++    align_parameters: true,
++    ..Default::default()
++}
+diff --git a/crates/formatter/tests/mod.rs b/crates/formatter/tests/mod.rs
+index 7eb6af4..f80b868 100644
+--- a/crates/formatter/tests/mod.rs
++++ b/crates/formatter/tests/mod.rs
+@@ -191,6 +191,7 @@ test_case!(array_alignment);
+ test_case!(align_parameters);
+ test_case!(align_parameters_comment_marker_false_positive);
+ test_case!(align_parameters_default_off);
++test_case!(align_parameters_variadic_and_by_reference);
+ test_case!(align_named_arguments);
+ test_case!(align_named_arguments_default_off);
+ test_case!(binary_alignment);
+-- 
+2.43.0
+

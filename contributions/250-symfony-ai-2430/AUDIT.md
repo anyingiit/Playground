@@ -16,3 +16,5 @@ Tool: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/symfony
 | `src/platform/phpstan.dist.neon` | static analysis config only | benign |
 
 Conclusion: nothing malicious found; safe to run `composer install`, `phpunit`, `phpstan`, `php-cs-fixer`.
+
+Addendum (resume, same HEAD 9209a92): `composer install --prefer-source --no-plugins` used for `src/platform` and root; `phpstan/phpstan` provided from an anonymous shallow clone of the official github.com/phpstan/phpstan (2.3.x branch, prebuilt phar) because api.github.com zipballs return 403 here. No Composer scripts/plugins executed.

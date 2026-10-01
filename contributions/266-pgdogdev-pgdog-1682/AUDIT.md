@@ -14,3 +14,5 @@ Tool: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/pgdog` 
 | npm lifecycle hooks / committed binaries | none | — |
 
 Verdict: **no malicious code found**. Only `cargo build`/`cargo test` of the `pgdog` crate's unit tests is run locally (CARGO_TARGET_DIR inside the clone, 2 jobs).
+
+Re-checked 2026-10-01: fresh clone still at 80d6059, audit still applies.

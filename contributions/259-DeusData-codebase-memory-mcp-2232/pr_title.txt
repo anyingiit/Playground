@@ -1,0 +1,1 @@
+fix(ui): report unreadable counts as corrupt in /api/project-health

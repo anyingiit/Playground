@@ -1,0 +1,1 @@
+fix(formatter): keep `...` and `&` attached to the variable when aligning parameters

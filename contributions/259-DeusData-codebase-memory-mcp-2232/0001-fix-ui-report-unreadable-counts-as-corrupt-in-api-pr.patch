@@ -1,5 +1,53 @@
+From 724b9ca8ac2626df6a9004742246b3017feeed1f Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:33:13 +0000
+Subject: [PATCH] fix(ui): report unreadable counts as corrupt in
+ /api/project-health
+
+handle_project_health passed the results of cbm_store_count_nodes and
+cbm_store_count_edges straight into the response. Since the count
+helpers return CBM_STORE_ERR (-1) on a failed read, a store whose nodes
+or edges table is missing or damaged was reported as
+{"status":"healthy","nodes":-1,"edges":-1,...}.
+
+Treat a negative count as a failed read, as index_status already does,
+and answer {"status":"corrupt","reason":"cannot read <table>"} naming
+the table(s) that could not be read. "corrupt" is already a state the
+graph UI's StatsTab renders.
+
+Fixes #2232
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ src/ui/http_server.c | 12 +++++++++++
+ tests/test_httpd.c   | 48 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 60 insertions(+)
+
+diff --git a/src/ui/http_server.c b/src/ui/http_server.c
+index 66f1aff..d3c689f 100644
+--- a/src/ui/http_server.c
++++ b/src/ui/http_server.c
+@@ -1368,6 +1368,18 @@ static void handle_project_health(cbm_http_conn_t *c, const cbm_http_req_t *req)
+     int edge_count = cbm_store_count_edges(store, name);
+     cbm_store_close(store);
+ 
++    /* A negative count is a failed read (CBM_STORE_ERR), e.g. a store whose
++     * nodes or edges table is missing or damaged. That is not a healthy
++     * project with -1 rows; report it as corrupt and name what failed. */
++    if (node_count < 0 || edge_count < 0) {
++        const char *what = node_count < 0 && edge_count < 0 ? "nodes and edges"
++                           : node_count < 0                 ? "nodes"
++                                                            : "edges";
++        cbm_http_replyf(c, 200, g_cors_json,
++                        "{\"status\":\"corrupt\",\"reason\":\"cannot read %s\"}", what);
++        return;
++    }
++
+     int64_t size = cbm_file_size(db_path);
+ 
+     cbm_http_replyf(c, 200, g_cors_json,
 diff --git a/tests/test_httpd.c b/tests/test_httpd.c
-index 322130c3..40d5d669 100644
+index 322130c..40d5d66 100644
 --- a/tests/test_httpd.c
 +++ b/tests/test_httpd.c
 @@ -1430,6 +1430,53 @@ TEST(ui_server_delete_mutation_guard_balances_success) {
@@ -64,3 +112,6 @@ index 322130c3..40d5d669 100644
      RUN_TEST(ui_server_delete_project_unwatches_after_delete);
      RUN_TEST(ui_server_delete_project_unwatches_missing_db);
      RUN_TEST(ui_server_delete_project_no_watcher_still_deletes);
+-- 
+2.43.0
+

@@ -1,0 +1,1 @@
+feat(filtering): add NotZero operator

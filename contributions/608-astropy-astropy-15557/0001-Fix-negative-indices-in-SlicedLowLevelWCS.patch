@@ -1,0 +1,184 @@
+From 4d7aa363f96238729312cbbff30485bd2392c3bf Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:22:41 +0000
+Subject: [PATCH] Fix negative indices in SlicedLowLevelWCS
+
+Negative integer indices and slice bounds passed to SlicedLowLevelWCS
+were treated as pixel offsets before the first pixel instead of counting
+from the end of the array. Resolve them against the array_shape of the
+WCS being sliced, following NumPy conventions, and raise an IndexError
+when the shape is unknown.
+
+Fixes #15557
+---
+ astropy/wcs/wcsapi/wrappers/sliced_wcs.py     | 51 +++++++++++++-
+ .../wcsapi/wrappers/tests/test_sliced_wcs.py  | 69 +++++++++++++++++++
+ docs/changes/wcs/15557.bugfix.rst             |  5 ++
+ 3 files changed, 124 insertions(+), 1 deletion(-)
+ create mode 100644 docs/changes/wcs/15557.bugfix.rst
+
+diff --git a/astropy/wcs/wcsapi/wrappers/sliced_wcs.py b/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
+index 64623a0..e7b25ae 100644
+--- a/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
++++ b/astropy/wcs/wcsapi/wrappers/sliced_wcs.py
+@@ -58,6 +58,52 @@ def sanitize_slices(slices, ndim):
+     return slices
+ 
+ 
++def _resolve_negative_indices(slices, array_shape):
++    """
++    Convert negative integer indices and slice bounds in ``slices`` to
++    non-negative values following NumPy conventions, i.e. counting from the
++    end of the corresponding array axis.
++
++    Negative values cannot be interpreted without knowing the size of the
++    axis, so an `IndexError` is raised if ``array_shape`` is `None`.
++    """
++    resolved = []
++    for iaxis, slc in enumerate(slices):
++        if isinstance(slc, slice):
++            negative = any(
++                value is not None and value < 0 for value in (slc.start, slc.stop)
++            )
++        else:
++            negative = slc < 0
++
++        if not negative:
++            resolved.append(slc)
++            continue
++
++        if array_shape is None:
++            raise IndexError(
++                "Negative indices are only supported when slicing a WCS with "
++                "a known array_shape."
++            )
++
++        size = array_shape[iaxis]
++        if isinstance(slc, slice):
++            start, stop = slc.start, slc.stop
++            if start is not None and start < 0:
++                start = max(start + size, 0)
++            if stop is not None and stop < 0:
++                stop = max(stop + size, 0)
++            resolved.append(slice(start, stop, slc.step))
++        else:
++            if slc < -size:
++                raise IndexError(
++                    f"index {slc} is out of bounds for axis {iaxis} with size {size}"
++                )
++            resolved.append(slc + size)
++
++    return resolved
++
++
+ def combine_slices(slice1, slice2):
+     """
+     Given two slices that can be applied to a 1-d array, find the resulting
+@@ -115,12 +161,15 @@ class SlicedLowLevelWCS(BaseWCSWrapper):
+     wcs : `~astropy.wcs.wcsapi.BaseLowLevelWCS`
+         The WCS to slice.
+     slices : `slice` or `tuple` or `int`
+-        A valid array slice to apply to the WCS.
++        A valid array slice to apply to the WCS. Negative indices count from
++        the end of the array, as in NumPy, and are only supported if the WCS
++        has a known ``array_shape``.
+ 
+     """
+ 
+     def __init__(self, wcs, slices):
+         slices = sanitize_slices(slices, wcs.pixel_n_dim)
++        slices = _resolve_negative_indices(slices, wcs.array_shape)
+ 
+         if isinstance(wcs, SlicedLowLevelWCS):
+             # Here we combine the current slices with the previous slices
+diff --git a/astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py b/astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py
+index 5af013d..ddfbf3b 100644
+--- a/astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py
++++ b/astropy/wcs/wcsapi/wrappers/tests/test_sliced_wcs.py
+@@ -1047,3 +1047,72 @@ def test_coupled_world_slicing():
+     out_pix = sl.world_to_pixel_values(world[0], world[1])
+ 
+     assert np.allclose(out_pix[0], 0)
++
++
++def _wave_wcs_1d(naxis=5):
++    wcs = WCS(naxis=1)
++    wcs.wcs.ctype = ("WAVE",)
++    wcs.wcs.crval = (100,)
++    wcs.wcs.crpix = (0,)
++    wcs.wcs.cdelt = (0.2,)
++    if naxis is not None:
++        wcs.pixel_shape = (naxis,)
++    return wcs
++
++
++@pytest.mark.parametrize(
++    "item",
++    [slice(-3, None), slice(-3, -1), slice(-10, 4), -2, slice(None, -1)],
++)
++def test_negative_indices(item):
++    # Regression test for https://github.com/astropy/astropy/issues/15557
++    # Negative indices should count from the end of the array, as in NumPy.
++    wcs = _wave_wcs_1d()
++    expected = np.arange(5)[item]
++    if np.ndim(expected) == 0:
++        # An integer index drops the only pixel axis, so use a 2-D WCS
++        # where the second axis is kept.
++        wcs2d = WCS(naxis=2)
++        wcs2d.wcs.ctype = ("WAVE", "TIME")
++        wcs2d.wcs.crpix = (0, 0)
++        wcs2d.wcs.cdelt = (0.2, 1)
++        wcs2d.wcs.crval = (100, 0)
++        wcs2d.pixel_shape = (5, 3)
++        sliced = SlicedLowLevelWCS(wcs2d, (slice(None), item))
++        assert sliced.array_shape == (3,)
++        assert_allclose(
++            sliced.dropped_world_dimensions["value"],
++            wcs2d.pixel_to_world_values(expected, 0)[0],
++        )
++        return
++
++    sliced = SlicedLowLevelWCS(wcs, item)
++    assert sliced.array_shape == expected.shape
++    assert_allclose(
++        sliced.array_index_to_world_values(np.arange(len(expected))),
++        wcs.array_index_to_world_values(expected),
++    )
++
++
++def test_negative_indices_nested():
++    wcs = _wave_wcs_1d(10)
++    sliced = SlicedLowLevelWCS(SlicedLowLevelWCS(wcs, slice(2, 8)), slice(1, -1))
++    expected = np.arange(10)[2:8][1:-1]
++    assert sliced.array_shape == expected.shape
++    assert_allclose(
++        sliced.array_index_to_world_values(np.arange(len(expected))),
++        wcs.array_index_to_world_values(expected),
++    )
++
++
++@pytest.mark.parametrize("item", [slice(-3, None), slice(None, -1), -1])
++def test_negative_indices_no_shape(item):
++    wcs = _wave_wcs_1d(naxis=None)
++    with pytest.raises(IndexError, match="Negative indices"):
++        SlicedLowLevelWCS(wcs, item)
++
++
++def test_negative_integer_index_out_of_range():
++    wcs = _wave_wcs_1d()
++    with pytest.raises(IndexError, match="out of bounds"):
++        SlicedLowLevelWCS(wcs, (-6,))
+diff --git a/docs/changes/wcs/15557.bugfix.rst b/docs/changes/wcs/15557.bugfix.rst
+new file mode 100644
+index 0000000..5577a6d
+--- /dev/null
++++ b/docs/changes/wcs/15557.bugfix.rst
+@@ -0,0 +1,5 @@
++``SlicedLowLevelWCS`` now interprets negative indices and slice bounds as
++counting from the end of the array, following NumPy conventions, when the
++WCS has a known ``array_shape``, and raises an ``IndexError`` otherwise.
++Previously, negative values were silently treated as pixel offsets before
++the first pixel, giving incorrect world coordinates.
+-- 
+2.43.0
+

@@ -1,0 +1,117 @@
+From 3e082007f5a6005e4e629c64cb451657eaa3f0e5 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:10:19 +0000
+Subject: [PATCH] Keep stream events split across reads intact
+
+A read that started with a brace and mentioned "error" was taken for a
+bare JSON error body. When a network read began inside an event, that
+fragment either failed to parse and was dropped, losing events such as
+response.completed with its usage and finish reason, or parsed and was
+raised as a ServerError after the content had already streamed.
+
+A bare JSON body replaces the whole event stream, so decide on the
+first non-blank read and buffer it until it parses. Every later read
+goes to the SSE parser, which already reassembles split events.
+
+Fixes #1004
+---
+ lib/ruby_llm/protocol/streaming.rb       | 24 ++++++++++++-------
+ spec/ruby_llm/protocol/streaming_spec.rb | 30 ++++++++++++++++++++++++
+ 2 files changed, 46 insertions(+), 8 deletions(-)
+
+diff --git a/lib/ruby_llm/protocol/streaming.rb b/lib/ruby_llm/protocol/streaming.rb
+index cf83814..c9809b7 100644
+--- a/lib/ruby_llm/protocol/streaming.rb
++++ b/lib/ruby_llm/protocol/streaming.rb
+@@ -7,7 +7,7 @@ require 'json'
+ module RubyLLM
+   class Protocol
+     module Streaming # :nodoc: all
+-      StreamState = Struct.new(:parser, :buffer) do
++      StreamState = Struct.new(:parser, :buffer, :json_body) do
+         def initialize
+           super(EventStreamParser::Parser.new, +'')
+         end
+@@ -86,10 +86,10 @@ module RubyLLM
+       def process_stream_chunk(chunk, state, env, progress, &)
+         RubyLLM.logger.debug { "Received chunk: #{chunk}" } if RubyLLM.config.log_stream_debug
+ 
+-        if error_chunk?(chunk)
++        if json_body?(chunk, state)
++          handle_json_body(chunk, state, env)
++        elsif error_chunk?(chunk)
+           handle_error_chunk(chunk, env)
+-        elsif json_error_payload?(chunk)
+-          handle_json_error_chunk(chunk, env)
+         else
+           handle_sse(chunk, state.parser, env, progress, &)
+         end
+@@ -102,12 +102,20 @@ module RubyLLM
+         chunk.start_with?('event: error') && chunk.end_with?("\n\n")
+       end
+ 
+-      def json_error_payload?(chunk)
+-        chunk.lstrip.start_with?('{') && chunk.include?('"error"')
++      # A bare JSON body replaces the whole event stream, so only the first
++      # read can start one. A later read that starts with a brace is the rest
++      # of an event split across reads and belongs to the parser.
++      def json_body?(chunk, state)
++        state.json_body = chunk.lstrip.start_with?('{') if state.json_body.nil? && !chunk.strip.empty?
++        state.json_body
+       end
+ 
+-      def handle_json_error_chunk(chunk, env)
+-        parse_error_from_json(chunk, env, 'Failed to parse JSON error chunk')
++      def handle_json_body(chunk, state, env)
++        state.buffer << chunk
++        parsed = JSON.parse(state.buffer)
++        raise_stream_error(state.buffer, parsed, env) if parsed.is_a?(Hash) && parsed.key?('error')
++      rescue JSON::ParserError
++        RubyLLM.logger.debug { "Accumulating JSON body chunk: #{chunk}" }
+       end
+ 
+       def handle_error_chunk(chunk, env)
+diff --git a/spec/ruby_llm/protocol/streaming_spec.rb b/spec/ruby_llm/protocol/streaming_spec.rb
+index 283327e..b57bcd3 100644
+--- a/spec/ruby_llm/protocol/streaming_spec.rb
++++ b/spec/ruby_llm/protocol/streaming_spec.rb
+@@ -177,6 +177,36 @@ RSpec.describe RubyLLM::Protocol::Streaming do
+     end.to raise_error(RubyLLM::ServerError, /Rate limit exceeded/)
+   end
+ 
++  it 'yields an event whose JSON starts a new read' do
++    yielded = []
++    handler = test_obj.send(:handle_stream) { |chunk| yielded << chunk }
++
++    handler.call("data: {\"x\":\"first\"}\n\ndata: ", 0, env)
++    handler.call("{\"x\":\"ok\",\"response\":{\"error\":null}}\n\n", 0, env)
++
++    expect(yielded).to eq(['chunk:first', 'chunk:ok'])
++  end
++
++  it 'yields an event split inside its JSON at a brace' do
++    yielded = []
++    handler = test_obj.send(:handle_stream) { |chunk| yielded << chunk }
++
++    handler.call('data: {"x":"ok","response":', 0, env)
++    handler.call("{\"error\":null}}\n\n", 0, env)
++
++    expect(yielded).to eq(['chunk:ok'])
++  end
++
++  it 'raises a bare JSON error body that arrives split across reads' do
++    allow(RubyLLM.logger).to receive(:debug)
++    handler = test_obj.send(:handle_stream) { |_chunk| nil }
++
++    expect { handler.call('{"error":{"message":', 0, env) }.not_to raise_error
++    expect do
++      handler.call('"Rate limit exceeded"}}', 0, env)
++    end.to raise_error(RubyLLM::ServerError, /Rate limit exceeded/)
++  end
++
+   it 'raises the error an SSE error event carries' do
+     handler = test_obj.send(:handle_stream) { |_chunk| nil }
+ 
+-- 
+2.43.0
+

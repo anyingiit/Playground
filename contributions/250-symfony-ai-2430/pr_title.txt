@@ -1,0 +1,1 @@
+[Platform] Guard that every result type is classified for assistant content

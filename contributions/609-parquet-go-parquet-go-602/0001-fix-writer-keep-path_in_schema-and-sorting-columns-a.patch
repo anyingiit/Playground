@@ -1,0 +1,104 @@
+From ad90fffacfcc9a4dc2939fbc60c473c36a0e92c3 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:20:15 +0000
+Subject: [PATCH] fix(writer): keep path_in_schema and sorting columns across
+ Reset
+
+format.RowGroup.Reset clears PathInSchema and SortingColumns in place.
+The row groups recorded by the writer share those slices with the
+column writers' column paths and with the writer's configured sorting
+columns, so Reset erased them and every file written after the first
+had path_in_schema=[""] and zeroed sorting columns.
+
+Detach the shared slices before resetting the row group metadata.
+
+Fixes #602
+---
+ writer.go      | 12 +++++++++++-
+ writer_test.go | 47 +++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 58 insertions(+), 1 deletion(-)
+
+diff --git a/writer.go b/writer.go
+index 3ffcc14..84c8136 100644
+--- a/writer.go
++++ b/writer.go
+@@ -1212,7 +1212,17 @@ func (w *writer) reset(writer io.Writer) {
+ 	}
+ 	w.currentRowGroup.reset()
+ 	for i := range w.rowGroups {
+-		w.rowGroups[i].Reset()
++		// format.RowGroup.Reset clears some slices in place, but the row
++		// group metadata built by the writer shares the PathInSchema slices
++		// with the column writers and the SortingColumns slice with the
++		// writer config, which are all reused for the next file. Detach
++		// them so Reset does not erase state that is still in use.
++		rowGroup := &w.rowGroups[i]
++		for j := range rowGroup.Columns {
++			rowGroup.Columns[j].MetaData.PathInSchema = nil
++		}
++		rowGroup.SortingColumns = nil
++		rowGroup.Reset()
+ 	}
+ 	for i := range w.columnIndexes {
+ 		for j := range w.columnIndexes[i] {
+diff --git a/writer_test.go b/writer_test.go
+index c8f1962..9560e73 100644
+--- a/writer_test.go
++++ b/writer_test.go
+@@ -1963,6 +1963,53 @@ func TestWriterResetWithBloomFilters(t *testing.T) {
+ 	}
+ }
+ 
++func TestWriterResetPreservesColumnChunkMetadata(t *testing.T) {
++	type Row struct {
++		ID   int64  `parquet:"id"`
++		Name string `parquet:"name"`
++	}
++
++	writer := parquet.NewGenericWriter[Row](nil,
++		parquet.SortingWriterConfig(
++			parquet.SortingColumns(parquet.Descending("name")),
++		),
++	)
++
++	for i := range 3 {
++		output := new(bytes.Buffer)
++		writer.Reset(output)
++
++		if _, err := writer.Write([]Row{{ID: int64(i), Name: "name"}}); err != nil {
++			t.Fatal(err)
++		}
++		if err := writer.Close(); err != nil {
++			t.Fatal(err)
++		}
++
++		f, err := parquet.OpenFile(bytes.NewReader(output.Bytes()), int64(output.Len()))
++		if err != nil {
++			t.Fatalf("file %d: %v", i, err)
++		}
++		metadata := f.Metadata()
++		if len(metadata.RowGroups) != 1 {
++			t.Fatalf("file %d: wrong number of row groups: want=1 got=%d", i, len(metadata.RowGroups))
++		}
++		rowGroup := metadata.RowGroups[0]
++
++		for j, want := range [][]string{{"id"}, {"name"}} {
++			got := rowGroup.Columns[j].MetaData.PathInSchema
++			if !slices.Equal(got, want) {
++				t.Errorf("file %d: column %d: wrong path_in_schema: want=%q got=%q", i, j, want, got)
++			}
++		}
++
++		wantSorting := []format.SortingColumn{{ColumnIdx: 1, Descending: true}}
++		if !slices.Equal(rowGroup.SortingColumns, wantSorting) {
++			t.Errorf("file %d: wrong sorting columns: want=%+v got=%+v", i, wantSorting, rowGroup.SortingColumns)
++		}
++	}
++}
++
+ func TestWriterMaxRowsPerRowGroup(t *testing.T) {
+ 	output := new(bytes.Buffer)
+ 	writer := parquet.NewWriter(output, parquet.MaxRowsPerRowGroup(10))
+-- 
+2.43.0
+

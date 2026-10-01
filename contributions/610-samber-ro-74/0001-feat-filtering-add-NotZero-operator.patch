@@ -1,0 +1,448 @@
+From 02c62165e1a09f74b3252fdbe1c95dc500428a35 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:29:03 +0000
+Subject: [PATCH] feat(filtering): add NotZero operator
+
+NotZero emits only the items that are not the zero value of their type.
+
+Also adds tests, a godoc example, the docs/data page and the llms.txt
+entry, and resyncs the sourceRef line numbers of the filtering docs that
+moved in operator_filter.go.
+
+Closes #74
+---
+ docs/data/core-elementat.md          |  2 +-
+ docs/data/core-elementatordefault.md |  2 +-
+ docs/data/core-first.md              |  2 +-
+ docs/data/core-head.md               |  2 +-
+ docs/data/core-ignoreelements.md     |  2 +-
+ docs/data/core-last.md               |  2 +-
+ docs/data/core-notzero.md            | 48 ++++++++++++++++++++++++++
+ docs/data/core-skip.md               |  2 +-
+ docs/data/core-skiplast.md           |  2 +-
+ docs/data/core-skipuntil.md          |  2 +-
+ docs/data/core-skipwhile.md          |  2 +-
+ docs/data/core-tail.md               |  2 +-
+ docs/data/core-take.md               |  2 +-
+ docs/data/core-takelast.md           |  2 +-
+ docs/data/core-takeuntil.md          |  2 +-
+ docs/data/core-takewhile.md          |  2 +-
+ docs/static/llms.txt                 |  1 +
+ operator_filter.go                   | 25 ++++++++++++++
+ operator_filter_test.go              | 50 ++++++++++++++++++++++++++++
+ ro_example_test.go                   | 40 ++++++++++++++++++++++
+ 20 files changed, 179 insertions(+), 15 deletions(-)
+ create mode 100644 docs/data/core-notzero.md
+
+diff --git a/docs/data/core-elementat.md b/docs/data/core-elementat.md
+index d79369f..84162fc 100644
+--- a/docs/data/core-elementat.md
++++ b/docs/data/core-elementat.md
+@@ -1,7 +1,7 @@
+ ---
+ name: ElementAt
+ slug: elementat
+-sourceRef: operator_filter.go#L738
++sourceRef: operator_filter.go#L763
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-elementatordefault.md b/docs/data/core-elementatordefault.md
+index 6afa1d0..de39a26 100644
+--- a/docs/data/core-elementatordefault.md
++++ b/docs/data/core-elementatordefault.md
+@@ -1,7 +1,7 @@
+ ---
+ name: ElementAtOrDefault
+ slug: elementatordefault
+-sourceRef: operator_filter.go#L774
++sourceRef: operator_filter.go#L799
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-first.md b/docs/data/core-first.md
+index 4a79950..0b9a082 100644
+--- a/docs/data/core-first.md
++++ b/docs/data/core-first.md
+@@ -1,7 +1,7 @@
+ ---
+ name: First
+ slug: first
+-sourceRef: operator_filter.go#L620
++sourceRef: operator_filter.go#L645
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-head.md b/docs/data/core-head.md
+index 2f74c41..02786df 100644
+--- a/docs/data/core-head.md
++++ b/docs/data/core-head.md
+@@ -1,7 +1,7 @@
+ ---
+ name: Head
+ slug: head
+-sourceRef: operator_filter.go#L562
++sourceRef: operator_filter.go#L587
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-ignoreelements.md b/docs/data/core-ignoreelements.md
+index 87d4af6..42a9d49 100644
+--- a/docs/data/core-ignoreelements.md
++++ b/docs/data/core-ignoreelements.md
+@@ -1,7 +1,7 @@
+ ---
+ name: IgnoreElements
+ slug: ignoreelements
+-sourceRef: operator_filter.go#L143
++sourceRef: operator_filter.go#L168
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-last.md b/docs/data/core-last.md
+index 9e99f69..497ccef 100644
+--- a/docs/data/core-last.md
++++ b/docs/data/core-last.md
+@@ -1,7 +1,7 @@
+ ---
+ name: Last
+ slug: last
+-sourceRef: operator_filter.go#L675
++sourceRef: operator_filter.go#L700
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-notzero.md b/docs/data/core-notzero.md
+new file mode 100644
+index 0000000..6be5a82
+--- /dev/null
++++ b/docs/data/core-notzero.md
+@@ -0,0 +1,48 @@
++---
++name: NotZero
++slug: notzero
++sourceRef: operator_filter.go#L141
++type: core
++category: filtering
++signatures:
++  - "func NotZero[T comparable]()"
++playUrl:
++variantHelpers:
++  - core#filtering#notzero
++similarHelpers:
++  - core#filtering#filter
++position: 65
++---
++
++Emits only the items that are not the zero value of their type (`0`, `""`, `false`, `nil`, empty struct...).
++
++```go
++obs := ro.Pipe[int, int](
++    ro.Just(0, 1, 0, 2, 0, 3),
++    ro.NotZero[int](),
++)
++
++sub := obs.Subscribe(ro.PrintObserver[int]())
++defer sub.Unsubscribe()
++
++// Next: 1
++// Next: 2
++// Next: 3
++// Completed
++```
++
++### With strings
++
++```go
++obs := ro.Pipe[string, string](
++    ro.Just("", "apple", "", "banana"),
++    ro.NotZero[string](),
++)
++
++sub := obs.Subscribe(ro.PrintObserver[string]())
++defer sub.Unsubscribe()
++
++// Next: apple
++// Next: banana
++// Completed
++```
+diff --git a/docs/data/core-skip.md b/docs/data/core-skip.md
+index 151e2ac..fa2892d 100644
+--- a/docs/data/core-skip.md
++++ b/docs/data/core-skip.md
+@@ -1,7 +1,7 @@
+ ---
+ name: Skip
+ slug: skip
+-sourceRef: operator_filter.go#L165
++sourceRef: operator_filter.go#L190
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-skiplast.md b/docs/data/core-skiplast.md
+index f9f34d3..6b6d516 100644
+--- a/docs/data/core-skiplast.md
++++ b/docs/data/core-skiplast.md
+@@ -1,7 +1,7 @@
+ ---
+ name: SkipLast
+ slug: skiplast
+-sourceRef: operator_filter.go#L263
++sourceRef: operator_filter.go#L288
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-skipuntil.md b/docs/data/core-skipuntil.md
+index 9c09d43..a054bd2 100644
+--- a/docs/data/core-skipuntil.md
++++ b/docs/data/core-skipuntil.md
+@@ -1,7 +1,7 @@
+ ---
+ name: SkipUntil
+ slug: skipuntil
+-sourceRef: operator_filter.go#L304
++sourceRef: operator_filter.go#L329
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-skipwhile.md b/docs/data/core-skipwhile.md
+index 8ca3b4e..e555d34 100644
+--- a/docs/data/core-skipwhile.md
++++ b/docs/data/core-skipwhile.md
+@@ -1,7 +1,7 @@
+ ---
+ name: SkipWhile
+ slug: skipwhile
+-sourceRef: operator_filter.go#L198
++sourceRef: operator_filter.go#L223
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-tail.md b/docs/data/core-tail.md
+index 839ff93..b4a81ba 100644
+--- a/docs/data/core-tail.md
++++ b/docs/data/core-tail.md
+@@ -1,7 +1,7 @@
+ ---
+ name: Tail
+ slug: tail
+-sourceRef: operator_filter.go#L586
++sourceRef: operator_filter.go#L611
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-take.md b/docs/data/core-take.md
+index 7023ee2..30e2b90 100644
+--- a/docs/data/core-take.md
++++ b/docs/data/core-take.md
+@@ -1,7 +1,7 @@
+ ---
+ name: Take
+ slug: take
+-sourceRef: operator_filter.go#L346
++sourceRef: operator_filter.go#L371
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-takelast.md b/docs/data/core-takelast.md
+index 0195787..1838870 100644
+--- a/docs/data/core-takelast.md
++++ b/docs/data/core-takelast.md
+@@ -1,7 +1,7 @@
+ ---
+ name: TakeLast
+ slug: takelast
+-sourceRef: operator_filter.go#L463
++sourceRef: operator_filter.go#L488
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-takeuntil.md b/docs/data/core-takeuntil.md
+index 0bde550..9f9b087 100644
+--- a/docs/data/core-takeuntil.md
++++ b/docs/data/core-takeuntil.md
+@@ -1,7 +1,7 @@
+ ---
+ name: TakeUntil
+ slug: takeuntil
+-sourceRef: operator_filter.go#L518
++sourceRef: operator_filter.go#L543
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/data/core-takewhile.md b/docs/data/core-takewhile.md
+index abcd749..1fc7a93 100644
+--- a/docs/data/core-takewhile.md
++++ b/docs/data/core-takewhile.md
+@@ -1,7 +1,7 @@
+ ---
+ name: TakeWhile
+ slug: takewhile
+-sourceRef: operator_filter.go#L387
++sourceRef: operator_filter.go#L412
+ type: core
+ category: filtering
+ signatures:
+diff --git a/docs/static/llms.txt b/docs/static/llms.txt
+index c17fdaf..7c1989b 100644
+--- a/docs/static/llms.txt
++++ b/docs/static/llms.txt
+@@ -88,6 +88,7 @@ observable.Subscribe(ro.OnNext(func(s string) {
+ - `Filter` - Emit items passing predicate test
+ - `Distinct` - Suppress duplicate items
+ - `DistinctBy` - Suppress duplicate items, based on key selector
++- `NotZero` - Emit only items that are not the zero value of their type
+ - `IgnoreElements` - Ignores all items, only termination notifications
+ - `Take` - Emit only first n items
+ - `Skip` - Skip first n items
+diff --git a/operator_filter.go b/operator_filter.go
+index d62121f..a72b13b 100644
+--- a/operator_filter.go
++++ b/operator_filter.go
+@@ -136,6 +136,31 @@ func DistinctByWithContext[T any, K comparable](keySelector func(ctx context.Con
+ 	}
+ }
+ 
++// NotZero emits only the items from an Observable that are not the zero value
++// of their type (e.g. 0, "", false, nil or an empty struct).
++func NotZero[T comparable]() func(Observable[T]) Observable[T] {
++	return func(source Observable[T]) Observable[T] {
++		return NewUnsafeObservableWithContext(func(subscriberCtx context.Context, destination Observer[T]) Teardown {
++			var zero T
++
++			sub := source.SubscribeWithContext(
++				subscriberCtx,
++				NewObserverWithContext(
++					func(ctx context.Context, value T) {
++						if value != zero {
++							destination.NextWithContext(ctx, value)
++						}
++					},
++					destination.ErrorWithContext,
++					destination.CompleteWithContext,
++				),
++			)
++
++			return sub.Unsubscribe
++		})
++	}
++}
++
+ // IgnoreElements does not emit any items from an Observable but mirrors its
+ // termination notification. It is useful for ignoring all the items from an
+ // Observable but you want to be notified when it completes or when it throws an error.
+diff --git a/operator_filter_test.go b/operator_filter_test.go
+index b2333b5..48da0d9 100644
+--- a/operator_filter_test.go
++++ b/operator_filter_test.go
+@@ -186,6 +186,56 @@ func TestOperatorFilterDistinctBy(t *testing.T) {
+ 	is.EqualError(err, assert.AnError.Error())
+ }
+ 
++func TestOperatorFilterNotZero(t *testing.T) {
++	t.Parallel()
++	is := assert.New(t)
++
++	values, err := Collect(
++		NotZero[int]()(Just(0, 1, 0, 2, 0, 3)),
++	)
++	is.Equal([]int{1, 2, 3}, values)
++	is.NoError(err)
++
++	values1, err := Collect(
++		NotZero[string]()(Just("", "a", "", "b")),
++	)
++	is.Equal([]string{"a", "b"}, values1)
++	is.NoError(err)
++
++	type point struct{ X, Y int }
++
++	values2, err := Collect(
++		NotZero[point]()(Just(point{}, point{X: 1}, point{}, point{Y: 2})),
++	)
++	is.Equal([]point{{X: 1}, {Y: 2}}, values2)
++	is.NoError(err)
++
++	answer := 42
++	values3, err := Collect(
++		NotZero[*int]()(Just(nil, &answer, nil)),
++	)
++	is.Equal([]*int{&answer}, values3)
++	is.NoError(err)
++
++	values, err = Collect(
++		NotZero[int]()(Just(0, 0, 0)),
++	)
++	is.Equal([]int{}, values)
++	is.NoError(err)
++
++	values, err = Collect(
++		NotZero[int]()(Empty[int]()),
++	)
++	is.Equal([]int{}, values)
++	is.NoError(err)
++
++	values, err = Collect(
++		NotZero[int]()(Throw[int](assert.AnError)),
++	)
++	is.Equal([]int{}, values)
++	is.EqualError(err, assert.AnError.Error())
++}
++
+ func TestOperatorFilterIgnoreElements(t *testing.T) {
+ 	t.Parallel()
+ 	is := assert.New(t)
+diff --git a/ro_example_test.go b/ro_example_test.go
+index 4cf2133..3c0ef76 100644
+--- a/ro_example_test.go
++++ b/ro_example_test.go
+@@ -2756,6 +2756,46 @@ func ExampleDistinctByWithContext() {
+ 	// Completed
+ }
+ 
++func ExampleNotZero_ok() {
++	observable := Pipe1(
++		Just(0, 1, 0, 2, 0, 3),
++		NotZero[int](),
++	)
++
++	subscription := observable.Subscribe(PrintObserver[int]())
++	defer subscription.Unsubscribe()
++
++	// Output:
++	// Next: 1
++	// Next: 2
++	// Next: 3
++	// Completed
++}
++
++func ExampleNotZero_error() {
++	observable := Pipe1(
++		NewObservable(func(observer Observer[string]) Teardown {
++			observer.Next("")
++			observer.Next("a")
++			observer.Next("")
++			observer.Next("b")
++			observer.Error(assert.AnError)
++			observer.Next("c")
++
++			return nil
++		}),
++		NotZero[string](),
++	)
++
++	subscription := observable.Subscribe(PrintObserver[string]())
++	defer subscription.Unsubscribe()
++
++	// Output:
++	// Next: a
++	// Next: b
++	// Error: assert.AnError general error for testing
++}
++
+ func ExampleIgnoreElements_ok() {
+ 	observable := Pipe1(
+ 		Just(1, 2, 3, 4, 5),
+-- 
+2.43.0
+

@@ -1,0 +1,1 @@
+fix(parser): don't panic on RESET ALL / SET FROM CURRENT in multi-statement queries
