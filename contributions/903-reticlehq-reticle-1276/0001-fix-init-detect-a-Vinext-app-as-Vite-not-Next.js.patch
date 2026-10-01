@@ -1,0 +1,101 @@
+From 8730bf21c01d144dc81412420488018582f4f3c2 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 22:42:10 +0000
+Subject: [PATCH] fix(init): detect a Vinext app as Vite, not Next.js
+
+Vinext depends on `next` for its APIs but builds with Vite and never
+evaluates `next.config.*`. Next is first in the detection chain, so a
+Vinext app was read as Next and `init` wired `withReticle` into a
+config nothing runs. A `vinext` dependency now disproves the Next
+signals, and detection falls through to the Vite branch.
+
+Closes #1276
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ .changes/1276-vinext-detected-as-next.md |  3 +++
+ init/src/detect/detect.test.ts           | 14 ++++++++++++++
+ init/src/detect/detect.ts                | 16 +++++++++++++++-
+ 3 files changed, 32 insertions(+), 1 deletion(-)
+ create mode 100644 .changes/1276-vinext-detected-as-next.md
+
+diff --git a/.changes/1276-vinext-detected-as-next.md b/.changes/1276-vinext-detected-as-next.md
+new file mode 100644
+index 0000000..65c841d
+--- /dev/null
++++ b/.changes/1276-vinext-detected-as-next.md
+@@ -0,0 +1,3 @@
++### Fixed
++
++- **`@reticlehq/init` — a Vinext app was detected as Next.js.** Vinext depends on `next` for its APIs but builds with Vite, so `reticle init` wired `withReticle` into a Next config that Vinext never evaluates, and the app never connected. A project that declares `vinext` is no longer read as Next; it falls through to the Vite path, which wires the Vite plugin. Closes [#1276](https://github.com/reticlehq/reticle/issues/1276).
+diff --git a/init/src/detect/detect.test.ts b/init/src/detect/detect.test.ts
+index de14d26..743e16f 100644
+--- a/init/src/detect/detect.test.ts
++++ b/init/src/detect/detect.test.ts
+@@ -57,6 +57,20 @@ describe('detect framework', () => {
+       Framework.NEXT,
+     );
+   });
++  /**
++   * #1276: a Vinext app depends on `next` for its APIs but builds with Vite, and never evaluates
++   * `next.config.*` — so the Next path wires a `withReticle` nothing runs and the app never connects.
++   */
++  it('detects a Vinext app (next + vinext + vite) as Vite, not Next', () => {
++    expect(
++      detect(
++        input({
++          pkg: { dependencies: { next: '^16', vinext: '^0.0.5', vite: '^7' } },
++          configFiles: new Set(['next.config.ts', 'vite.config.ts']),
++        }),
++      ).framework,
++    ).toBe(Framework.VITE);
++  });
+   it('detects SvelteKit from the @sveltejs/kit dep (even though it ships vite)', () => {
+     expect(
+       detect(input({ pkg: { devDependencies: { '@sveltejs/kit': '^2', vite: '^5' } } })).framework,
+diff --git a/init/src/detect/detect.ts b/init/src/detect/detect.ts
+index f8f1077..313c814 100644
+--- a/init/src/detect/detect.ts
++++ b/init/src/detect/detect.ts
+@@ -267,8 +267,21 @@ interface FrameworkSignals {
+    * always has one.
+    */
+   readonly configsUnless?: readonly string[];
++  /**
++   * Dependency names whose presence disproves BOTH signals above, so detection moves on down the
++   * chain.
++   *
++   * Next is the only user: a Vinext app depends on `next` for its APIs (and may keep a
++   * `next.config.*`), but Vite builds it and nothing ever evaluates the Next config. Read as Next,
++   * `init` wired `withReticle` into a config that never runs, and the app never connected (#1276).
++   * It falls through to the Vite branch instead, through the `vite` dependency it declares.
++   */
++  readonly depsUnless?: readonly string[];
+ }
+ 
++/** Next.js re-implemented on Vite: it declares `next` for the APIs, but Vite is what builds it. */
++const VINEXT_DEP = 'vinext';
++
+ /** The root document a plain Vite SPA serves — and a framework that SSRs its own HTML never has. */
+ const VITE_INDEX_HTML = 'index.html';
+ 
+@@ -287,7 +300,7 @@ const VITE_INDEX_HTML = 'index.html';
+  * asserted in `framework-adapter.test.ts`.
+  */
+ export const FRAMEWORK_SIGNALS: Record<Framework, FrameworkSignals> = {
+-  [Framework.NEXT]: { deps: ['next'], configs: NEXT_CONFIGS },
++  [Framework.NEXT]: { deps: ['next'], configs: NEXT_CONFIGS, depsUnless: [VINEXT_DEP] },
+   [Framework.NUXT]: { deps: ['nuxt'], configs: NUXT_CONFIGS },
+   [Framework.SVELTEKIT]: {
+     deps: ['@sveltejs/kit'],
+@@ -451,6 +464,7 @@ function declaredDependencies(pkg: PackageJsonLike): Readonly<Record<string, str
+ function detectFramework(input: DetectInput): Framework {
+   for (const framework of DETECTION_ORDER) {
+     const signals = FRAMEWORK_SIGNALS[framework];
++    if ((signals.depsUnless ?? []).some((d) => depVersion(input.pkg, d) !== undefined)) continue;
+     if (signals.deps.some((d) => depVersion(input.pkg, d) !== undefined)) return framework;
+     if (
+       hasAnyConfig(input.configFiles, signals.configs) &&
+-- 
+2.43.0
+
