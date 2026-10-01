@@ -1,0 +1,182 @@
+From 554dfb7e95e3f3225e386806df669ae5f4a3ec94 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 20:35:17 +0000
+Subject: [PATCH] fix(storage): Place 8-byte trace IDs in the low half in
+ remote gRPC storage
+
+The remote storage handler and reader copied incoming trace ID bytes
+into a [16]byte with copy(), which put an 8-byte (64-bit) ID into the
+high half. model.TraceIDFromBytes and every storage writer place such
+an ID in the low half, so the remote path looked up or returned a
+different trace ID than the one stored.
+
+Route GetTraces in the handler and FindTraceIDs/FindTraceSummaries in
+the reader through a shared traceIDFromBytes helper that puts 8 bytes
+in the low half. Other lengths keep their existing behavior.
+
+Part of #9717 (M1).
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ internal/storage/v2/grpc/handler.go          |  5 +---
+ internal/storage/v2/grpc/handler_test.go     | 26 ++++++++++++++++++++
+ internal/storage/v2/grpc/tracereader.go      | 22 +++++++++++------
+ internal/storage/v2/grpc/tracereader_test.go | 22 +++++++++++++++--
+ 4 files changed, 62 insertions(+), 13 deletions(-)
+
+diff --git a/internal/storage/v2/grpc/handler.go b/internal/storage/v2/grpc/handler.go
+index c666249..98694c8 100644
+--- a/internal/storage/v2/grpc/handler.go
++++ b/internal/storage/v2/grpc/handler.go
+@@ -62,11 +62,8 @@ func (h *Handler) GetTraces(
+ ) error {
+ 	traceIDs := make([]tracestore.GetTraceParams, len(req.Query))
+ 	for i, query := range req.Query {
+-		var sizedTraceID [16]byte
+-		copy(sizedTraceID[:], query.TraceId)
+-
+ 		traceIDs[i] = tracestore.GetTraceParams{
+-			TraceID: pcommon.TraceID(sizedTraceID),
++			TraceID: traceIDFromBytes(query.TraceId),
+ 			Start:   query.StartTime,
+ 			End:     query.EndTime,
+ 		}
+diff --git a/internal/storage/v2/grpc/handler_test.go b/internal/storage/v2/grpc/handler_test.go
+index 314e435..a4e8488 100644
+--- a/internal/storage/v2/grpc/handler_test.go
++++ b/internal/storage/v2/grpc/handler_test.go
+@@ -51,6 +51,32 @@ func (f *testStream) Send(td *jptrace.TracesData) error {
+ 	return nil
+ }
+ 
++func TestHandler_GetTraces_ShortTraceID(t *testing.T) {
++	start := time.Now()
++	end := start.Add(time.Minute)
++	reader := new(tracestoremocks.Reader)
++	reader.On("GetTraces", mock.Anything, []tracestore.GetTraceParams{
++		{
++			TraceID: pcommon.TraceID([16]byte{8: 1, 2, 3, 4, 5, 6, 7, 8}),
++			Start:   start,
++			End:     end,
++		},
++	}).Return(iter.Seq2[[]ptrace.Traces, error](func(func([]ptrace.Traces, error) bool) {})).Once()
++
++	server := NewHandler(reader, new(tracestoremocks.Writer), new(depstoremocks.Reader))
++	err := server.GetTraces(&storage.GetTracesRequest{
++		Query: []*storage.GetTraceParams{
++			{
++				TraceId:   []byte{1, 2, 3, 4, 5, 6, 7, 8},
++				StartTime: start,
++				EndTime:   end,
++			},
++		},
++	}, &testStream{})
++	require.NoError(t, err)
++	reader.AssertExpectations(t)
++}
++
+ func TestHandler_GetTraces(t *testing.T) {
+ 	start := time.Now()
+ 	end := start.Add(time.Minute)
+diff --git a/internal/storage/v2/grpc/tracereader.go b/internal/storage/v2/grpc/tracereader.go
+index d994f71..e5d4047 100644
+--- a/internal/storage/v2/grpc/tracereader.go
++++ b/internal/storage/v2/grpc/tracereader.go
+@@ -186,11 +186,8 @@ func (tr *TraceReader) FindTraceIDs(
+ 		}
+ 		foundTraceIDs := make([]tracestore.FoundTraceID, len(resp.TraceIds))
+ 		for i, foundTraceID := range resp.TraceIds {
+-			var sizedTraceID [16]byte
+-			copy(sizedTraceID[:], foundTraceID.TraceId)
+-
+ 			foundTraceIDs[i] = tracestore.FoundTraceID{
+-				TraceID: pcommon.TraceID(sizedTraceID),
++				TraceID: traceIDFromBytes(foundTraceID.TraceId),
+ 				Start:   foundTraceID.Start,
+ 				End:     foundTraceID.End,
+ 			}
+@@ -293,8 +290,6 @@ func (tr *TraceReader) FindTraceSummaries(
+ func convertSummaryBatch(protos []*storage.TraceSummary) []tracestore.TraceSummary {
+ 	batch := make([]tracestore.TraceSummary, len(protos))
+ 	for i, ps := range protos {
+-		var traceID [16]byte
+-		copy(traceID[:], ps.GetTraceId())
+ 		svcs := make([]tracestore.ServiceSummary, len(ps.GetServices()))
+ 		for j, ss := range ps.GetServices() {
+ 			svcs[j] = tracestore.ServiceSummary{
+@@ -304,7 +299,7 @@ func convertSummaryBatch(protos []*storage.TraceSummary) []tracestore.TraceSumma
+ 			}
+ 		}
+ 		batch[i] = tracestore.TraceSummary{
+-			TraceID:           pcommon.TraceID(traceID),
++			TraceID:           traceIDFromBytes(ps.GetTraceId()),
+ 			RootServiceName:   ps.GetRootServiceName(),
+ 			RootOperationName: ps.GetRootOperationName(),
+ 			MinStartTime:      jptrace.UnixNanoToTime(ps.GetMinStartTimeUnixNano()),
+@@ -425,3 +420,16 @@ func convertValueToAnyValue(v pcommon.Value) *storage.AnyValue {
+ 		return nil
+ 	}
+ }
++
++// traceIDFromBytes converts a trace ID received over the wire into a pcommon.TraceID.
++// An 8-byte (64-bit) ID is placed in the low half, matching model.TraceIDFromBytes
++// and the 32-character hex form in which it is stored.
++func traceIDFromBytes(b []byte) pcommon.TraceID {
++	var id pcommon.TraceID
++	if len(b) == 8 {
++		copy(id[8:], b)
++	} else {
++		copy(id[:], b)
++	}
++	return id
++}
+diff --git a/internal/storage/v2/grpc/tracereader_test.go b/internal/storage/v2/grpc/tracereader_test.go
+index 4aee2f8..fe49084 100644
+--- a/internal/storage/v2/grpc/tracereader_test.go
++++ b/internal/storage/v2/grpc/tracereader_test.go
+@@ -520,7 +520,7 @@ func TestTraceReader_FindTraceIDs(t *testing.T) {
+ 			},
+ 		},
+ 		{
+-			name: "trace ID with less than 16 bytes",
++			name: "8-byte trace ID goes into the low half",
+ 			testServer: &testServer{
+ 				traceIDs: []*storage.FoundTraceID{
+ 					{
+@@ -533,7 +533,7 @@ func TestTraceReader_FindTraceIDs(t *testing.T) {
+ 			queryParams: queryParams,
+ 			expectedIDs: []tracestore.FoundTraceID{
+ 				{
+-					TraceID: pcommon.TraceID([16]byte{1, 2, 3, 4, 5, 6, 7, 8}),
++					TraceID: pcommon.TraceID([16]byte{8: 1, 2, 3, 4, 5, 6, 7, 8}),
+ 					Start:   now,
+ 					End:     now.Add(1 * time.Second),
+ 				},
+@@ -822,6 +822,24 @@ func TestTraceReader_FindTraceSummaries_Success(t *testing.T) {
+ 	assert.Equal(t, "frontend", got[0].Services[0].Name)
+ }
+ 
++func TestTraceReader_FindTraceSummaries_ShortTraceID(t *testing.T) {
++	ts := &testServer{summaries: []*storage.TraceSummary{
++		{TraceId: []byte{1, 2, 3, 4, 5, 6, 7, 8}},
++	}}
++	conn := startTestServer(t, ts)
++	reader := NewTraceReader(conn)
++
++	var got []tracestore.TraceSummary
++	for chunk, err := range reader.FindTraceSummaries(context.Background(), tracestore.TraceQueryParams{
++		Attributes: pcommon.NewMap(),
++	}) {
++		require.NoError(t, err)
++		got = append(got, chunk.Results...)
++	}
++	require.Len(t, got, 1)
++	assert.Equal(t, pcommon.TraceID([16]byte{8: 1, 2, 3, 4, 5, 6, 7, 8}), got[0].TraceID)
++}
++
+ func TestTraceReader_FindTraceSummaries_GRPCClientError(t *testing.T) {
+ 	conn, err := grpc.NewClient(":0", grpc.WithTransportCredentials(insecure.NewCredentials()))
+ 	require.NoError(t, err)
+-- 
+2.43.0
+

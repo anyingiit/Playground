@@ -1,0 +1,216 @@
+From cff41485ddd76b6241baa7cb92561e4a1a2adc63 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 20:58:34 +0000
+Subject: [PATCH] feat(java): add deleteSegments to partitions client
+
+Expose the DeleteSegments command (code 503) that the Rust SDK already
+offers via SegmentClient::delete_segments. The blocking and async TCP
+clients send stream id, topic id, partition id and segments count, the
+HTTP client calls DELETE /streams/{stream}/topics/{topic}/partitions/{id}
+with the segments_count query parameter.
+---
+ .../iggy/client/async/PartitionsClient.java   | 30 +++++++++++++++++
+ .../client/async/tcp/PartitionsTcpClient.java | 20 ++++++++++++
+ .../client/blocking/PartitionsClient.java     |  6 ++++
+ .../blocking/http/PartitionsHttpClient.java   |  8 +++++
+ .../blocking/tcp/PartitionsTcpClient.java     |  5 +++
+ .../org/apache/iggy/serde/CommandCode.java    | 15 +++++++++
+ .../blocking/PartitionsClientBaseTest.java    | 32 +++++++++++++++++++
+ 7 files changed, 116 insertions(+)
+
+diff --git a/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/async/PartitionsClient.java b/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/async/PartitionsClient.java
+index d06260e..e20ff8b 100644
+--- a/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/async/PartitionsClient.java
++++ b/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/async/PartitionsClient.java
+@@ -72,4 +72,34 @@ public interface PartitionsClient {
+      * @return A CompletableFuture that completes when the operation is done
+      */
+     CompletableFuture<Void> deletePartitions(StreamId streamId, TopicId topicId, Long partitionsCount);
++
++    /**
++     * Deletes the oldest segments of a partition asynchronously.
++     *
++     * <p>The active segment is never deleted, and deletion stops at the lowest offset committed by any
++     * consumer or consumer group, so fewer than {@code segmentsCount} segments may be removed.
++     *
++     * @param streamId The stream identifier (numeric ID)
++     * @param topicId The topic identifier (numeric ID)
++     * @param partitionId The partition identifier
++     * @param segmentsCount The number of segments to delete
++     * @return A CompletableFuture that completes when the operation is done
++     */
++    default CompletableFuture<Void> deleteSegments(Long streamId, Long topicId, Long partitionId, Long segmentsCount) {
++        return deleteSegments(StreamId.of(streamId), TopicId.of(topicId), partitionId, segmentsCount);
++    }
++
++    /**
++     * Deletes the oldest segments of a partition asynchronously.
++     *
++     * <p>The active segment is never deleted, and deletion stops at the lowest offset committed by any
++     * consumer or consumer group, so fewer than {@code segmentsCount} segments may be removed.
++     *
++     * @param streamId The stream identifier
++     * @param topicId The topic identifier
++     * @param partitionId The partition identifier
++     * @param segmentsCount The number of segments to delete
++     * @return A CompletableFuture that completes when the operation is done
++     */
++    CompletableFuture<Void> deleteSegments(StreamId streamId, TopicId topicId, Long partitionId, Long segmentsCount);
+ }
+diff --git a/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/async/tcp/PartitionsTcpClient.java b/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/async/tcp/PartitionsTcpClient.java
+index e854406..bcfe69c 100644
+--- a/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/async/tcp/PartitionsTcpClient.java
++++ b/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/async/tcp/PartitionsTcpClient.java
+@@ -75,4 +75,24 @@ public class PartitionsTcpClient implements PartitionsClient {
+                     response.release();
+                 });
+     }
++
++    @Override
++    public CompletableFuture<Void> deleteSegments(
++            StreamId streamId, TopicId topicId, Long partitionId, Long segmentsCount) {
++        var payload = BytesSerializer.toBytes(streamId);
++        payload.writeBytes(BytesSerializer.toBytes(topicId));
++        payload.writeIntLE(partitionId.intValue());
++        payload.writeIntLE(segmentsCount.intValue());
++
++        log.debug(
++                "Deleting {} segments for stream: {}, topic: {}, partition: {}",
++                segmentsCount,
++                streamId,
++                topicId,
++                partitionId);
++
++        return connection().send(CommandCode.Segment.DELETE.getValue(), payload).thenAccept(response -> {
++            response.release();
++        });
++    }
+ }
+diff --git a/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/PartitionsClient.java b/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/PartitionsClient.java
+index 89e63fa..f7df13f 100644
+--- a/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/PartitionsClient.java
++++ b/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/PartitionsClient.java
+@@ -35,4 +35,10 @@ public interface PartitionsClient {
+     }
+ 
+     void deletePartitions(StreamId streamId, TopicId topicId, Long partitionsCount);
++
++    default void deleteSegments(Long streamId, Long topicId, Long partitionId, Long segmentsCount) {
++        deleteSegments(StreamId.of(streamId), TopicId.of(topicId), partitionId, segmentsCount);
++    }
++
++    void deleteSegments(StreamId streamId, TopicId topicId, Long partitionId, Long segmentsCount);
+ }
+diff --git a/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/http/PartitionsHttpClient.java b/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/http/PartitionsHttpClient.java
+index 8726a37..9d1a8ff 100644
+--- a/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/http/PartitionsHttpClient.java
++++ b/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/http/PartitionsHttpClient.java
+@@ -50,5 +50,13 @@ class PartitionsHttpClient implements PartitionsClient {
+         httpClient.execute(request);
+     }
+ 
++    @Override
++    public void deleteSegments(StreamId streamId, TopicId topicId, Long partitionId, Long segmentsCount) {
++        var request = httpClient.prepareDeleteRequest(
++                STREAMS + "/" + streamId + TOPICS + "/" + topicId + PARTITIONS + "/" + partitionId,
++                new BasicNameValuePair("segments_count", segmentsCount.toString()));
++        httpClient.execute(request);
++    }
++
+     private record CreatePartitions(Long partitionsCount) {}
+ }
+diff --git a/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/tcp/PartitionsTcpClient.java b/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/tcp/PartitionsTcpClient.java
+index d2060b2..1741be4 100644
+--- a/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/tcp/PartitionsTcpClient.java
++++ b/foreign/java/java-sdk/src/main/java/org/apache/iggy/client/blocking/tcp/PartitionsTcpClient.java
+@@ -40,4 +40,9 @@ final class PartitionsTcpClient implements PartitionsClient {
+     public void deletePartitions(StreamId streamId, TopicId topicId, Long partitionsCount) {
+         FutureUtil.resolve(delegate.deletePartitions(streamId, topicId, partitionsCount));
+     }
++
++    @Override
++    public void deleteSegments(StreamId streamId, TopicId topicId, Long partitionId, Long segmentsCount) {
++        FutureUtil.resolve(delegate.deleteSegments(streamId, topicId, partitionId, segmentsCount));
++    }
+ }
+diff --git a/foreign/java/java-sdk/src/main/java/org/apache/iggy/serde/CommandCode.java b/foreign/java/java-sdk/src/main/java/org/apache/iggy/serde/CommandCode.java
+index 8e7fb29..aae8a1b 100644
+--- a/foreign/java/java-sdk/src/main/java/org/apache/iggy/serde/CommandCode.java
++++ b/foreign/java/java-sdk/src/main/java/org/apache/iggy/serde/CommandCode.java
+@@ -181,6 +181,21 @@ public interface CommandCode {
+         }
+     }
+ 
++    enum Segment implements CommandCode {
++        DELETE(503);
++
++        private final int value;
++
++        Segment(int value) {
++            this.value = value;
++        }
++
++        @Override
++        public int getValue() {
++            return value;
++        }
++    }
++
+     enum ConsumerGroup implements CommandCode {
+         GET(600),
+         GET_ALL(601),
+diff --git a/foreign/java/java-sdk/src/test/java/org/apache/iggy/client/blocking/PartitionsClientBaseTest.java b/foreign/java/java-sdk/src/test/java/org/apache/iggy/client/blocking/PartitionsClientBaseTest.java
+index ea84098..da0bee1 100644
+--- a/foreign/java/java-sdk/src/test/java/org/apache/iggy/client/blocking/PartitionsClientBaseTest.java
++++ b/foreign/java/java-sdk/src/test/java/org/apache/iggy/client/blocking/PartitionsClientBaseTest.java
+@@ -19,10 +19,16 @@
+ 
+ package org.apache.iggy.client.blocking;
+ 
++import org.apache.iggy.message.Message;
++import org.apache.iggy.message.Partitioning;
++import org.apache.iggy.partition.Partition;
+ import org.apache.iggy.topic.TopicDetails;
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+ 
++import java.math.BigInteger;
++import java.util.List;
++
+ import static org.apache.iggy.TestConstants.STREAM_NAME;
+ import static org.apache.iggy.TestConstants.TOPIC_NAME;
+ import static org.assertj.core.api.Assertions.assertThat;
+@@ -60,4 +66,30 @@ public abstract class PartitionsClientBaseTest extends IntegrationTest {
+         topic = topicsClient.getTopic(STREAM_NAME, TOPIC_NAME).get();
+         assertThat(topic.partitionsCount()).isEqualTo(1L);
+     }
++
++    @Test
++    void shouldDeleteSegmentsWithoutRemovingActiveSegment() {
++        // given
++        client.messages()
++                .sendMessages(STREAM_NAME, TOPIC_NAME, Partitioning.partitionId(0L), List.of(Message.of("message")));
++        Partition partition = topicsClient
++                .getTopic(STREAM_NAME, TOPIC_NAME)
++                .get()
++                .partitions()
++                .get(0);
++        assertThat(partition.segmentsCount()).isEqualTo(1L);
++        assertThat(partition.messagesCount()).isEqualTo(BigInteger.ONE);
++
++        // when
++        partitionsClient.deleteSegments(STREAM_NAME, TOPIC_NAME, partition.id(), 1L);
++
++        // then the only segment is the active one, which is never deleted
++        partition = topicsClient
++                .getTopic(STREAM_NAME, TOPIC_NAME)
++                .get()
++                .partitions()
++                .get(0);
++        assertThat(partition.segmentsCount()).isEqualTo(1L);
++        assertThat(partition.messagesCount()).isEqualTo(BigInteger.ONE);
++    }
+ }
+-- 
+2.43.0
+

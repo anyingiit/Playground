@@ -1,0 +1,1 @@
+feat(reporter): Color the mutant diffs in the GitHub Actions log
