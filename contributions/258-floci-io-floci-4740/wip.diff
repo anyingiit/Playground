@@ -1,0 +1,126 @@
+diff --git a/docs/services/lambda.md b/docs/services/lambda.md
+index c57e553..de5cfc3 100644
+--- a/docs/services/lambda.md
++++ b/docs/services/lambda.md
+@@ -869,6 +869,8 @@ aws lambda update-function-code \
+ 
+ Connect Lambda to SQS, Kinesis, or DynamoDB Streams. Self-managed Apache Kafka event source mappings are accepted, validated, persisted, and returned on the wire, but Floci does not run an active Kafka consumer poller:
+ 
++When `BatchSize` is omitted, `CreateEventSourceMapping` uses the AWS default for the source: 10 for SQS and 100 for Kinesis, DynamoDB Streams and self-managed Apache Kafka.
++
+ For DynamoDB Streams mappings, Floci retries failed batches with exponential backoff, honors `MaximumRetryAttempts` and `MaximumRecordAgeInSeconds`, and sends discarded batches to configured SQS, SNS, or S3 `DestinationConfig.OnFailure` destinations. With `BisectBatchOnFunctionError`, a batch that fails with a function error is split in half and retried, narrowing it down to the failing record, which then follows the normal retry and record age rules. Splits do not count as retry attempts, and only function errors split: throttles do not, and a partial batch response retries from the reported record. If the OnFailure destination refuses a discarded batch, Floci logs the failure, drops the batch and advances past it.
+ 
+ For Kinesis mappings, a function error or throttle leaves the shard checkpoint in place and the same batch is read again on the next poll; there is no retry limit, backoff, or OnFailure destination. With `FunctionResponseTypes: ["ReportBatchItemFailures"]`, a partial batch response moves the checkpoint up to the lowest reported record, and a malformed response retries the whole batch. `FunctionResponseTypes` can be set or cleared on an existing mapping with `UpdateEventSourceMapping`.
+diff --git a/src/test/java/io/github/hectorvent/floci/services/lambda/EsmIntegrationTest.java b/src/test/java/io/github/hectorvent/floci/services/lambda/EsmIntegrationTest.java
+index 0a79dae..b49837b 100644
+--- a/src/test/java/io/github/hectorvent/floci/services/lambda/EsmIntegrationTest.java
++++ b/src/test/java/io/github/hectorvent/floci/services/lambda/EsmIntegrationTest.java
+@@ -204,6 +204,40 @@ class EsmIntegrationTest {
+             .statusCode(400);
+     }
+ 
++    @Test
++    void createEventSourceMappingDefaultsBatchSizePerSource() {
++        String streamArn = "arn:aws:dynamodb:us-east-1:000000000000:table/esm-default-batch/stream/2026-01-01T00:00:00.000";
++
++        String uuid = given()
++                .contentType("application/json")
++                .body("""
++                        {
++                          "FunctionName": "%s",
++                          "EventSourceArn": "%s",
++                          "Enabled": false
++                        }
++                        """.formatted(FUNCTION_NAME, streamArn))
++                .when()
++                .post(LAMBDA_BASE + "/event-source-mappings/")
++                .then()
++                .statusCode(202)
++                .body("BatchSize", equalTo(100))
++                .extract()
++                .path("UUID");
++
++        given()
++                .when()
++                .get(LAMBDA_BASE + "/event-source-mappings/" + uuid)
++                .then()
++                .statusCode(200)
++                .body("BatchSize", equalTo(100));
++
++        given()
++                .delete(LAMBDA_BASE + "/event-source-mappings/" + uuid)
++                .then()
++                .statusCode(202);
++    }
++
+     @Test
+     void updateEventSourceMappingReturnsFailureConfig() {
+         String streamArn = "arn:aws:dynamodb:us-east-1:000000000000:table/esm-table/stream/2026-01-01T00:00:00.000";
+diff --git a/src/test/java/io/github/hectorvent/floci/services/lambda/LambdaServiceTest.java b/src/test/java/io/github/hectorvent/floci/services/lambda/LambdaServiceTest.java
+index b6ed7c6..1727f29 100644
+--- a/src/test/java/io/github/hectorvent/floci/services/lambda/LambdaServiceTest.java
++++ b/src/test/java/io/github/hectorvent/floci/services/lambda/LambdaServiceTest.java
+@@ -15,6 +15,7 @@ import io.github.hectorvent.floci.services.lambda.zip.ZipExtractor;
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.CsvSource;
+ import org.junit.jupiter.params.provider.ValueSource;
+ 
+ import java.io.ByteArrayOutputStream;
+@@ -1971,10 +1972,54 @@ class LambdaServiceTest {
+                 "FunctionResponseTypes", List.of("Bogus"))));
+ 
+         EventSourceMapping stored = service.getEventSourceMapping(esm.getUuid());
+-        assertEquals(10, stored.getBatchSize());
++        assertEquals(100, stored.getBatchSize());
+         assertTrue(stored.isEnabled());
+     }
+ 
++    @ParameterizedTest
++    @CsvSource({
++            "arn:aws:sqs:us-east-1:000000000000:default-batch-queue, 10",
++            "arn:aws:kinesis:us-east-1:000000000000:stream/default-batch-stream, 100"
++    })
++    void createEventSourceMapping_withoutBatchSize_usesSourceDefault(String eventSourceArn, int expected) {
++        // Catches: every mapping defaulting BatchSize to 10, when AWS uses 10 only for SQS
++        service.createFunction(REGION, baseRequest("fn-esm-default-batch"));
++
++        EventSourceMapping esm = service.createEventSourceMapping(REGION, Map.of(
++                "FunctionName", "fn-esm-default-batch",
++                "EventSourceArn", eventSourceArn,
++                "Enabled", false));
++
++        assertEquals(expected, esm.getBatchSize());
++        assertEquals(expected, service.getEventSourceMapping(esm.getUuid()).getBatchSize());
++    }
++
++    @Test
++    void createEventSourceMapping_selfManagedKafkaWithoutBatchSize_defaultsTo100() {
++        service.createFunction(REGION, baseRequest("kafka-fn-default-batch"));
++
++        EventSourceMapping esm = service.createEventSourceMapping(REGION, Map.of(
++                "FunctionName", "kafka-fn-default-batch",
++                "Topics", List.of("valid-topic"),
++                "SelfManagedEventSource", Map.of(
++                        "Endpoints", Map.of("KAFKA_BOOTSTRAP_SERVERS", List.of("localhost:9092")))));
++
++        assertEquals(100, esm.getBatchSize());
++    }
++
++    @Test
++    void createEventSourceMapping_explicitBatchSize_overridesSourceDefault() {
++        service.createFunction(REGION, baseRequest("fn-esm-explicit-batch"));
++
++        EventSourceMapping esm = service.createEventSourceMapping(REGION, Map.of(
++                "FunctionName", "fn-esm-explicit-batch",
++                "EventSourceArn", "arn:aws:kinesis:us-east-1:000000000000:stream/explicit-batch-stream",
++                "BatchSize", 7,
++                "Enabled", false));
++
++        assertEquals(7, esm.getBatchSize());
++    }
++
+     @Test
+     void updateEventSourceMapping_functionTargetValidation() {
+         service.createFunction(REGION, baseRequest("fn-esm-target-1"));

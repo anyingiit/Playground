@@ -1,0 +1,165 @@
+diff --git a/cmd/rune/docs/docs/learn/layout-management.md b/cmd/rune/docs/docs/learn/layout-management.md
+index a4c16ac..0178824 100644
+--- a/cmd/rune/docs/docs/learn/layout-management.md
++++ b/cmd/rune/docs/docs/learn/layout-management.md
+@@ -170,9 +170,13 @@ the focused window and turns it into a tab, collapsing the split. Run it with
+ preset provides a prompt-prefill binding:
+ 
+ ```
+-windowconverttab <name> [<icon>]
++windowconverttab [<name> [<icon>]]
+ ```
+ 
++The name is optional. Without one, the tab gets a random two-word name
++such as `brave-otter`, the same style Rune Agent uses for conversation
++IDs, so pressing Enter on the prefilled prompt is enough.
++
+ If the focused window is a floating window, converting it to a tab
+ closes the floater.
+ 
+diff --git a/internal/ide/commands.go b/internal/ide/commands.go
+index d0b4d57..4640992 100644
+--- a/internal/ide/commands.go
++++ b/internal/ide/commands.go
+@@ -183,8 +183,10 @@ var (
+ 		"windowconverttab": {
+ 			man: textapi.CommandManual{
+ 				Summary: "Convert the content of the window in focus into a tab. " +
+-					"If the current window is a floating window, it is closed.",
+-				Synopsis: "<name> [<icon>]",
++					"If the current window is a floating window, it is closed. " +
++					"Without a name, the tab gets a random two-word name such as " +
++					"`brave-otter`.",
++				Synopsis: "[<name> [<icon>]]",
+ 			},
+ 			handler: (*ex).convertTab,
+ 		},
+diff --git a/internal/ide/ex.go b/internal/ide/ex.go
+index 9e70cb7..ec474c5 100644
+--- a/internal/ide/ex.go
++++ b/internal/ide/ex.go
+@@ -31,6 +31,7 @@ import (
+ 	"syscall"
+ 	"time"
+ 
++	petname "github.com/dustinkirkland/golang-petname"
+ 	"github.com/ernestrc/go-multierror"
+ 	log "github.com/sirupsen/logrus"
+ 	"github.com/unstablebuild/blue/iterator"
+@@ -146,6 +147,7 @@ type ex struct {
+ 	tm                       browser.TabManager
+ 	tabAliases               *tabNameAliaser
+ 	newPluginHandler         func(int, ...string) (pluginHandler, error)
++	tabNames                 nameGenerator
+ 	workspace                workspace.Workspace
+ 	terminal                 *asyncTerminal
+ 	tasks                    *idetask.Manager
+@@ -382,6 +384,7 @@ func (e *ex) init(
+ 		}
+ 		return vteAdapter{v}, nil
+ 	}
++	e.tabNames = petnameGenerator{}
+ 	e.newEmulatorHandler = func(cmdAndArgs []string) (
+ 		vtereservoir.VTE, error,
+ 	) {
+@@ -1498,13 +1501,31 @@ func (e *ex) moveTab(_ context.Context, args ...string) error {
+ 
+ var defaultConvertTabIcon = ''
+ 
++// nameGenerator names the tabs that windowconverttab is not given a
++// name for. It is an interface so tests can make the name predictable.
++type nameGenerator interface {
++	generate() string
++}
++
++// petnameGenerator matches the style of Rune Agent's conversation IDs.
++type petnameGenerator struct{}
++
++func (petnameGenerator) generate() string {
++	return petname.Generate(2, "-")
++}
++
+ func (e *ex) convertTab(ctx context.Context, args ...string) error {
+-	if len(args) == 0 {
+-		return errors.New("command expects at least one argument with tab name")
++	var name string
++	if len(args) > 0 {
++		name = args[0]
++	}
++	// The menu entry and the preset bindings prefill the prompt, so
++	// pressing enter without typing a name should still yield a tab.
++	if name == "" {
++		name = e.tabNames.generate()
+ 	}
+ 
+ 	var icon rune
+-	name := args[0]
+ 	if len(args) > 1 {
+ 		runeArgs := []rune(args[1])
+ 		if len(runeArgs) > 0 {
+diff --git a/internal/ide/ex_test.go b/internal/ide/ex_test.go
+index 2e5d1af..44e3159 100644
+--- a/internal/ide/ex_test.go
++++ b/internal/ide/ex_test.go
+@@ -5257,6 +5257,61 @@ func TestIntegrationCompanionTerminal(t *testing.T) {
+ 	handlertest.TestHandlerSequence(t, b, 20, 10, cases)
+ }
+ 
++type fixedNameGenerator string
++
++func (g fixedNameGenerator) generate() string { return string(g) }
++
++func TestConvertTabArgs(t *testing.T) {
++	cases := []struct {
++		name     string
++		args     []string
++		wantName string
++		wantIcon rune
++	}{
++		{"no args", nil, "brave-otter", defaultConvertTabIcon},
++		{"empty name", []string{""}, "brave-otter", defaultConvertTabIcon},
++		{"empty name with icon", []string{"", "X"}, "brave-otter", 'X'},
++		{"name only", []string{"build"}, "build", defaultConvertTabIcon},
++		{"name and icon", []string{"build", "X"}, "build", 'X'},
++	}
++	for _, c := range cases {
++		t.Run(c.name, func(t *testing.T) {
++			b := newExForTesting(t, texttest.NopEditor())
++			defer b.Close()
++			b.tabNames = fixedNameGenerator("brave-otter")
++
++			win := b.invokeWindow()
++			require.NoError(t, win.SetContent(browsertest.NewTestHandler()))
++			require.NoError(t, b.convertTab(bgctx, c.args...))
++
++			content, err := win.Content()
++			require.NoError(t, err)
++			tab, ok := content.(*browser.Tab)
++			require.True(t, ok, "window content must be converted into a tab")
++			name, _, ok := b.comp.Browser().TabName(tab.URI())
++			require.True(t, ok)
++			assert.Equal(t, c.wantName, name)
++			icon, _, ok := b.comp.Browser().TabIcon(tab.URI())
++			require.True(t, ok)
++			assert.Equal(t, c.wantIcon, icon)
++		})
++	}
++}
++
++func TestIntegrationConvertTabWithoutName(t *testing.T) {
++	cases := []handlertest.SequenceTestCase{
++		{":windowconverttab>", ``},
++	}
++	b := newExForTesting(t, texttest.NopEditor(),
++		text.WithCommandKey(testCommandKey),
++		text.WithCommandOverlayConfig(testCommandOverlayConfig()),
++	)
++	defer b.Close()
++	b.tabNames = fixedNameGenerator("brave-otter")
++
++	handlertest.TestHandlerSequence(t, b, 20, 10, cases)
++}
++
+ func TestTerminalWriteOpensSavePrompt(t *testing.T) {
+ 	b := newExForTesting(t, texttest.NopEditor())
+ 	defer b.Close()
