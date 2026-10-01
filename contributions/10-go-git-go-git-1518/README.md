@@ -1,6 +1,6 @@
 # go-git/go-git #1518 — split fetch/push code out of `remote.go`
 
-Status: ✅ ready — patch + PR text done (owner still has to add DCO sign-off, see 需要提交者注意)
+Status: 🔁 PR #2423 open — 维护者要求 rebase 解决冲突（2026-09-30）；已备好 rebase 后的 `followup-0001-rebased-onto-main-a9ce94f.patch`，待 owner force-push
 
 | 项 | 值 |
 |---|---|
@@ -95,4 +95,35 @@ Closes #1518
 - [x] Tests pass locally: `go test -race -count=1 -v -run 'TestRemoteSuite|TestFetchFastForwardForCustomRef' .` gives 120 PASS / 3 SKIP / 0 FAIL, the same set of test names as on `main`. `go build ./...`, `GOOS=windows go build .`, `go vet .` and `golangci-lint run .` (v2.13.1, repo config: 0 issues) all pass. A full `go test -race .` fails only `TestWorktreeSuite/TestCheckoutIndexOS`, which fails the same way on `main` when run as root (UID/GID are 0).
 - [ ] `CHANGELOG.md` is updated (if applicable): n/a, internal file reorganisation only
 - [ ] Documentation is updated (if applicable): n/a
+```
+
+## 跟进（2026-10-01）：rebase 解决冲突
+
+**反馈**：@pjbgf（2026-09-30）："thanks for looking into this. The failing test is orthogonal to the PR, so don't worry about that. Please rebase and resolve the conflicts."
+
+**冲突原因**：PR 基于 `a5f9c22`；之后 main 只有 #2354（`5e7adc1`，tsileo/fix/refspec-reverse-force）碰过这两个文件——在 `remote_test.go` 的 `TestPushPrune` 后面新增了 `TestPushPruneForceRefSpec`（`remote.go` 自 base 起无改动）。
+
+**处理**：在 `origin/main` @ `a9ce94f` 上 rebase PR 头 `a5a3544`；冲突取 PR 版的 `remote_test.go`，并把新测试 `TestPushPruneForceRefSpec` 原样放进 `remote_push_test.go`（紧跟 `TestPushPrune`，与原文件里的相对顺序一致）。commit message / 作者 / `Signed-off-by` / `Assisted-by` 保持不变。新 commit `052d409`。
+
+**验证**（Go 1.26.0）：
+- 按行 multiset 对比 `origin/main` 与新 HEAD：测试组 main 独有行 = 0（新测试完整保留），新增行只有新文件的 `package`/`import` 头；源码组差异仍只是拆开的 const 块。
+- `go build ./...`、`go vet .`、`GOOS=windows go build .` ok；`gofmt -l remote*.go` 无输出。
+- `go test -race -count=1 -v -run 'TestRemoteSuite|TestFetchFastForwardForCustomRef' .` ok；与 main 上同一命令按测试名 diff 完全相同（124 行结果：121 PASS / 3 SKIP / 0 FAIL，含新的 `TestPushPruneForceRefSpec`）。
+- 未跑：golangci-lint（本机只有 v2.5.0，用 go1.25 构建，无法加载 go1.26 项目配置；上一版同内容已 0 issues，CI 会跑）。
+
+**owner 操作**（这是替换整个 PR commit，需要 force-push）：
+```bash
+cd go-git   # 你的 fork clone
+git fetch https://github.com/go-git/go-git main
+git checkout split-remote-fetch-push   # PR #2423 的分支
+git reset --hard FETCH_HEAD        # = a9ce94f 或更新
+git am /path/to/followup-0001-rebased-onto-main-a9ce94f.patch
+# 若 main 又前进且 am 失败：git am --abort，按上文"冲突风险"用 regen/ 重新生成
+go test -run 'TestRemoteSuite' .
+git push --force-with-lease origin HEAD:split-remote-fetch-push
+```
+
+**回复评论草稿**：
+```
+Thanks! Rebased onto current main and resolved the conflict: the only overlap was the new `TestPushPruneForceRefSpec` from #2354, which now lives in `remote_push_test.go` right after `TestPushPrune`. It's still a pure move, and the remote test set (`-run 'TestRemoteSuite|TestFetchFastForwardForCustomRef'`) gives the same results as on main.
 ```
