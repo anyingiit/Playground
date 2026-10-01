@@ -1,0 +1,94 @@
+From 057e4a4ef79e0cf7f87b5d61b879f78b8dae1415 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:41:05 +0000
+Subject: [PATCH] fix(revset): allow `#` in branch names
+
+`#` is a valid character in Git ref names, but the revset lexer did not
+accept it as part of a name, so an expression such as
+`stack(mr/1229#crc)` failed with "Invalid token". Add `#` to the set of
+characters allowed in unquoted names. `#` is not used by any revset
+operator, so this does not introduce any ambiguity.
+
+Fixes #498
+---
+ CHANGELOG.md                              |  1 +
+ git-branchless-revset/src/grammar.lalrpop |  2 +-
+ git-branchless-revset/src/parser.rs       | 39 +++++++++++++++++++++++
+ 3 files changed, 41 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index d4e3f7f..4cae1fd 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ 
+ ### Fixed
+ 
++- (#498): revset expressions now accept `#` in branch names (e.g. `stack(mr/1229#crc)`).
+ - (#1629): `git test` no longer fails to create its results directory when the test command contains characters that are invalid in a path on Windows (such as `|`, `<`, `>`, `:`, `*`, `?`, `"`, or `\`).
+ 
+ ## [v0.11.1] - 2026-05-21
+diff --git a/git-branchless-revset/src/grammar.lalrpop b/git-branchless-revset/src/grammar.lalrpop
+index b7ba557..54d751a 100644
+--- a/git-branchless-revset/src/grammar.lalrpop
++++ b/git-branchless-revset/src/grammar.lalrpop
+@@ -59,7 +59,7 @@ Expr5: Expr<'input> = {
+ 
+ Name: Cow<'input, str> = {
+     // NOTE: `.` should be allowed in names, but not `..` (since that is an operator).
+-    <s:r"([a-zA-Z0-9_$@/-]|\.[a-zA-Z0-9_$@/-])+|\."> => Cow::Borrowed(&s),
++    <s:r"([a-zA-Z0-9_$@/#-]|\.[a-zA-Z0-9_$@/#-])+|\."> => Cow::Borrowed(&s),
+ 
+     // Escaping is not supported in LALROP regex literals.
+     // \x22 = double-quote.
+diff --git a/git-branchless-revset/src/parser.rs b/git-branchless-revset/src/parser.rs
+index 2d2164a..ad0ed16 100644
+--- a/git-branchless-revset/src/parser.rs
++++ b/git-branchless-revset/src/parser.rs
+@@ -748,4 +748,43 @@ mod tests {
+ 
+         Ok(())
+     }
++
++    #[test]
++    fn test_revset_parse_hash_in_name() -> eyre::Result<()> {
++        insta::assert_debug_snapshot!(parse("mr/1229#crc"), @r##"
++        Ok(
++            Name(
++                "mr/1229#crc",
++            ),
++        )
++        "##);
++        insta::assert_debug_snapshot!(parse("stack(mr/1229#crc)"), @r##"
++        Ok(
++            FunctionCall(
++                "stack",
++                [
++                    Name(
++                        "mr/1229#crc",
++                    ),
++                ],
++            ),
++        )
++        "##);
++        insta::assert_debug_snapshot!(parse("#foo..bar.#baz"), @r##"
++        Ok(
++            FunctionCall(
++                "only",
++                [
++                    Name(
++                        "bar.#baz",
++                    ),
++                    Name(
++                        "#foo",
++                    ),
++                ],
++            ),
++        )
++        "##);
++        Ok(())
++    }
+ }
+-- 
+2.43.0
+

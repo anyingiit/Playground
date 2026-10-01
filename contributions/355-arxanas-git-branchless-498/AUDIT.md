@@ -1,4 +1,4 @@
-# Malicious-code audit — arxanas/git-branchless @ 03d6ab8 (master, 2026-07-14)
+# Malicious-code audit — arxanas/git-branchless @ 03d6ab8 (master, 2026-07-15; re-checked HEAD unchanged 2026-10-01)
 
 Tool: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/w6-git-branchless-498` (209 text files scanned), then manual review.
 
