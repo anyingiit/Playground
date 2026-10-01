@@ -1,0 +1,226 @@
+From e797fae38c0193c9f04cd03a4763c9faf28fec74 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 22:45:02 +0000
+Subject: [PATCH] fix(langgraph_dev): stop the server when startup is
+ interrupted (#534)
+
+start_langgraph_dev() spawns langgraph dev in its own session / process
+group, so a terminal Ctrl+C only reaches the CLI, and callers register
+their cleanup only after the function returns. A KeyboardInterrupt (or
+any other exception) raised after Popen but before the ready return thus
+left the server running, together with its PID file and workspace
+sidecar, so the next EvoSci deploy hit a port conflict.
+
+Wrap everything after the spawn in try/except BaseException that calls
+stop_langgraph_dev(proc) and re-raises. This also covers the existing
+"exited immediately" and "not healthy within 60s" paths, which
+previously called stop_langgraph_dev themselves.
+
+Closes #534
+---
+ EvoScientist/langgraph_dev/manager.py | 103 ++++++++++++++------------
+ tests/test_langgraph_manager.py       |  73 ++++++++++++++++++
+ 2 files changed, 129 insertions(+), 47 deletions(-)
+
+diff --git a/EvoScientist/langgraph_dev/manager.py b/EvoScientist/langgraph_dev/manager.py
+index c52c7e1..f1a8bb1 100644
+--- a/EvoScientist/langgraph_dev/manager.py
++++ b/EvoScientist/langgraph_dev/manager.py
+@@ -1128,54 +1128,63 @@ def start_langgraph_dev(
+             log_handle.close()
+         except Exception:
+             pass
+-    RUNTIME.pid_file.write_text(str(proc.pid), encoding="utf-8")
+-    _write_workspace_sidecar(
+-        workspace_dir=workspace_dir,
+-        pid=proc.pid,
+-        config_fingerprint=config_fingerprint,
+-        deploy_mode=deploy_mode,
+-    )
+-    global _PROCESS_WORKSPACE, _PROCESS_DEPLOY_MODE
+-    _PROCESS = proc
+-    _PROCESS_WORKSPACE = workspace_dir
+-    _PROCESS_DEPLOY_MODE = deploy_mode
+-
+-    # langgraph dev cold-starts in ~10-15s normally; first-time npx-based MCP
+-    # servers can push this to 30-60s while npm fetches packages, so the budget
+-    # is generous. Subsequent runs are much faster thanks to npm cache.
+-    deadline = time.monotonic() + 60
+-    while time.monotonic() < deadline:
+-        if proc.poll() is not None:
+-            tail = ""
+-            try:
+-                tail = RUNTIME.log_file.read_text(encoding="utf-8", errors="replace")[
+-                    -2000:
+-                ]
+-            except Exception:
+-                pass
+-            # Subprocess died on its own — clear our module-level bookkeeping
+-            # (``_PROCESS``, ``_PROCESS_WORKSPACE``, ``RUNTIME.pid_file``) before
+-            # raising. Without this, ``_PROCESS`` would keep pointing at the
+-            # dead handle and ``RUNTIME.pid_file`` at a non-existent PID, leading
+-            # the next ``ensure_langgraph_dev`` to misjudge state. Pass
+-            # ``proc`` directly so ``stop_langgraph_dev`` works against the
+-            # one we just spawned even if the global state was overwritten.
+-            stop_langgraph_dev(proc)
+-            raise RuntimeError(
+-                f"langgraph dev exited immediately with code {proc.returncode}.\n"
+-                f"Log tail:\n{tail}"
+-            )
+-        if is_langgraph_dev_running(port=port, host=host):
+-            logger.info(
+-                "langgraph dev started on %s (pid=%d)", _base_url(port, host), proc.pid
+-            )
+-            return proc
+-        time.sleep(0.5)
++    # From here on the server is running in its own session / process group,
++    # so a terminal Ctrl+C reaches only this process, and the caller's
++    # cleanup (atexit / ``finally``) is registered only after we return.
++    # Any exception before the ready return — KeyboardInterrupt included —
++    # must therefore stop the child ourselves, or it is orphaned together
++    # with its PID file and workspace sidecar (#534). Pass ``proc``
++    # directly so ``stop_langgraph_dev`` targets the one we just spawned
++    # even if the global state was overwritten.
++    try:
++        RUNTIME.pid_file.write_text(str(proc.pid), encoding="utf-8")
++        _write_workspace_sidecar(
++            workspace_dir=workspace_dir,
++            pid=proc.pid,
++            config_fingerprint=config_fingerprint,
++            deploy_mode=deploy_mode,
++        )
++        global _PROCESS_WORKSPACE, _PROCESS_DEPLOY_MODE
++        _PROCESS = proc
++        _PROCESS_WORKSPACE = workspace_dir
++        _PROCESS_DEPLOY_MODE = deploy_mode
++
++        # langgraph dev cold-starts in ~10-15s normally; first-time npx-based MCP
++        # servers can push this to 30-60s while npm fetches packages, so the budget
++        # is generous. Subsequent runs are much faster thanks to npm cache.
++        deadline = time.monotonic() + 60
++        while time.monotonic() < deadline:
++            if proc.poll() is not None:
++                tail = ""
++                try:
++                    tail = RUNTIME.log_file.read_text(
++                        encoding="utf-8", errors="replace"
++                    )[-2000:]
++                except Exception:
++                    pass
++                # Subprocess died on its own. The handler below clears our
++                # module-level bookkeeping (``_PROCESS``, ``_PROCESS_WORKSPACE``,
++                # ``RUNTIME.pid_file``) before this propagates.
++                raise RuntimeError(
++                    f"langgraph dev exited immediately with code {proc.returncode}.\n"
++                    f"Log tail:\n{tail}"
++                )
++            if is_langgraph_dev_running(port=port, host=host):
++                logger.info(
++                    "langgraph dev started on %s (pid=%d)",
++                    _base_url(port, host),
++                    proc.pid,
++                )
++                return proc
++            time.sleep(0.5)
+ 
+-    stop_langgraph_dev(proc)
+-    raise RuntimeError(
+-        f"langgraph dev did not become healthy within 60 seconds. Check {RUNTIME.log_file}"
+-    )
++        raise RuntimeError(
++            "langgraph dev did not become healthy within 60 seconds. "
++            f"Check {RUNTIME.log_file}"
++        )
++    except BaseException:
++        stop_langgraph_dev(proc)
++        raise
+ 
+ 
+ def read_tunnel_url(timeout: float = 35.0, poll_interval: float = 0.5) -> str | None:
+diff --git a/tests/test_langgraph_manager.py b/tests/test_langgraph_manager.py
+index 98c2448..ccf3a20 100644
+--- a/tests/test_langgraph_manager.py
++++ b/tests/test_langgraph_manager.py
+@@ -811,6 +811,79 @@ class TestStartLanggraphDevCapturesLogOffset:
+         assert env.captured["offset"] == 0
+ 
+ 
++class TestStartLanggraphDevCleansUpOnInterrupt:
++    """Ctrl+C (or any other exception) after ``Popen`` has spawned the
++    server but before ``start_langgraph_dev`` returns must stop the child.
++    The server runs in its own session/process group, so the terminal's
++    SIGINT never reaches it, and the caller's cleanup handlers are only
++    registered after this function returns — without this, the server is
++    orphaned along with its PID file and workspace sidecar (#534).
++    """
++
++    @pytest.fixture
++    def spawned(self, start_langgraph_dev_capture, monkeypatch):
++        env = start_langgraph_dev_capture
++        proc = MagicMock(pid=424242)
++        proc.poll.return_value = None  # still starting up
++        monkeypatch.setattr(
++            "EvoScientist.langgraph_dev.manager.subprocess.Popen",
++            lambda *a, **kw: proc,
++        )
++        monkeypatch.setattr(manager.time, "sleep", lambda _s: None)
++        stopped: list = []
++        monkeypatch.setattr(manager, "stop_langgraph_dev", stopped.append)
++        # start_langgraph_dev records the handle in module globals and the
++        # spy above does not clear them; let monkeypatch restore them so the
++        # fake handle does not leak into later tests.
++        monkeypatch.setattr(manager, "_PROCESS", None)
++        monkeypatch.setattr(manager, "_PROCESS_WORKSPACE", None)
++        monkeypatch.setattr(manager, "_PROCESS_DEPLOY_MODE", None)
++        return SimpleNamespace(env=env, proc=proc, stopped=stopped)
++
++    def test_keyboard_interrupt_during_health_poll_stops_server(
++        self, spawned, monkeypatch
++    ):
++        calls = {"n": 0}
++
++        def _running(*_a, **_kw):
++            # First call is the pre-spawn port check; interrupt the
++            # post-spawn health poll the way Ctrl+C would.
++            calls["n"] += 1
++            if calls["n"] > 1:
++                raise KeyboardInterrupt
++            return False
++
++        monkeypatch.setattr(manager, "is_langgraph_dev_running", _running)
++        with pytest.raises(KeyboardInterrupt):
++            manager.start_langgraph_dev(workspace_dir=spawned.env.tmp_path)
++        assert spawned.stopped == [spawned.proc]
++
++    def test_error_writing_sidecar_stops_server(self, spawned, monkeypatch):
++        monkeypatch.setattr(manager, "is_langgraph_dev_running", lambda *a, **kw: False)
++
++        def _boom(**_kw):
++            raise OSError("disk full")
++
++        monkeypatch.setattr(manager, "_write_workspace_sidecar", _boom)
++        with pytest.raises(OSError, match="disk full"):
++            manager.start_langgraph_dev(workspace_dir=spawned.env.tmp_path)
++        assert spawned.stopped == [spawned.proc]
++
++    def test_successful_start_does_not_stop_server(self, spawned, monkeypatch):
++        calls = {"n": 0}
++
++        def _running(*_a, **_kw):
++            calls["n"] += 1
++            return calls["n"] > 1  # healthy on first post-spawn poll
++
++        monkeypatch.setattr(manager, "is_langgraph_dev_running", _running)
++        assert (
++            manager.start_langgraph_dev(workspace_dir=spawned.env.tmp_path)
++            is spawned.proc
++        )
++        assert spawned.stopped == []
++
++
+ class TestStartLanggraphDevPropagatesPort:
+     """``start_langgraph_dev`` must export the effective bind port into the
+     subprocess env as ``EVOSCIENTIST_LANGGRAPH_DEV_PORT`` so the deployed
+-- 
+2.43.0
+
