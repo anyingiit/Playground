@@ -1,0 +1,139 @@
+From b7992682d48b9e265cf6234d4263d4dfb1c5c3ba Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:49:05 +0000
+Subject: [PATCH] fix: Reset active plugin when unregistered from
+ `PluginRegistry`
+
+Unregistering the currently active plugin (`register(name, None)`) left
+`_active`/`_active_name` pointing at the removed plugin. The registry now
+falls back to the "default" plugin when one is registered, and otherwise
+clears the active plugin and its options.
+
+`alt.theme.unregister` now routes through `PluginRegistry.register` so it
+gets the same behavior.
+
+Closes #3619
+---
+ altair/theme.py                     |  2 +-
+ altair/utils/plugin_registry.py     | 19 +++++++++++++++-
+ tests/utils/test_plugin_registry.py | 35 +++++++++++++++++++++++++++++
+ tests/vegalite/v6/test_theme.py     |  5 +++--
+ 4 files changed, 57 insertions(+), 4 deletions(-)
+
+diff --git a/altair/theme.py b/altair/theme.py
+index f0d8060..4182111 100644
+--- a/altair/theme.py
++++ b/altair/theme.py
+@@ -296,7 +296,7 @@ def _register(
+     name: LiteralString, fn: Plugin[ThemeConfig] | None, /
+ ) -> Plugin[ThemeConfig] | None:
+     if fn is None:
+-        return _themes._plugins.pop(name, None)
++        return _themes.register(name, None)
+     elif _themes.plugin_type(fn):
+         _themes._plugins[name] = fn
+         return fn
+diff --git a/altair/utils/plugin_registry.py b/altair/utils/plugin_registry.py
+index 43eb81e..c0e1626 100644
+--- a/altair/utils/plugin_registry.py
++++ b/altair/utils/plugin_registry.py
+@@ -162,9 +162,17 @@ class PluginRegistry(Generic[PluginT, R]):
+         -------
+         plugin: PluginType or None
+             The plugin that was registered or unregistered.
++
++        Notes
++        -----
++        Unregistering the currently active plugin re-enables the ``"default"``
++        plugin when one is registered, otherwise no plugin will be active.
+         """
+         if value is None:
+-            return self._plugins.pop(name, None)
++            plugin = self._plugins.pop(name, None)
++            if plugin is not None and name == self._active_name:
++                self._reset_active()
++            return plugin
+         elif self.plugin_type(value):
+             self._plugins[name] = value
+             return value
+@@ -172,6 +180,15 @@ class PluginRegistry(Generic[PluginT, R]):
+             msg = f"{type(value).__name__!r} is not compatible with {type(self).__name__!r}"
+             raise TypeError(msg)
+ 
++    def _reset_active(self) -> None:
++        """Fall back to the ``"default"`` plugin, or clear the active plugin."""
++        if "default" in self._plugins:
++            self._enable("default")
++        else:
++            self._active = None
++            self._active_name = ""
++            self._options = {}
++
+     def names(self) -> list[str]:
+         """List the names of the registered and entry points plugins."""
+         exts = list(self._plugins.keys())
+diff --git a/tests/utils/test_plugin_registry.py b/tests/utils/test_plugin_registry.py
+index 759a316..8d5d0c6 100644
+--- a/tests/utils/test_plugin_registry.py
++++ b/tests/utils/test_plugin_registry.py
+@@ -46,6 +46,41 @@ def test_plugin_registry():
+     )
+ 
+ 
++def test_plugin_registry_unregister_active():
++    # https://github.com/vega/altair/issues/3619
++    plugins = TypedCallableRegistry()
++    plugins.register("new_plugin", lambda x: x**2)
++    plugins.register("other_plugin", lambda x: x + 1)
++    plugins.enable("new_plugin")
++
++    # Unregistering an inactive plugin leaves the active plugin untouched
++    plugins.register("other_plugin", None)
++    assert plugins.active == "new_plugin"
++
++    # Without a "default" plugin, no plugin is active afterwards
++    plugins.register("new_plugin", None)
++    assert plugins.names() == []
++    assert plugins.active == ""
++    assert plugins.options == {}
++    assert plugins.get() is None
++
++
++def test_plugin_registry_unregister_active_resets_default():
++    # https://github.com/vega/altair/issues/3619
++    plugins = TypedCallableRegistry()
++    plugins.register("default", lambda x: x)
++    plugins.register("new_plugin", lambda x, p=2: x**p)
++    plugins.enable("new_plugin", p=3)
++
++    plugins.register("new_plugin", None)
++    assert plugins.names() == ["default"]
++    assert plugins.active == "default"
++    assert plugins.options == {}
++    fn = plugins.get()
++    assert fn is not None
++    assert fn(3) == 3
++
++
+ def test_plugin_registry_extra_options():
+     plugins = GeneralCallableRegistry()
+ 
+diff --git a/tests/vegalite/v6/test_theme.py b/tests/vegalite/v6/test_theme.py
+index 947ae11..6b703a3 100644
+--- a/tests/vegalite/v6/test_theme.py
++++ b/tests/vegalite/v6/test_theme.py
+@@ -105,8 +105,9 @@ def test_theme_unregister() -> None:
+     fn = theme.unregister("big square")
+     assert fn() == custom_theme()
+     assert theme.active == theme._themes.active
+-    # BUG: https://github.com/vega/altair/issues/3619
+-    # assert theme.active != "big square"
++    # https://github.com/vega/altair/issues/3619
++    assert theme.active == "default"
++    assert "big square" not in theme.names()
+ 
+     with pytest.raises(
+         TypeError, match=r"Found no theme named 'big square' in registry."
+-- 
+2.43.0
+
