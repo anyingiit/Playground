@@ -1,0 +1,1 @@
+Frame SNMP messages over TCP using the BER length

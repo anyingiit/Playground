@@ -1,0 +1,1 @@
+Use enum stream identifier when reading data enum variants

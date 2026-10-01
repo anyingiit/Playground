@@ -1,0 +1,1 @@
+fix: allow pulling a git source into an existing checkout

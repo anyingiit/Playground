@@ -1,0 +1,189 @@
+From 542a4e64a65147782b14e4a48da2aaa0efa5f577 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:20:22 +0000
+Subject: [PATCH] fix: explain why an action can't be pinned
+
+ErrCantPinned was returned without any context, so users couldn't tell
+why pinact refused to pin an action. Wrap it with the reason (non-semver
+version such as a branch, a hex string that isn't a full commit SHA, an
+invalid version comment, --no-api, etc.). errors.Is(err, ErrCantPinned)
+still holds, so exit codes are unchanged.
+
+Closes #1448
+---
+ pkg/controller/run/parse_line.go              | 33 +++++++---
+ .../run/parse_line_internal_test.go           | 60 +++++++++++++++++++
+ 2 files changed, 86 insertions(+), 7 deletions(-)
+
+diff --git a/pkg/controller/run/parse_line.go b/pkg/controller/run/parse_line.go
+index 299c910..608ba58 100644
+--- a/pkg/controller/run/parse_line.go
++++ b/pkg/controller/run/parse_line.go
+@@ -19,6 +19,7 @@ var (
+ 	fullCommitSHAPattern = regexp.MustCompile(`\b[0-9a-f]{40}\b`)
+ 	semverPattern        = regexp.MustCompile(`^v?\d+\.\d+\.\d+[^ ]*$`)
+ 	shortTagPattern      = regexp.MustCompile(`^v?\d+(\.\d+)?$`)
++	hexPattern           = regexp.MustCompile(`^[0-9a-f]+$`)
+ )
+ 
+ type Action struct {
+@@ -86,6 +87,24 @@ var (
+ 	ErrMissingVersionComment = errors.New("SHA-pinned action requires a version comment for verifiability")
+ )
+ 
++const whyNotPinDoc = "https://github.com/suzuki-shunsuke/pinact/blob/main/docs/why_pinact_not_pin.md"
++
++// errCantPinned wraps ErrCantPinned with the reason why the action can't be
++// pinned, so that users can tell what to fix from the error message.
++// errors.Is(err, ErrCantPinned) still holds for the returned error.
++func errCantPinned(reason string) error {
++	return fmt.Errorf("%w: %s", ErrCantPinned, reason)
++}
++
++// errNonSemverVersion returns the error for a version that is neither semver
++// nor a full commit SHA, such as a branch name or a non-semver tag.
++func errNonSemverVersion(v string) error {
++	if len(v) >= 7 && hexPattern.MatchString(v) {
++		return errCantPinned(fmt.Sprintf("the version %q looks like a commit hash but isn't a full-length (40 characters) commit SHA", v))
++	}
++	return errCantPinned(fmt.Sprintf("the version %q isn't semver: only semver versions (e.g. v1.2.3) and full-length commit SHAs are supported by design. To pin branches, use --branch-to-tag. See %s", v, whyNotPinDoc))
++}
++
+ // ignoreAction checks if an action should be ignored based on configuration.
+ // It evaluates the action against all ignore rules in the configuration.
+ func (c *Controller) ignoreAction(action *Action) bool {
+@@ -305,7 +324,7 @@ func (c *Controller) processAction(ctx context.Context, logger *slog.Logger, act
+ 			}
+ 			return "", nil
+ 		}
+-		return "", ErrCantPinned
++		return "", errCantPinned("the version can't be resolved to a commit SHA without the GitHub API (--no-api)")
+ 	}
+ 	switch getVersionType(action.Version) {
+ 	case FullCommitSHA:
+@@ -406,7 +425,7 @@ func (c *Controller) processTaggedVersion(ctx context.Context, logger *slog.Logg
+ 		return c.patchToLatestVersion(ctx, logger, action, lv)
+ 	default:
+ 		// Shortsemver or Other comment on an unpinned tag: invalid combination.
+-		return "", ErrCantPinned
++		return "", errCantPinned(fmt.Sprintf("the version comment %q isn't a full semver (e.g. v1.2.3)", action.VersionComment))
+ 	}
+ }
+ 
+@@ -418,17 +437,17 @@ func (c *Controller) processUnpinnedVersion(ctx context.Context, logger *slog.Lo
+ 		if c.matchBranchToTag(action.Version) {
+ 			return c.convertBranchToLatestTag(ctx, logger, action, resolved)
+ 		}
+-		return "", ErrCantPinned
++		return "", errNonSemverVersion(action.Version)
+ 	case Semver:
+ 		if !c.param.Update {
+-			return "", ErrCantPinned
++			return "", errCantPinned(fmt.Sprintf("the version %q isn't semver. To update it to the latest version, run with --update", action.Version))
+ 		}
+ 		lv, err := c.getLatestVersion(ctx, logger, action.RepoOwner, action.RepoName, action.VersionComment, resolved)
+ 		if err != nil {
+ 			return "", fmt.Errorf("get the latest version: %w", err)
+ 		}
+ 		if action.VersionComment == lv {
+-			return "", ErrCantPinned
++			return "", errCantPinned(fmt.Sprintf("the version %q isn't semver and the version comment %q is already the latest version", action.Version, action.VersionComment))
+ 		}
+ 		if !compareVersion(action.VersionComment, lv) {
+ 			warnSkipOlderVersion(logger, action.VersionComment, lv)
+@@ -436,7 +455,7 @@ func (c *Controller) processUnpinnedVersion(ctx context.Context, logger *slog.Lo
+ 		}
+ 		return c.patchToLatestVersion(ctx, logger, action, lv)
+ 	default:
+-		return "", ErrCantPinned
++		return "", errCantPinned(fmt.Sprintf("neither the version %q nor the version comment %q is semver", action.Version, action.VersionComment))
+ 	}
+ }
+ 
+@@ -483,7 +502,7 @@ func (c *Controller) convertBranchToLatestTag(ctx context.Context, logger *slog.
+ 			return "", fmt.Errorf("get the latest version: %w", err)
+ 		}
+ 		if lv == "" {
+-			return "", ErrCantPinned
++			return "", errCantPinned(fmt.Sprintf("no semver tag is found in %s/%s to convert the branch %q to", action.RepoOwner, action.RepoName, action.Version))
+ 		}
+ 	}
+ 	sha, _, err := c.repositoriesService.GetCommitSHA1(ctx, logger, action.RepoOwner, action.RepoName, lv, "")
+diff --git a/pkg/controller/run/parse_line_internal_test.go b/pkg/controller/run/parse_line_internal_test.go
+index 891a9f9..9dac83e 100644
+--- a/pkg/controller/run/parse_line_internal_test.go
++++ b/pkg/controller/run/parse_line_internal_test.go
+@@ -5,6 +5,7 @@ import (
+ 	"errors"
+ 	"log/slog"
+ 	"regexp"
++	"strings"
+ 	"testing"
+ 	"time"
+ 
+@@ -1383,3 +1384,62 @@ func TestController_minAgeFallback(t *testing.T) {
+ 		})
+ 	}
+ }
++
++func TestController_parseLine_cantPinnedReason(t *testing.T) {
++	t.Parallel()
++	data := []struct {
++		name    string
++		line    string
++		noAPI   bool
++		wantMsg string
++	}{
++		{
++			name:    "branch",
++			line:    "  - uses: actions/checkout@master",
++			wantMsg: "only semver versions",
++		},
++		{
++			name:    "non-semver tag",
++			line:    "  - uses: actions/checkout@latest",
++			wantMsg: "only semver versions",
++		},
++		{
++			name:    "hex string that isn't a full commit SHA",
++			line:    "  - uses: actions/checkout@d41d8cd98f00b204e9800998ecf8427e",
++			wantMsg: "full-length (40 characters) commit SHA",
++		},
++		{
++			name:    "short semver version comment on a tag",
++			line:    "  - uses: actions/checkout@v3 # v3",
++			wantMsg: "version comment",
++		},
++		{
++			name:    "semver version comment on a branch without --update",
++			line:    "  - uses: actions/checkout@main # v3.5.2",
++			wantMsg: "--update",
++		},
++		{
++			name:    "no api",
++			line:    "  - uses: actions/checkout@v3",
++			noAPI:   true,
++			wantMsg: "--no-api",
++		},
++	}
++	logger := slog.New(slog.DiscardHandler)
++	for _, d := range data {
++		t.Run(d.name, func(t *testing.T) {
++			t.Parallel()
++			fs := afero.NewMemMapFs()
++			ctrl := New(nil, nil, fs, &config.Config{
++				Separator: " # ",
++			}, &ParamRun{NoAPI: d.noAPI})
++			_, err := ctrl.parseLine(t.Context(), logger, d.line)
++			if !errors.Is(err, ErrCantPinned) {
++				t.Fatalf("wanted error %v, got %v", ErrCantPinned, err)
++			}
++			if !strings.Contains(err.Error(), d.wantMsg) {
++				t.Fatalf("error message %q should contain %q", err.Error(), d.wantMsg)
++			}
++		})
++	}
++}
+-- 
+2.43.0
+

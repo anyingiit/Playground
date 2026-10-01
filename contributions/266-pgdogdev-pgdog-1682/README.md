@@ -6,7 +6,7 @@
 | Tier | 新锐 |
 | Labels | 无 |
 | Status | ✅ ready — patch + PR 文本已完成，红→绿已验证 |
-| Base | `main` @ 80d6059 |
+| Base | `main` @ 80d6059（2026-10-01 复核：在 3151f93 上 git am 干净应用，红→绿复现） |
 | 重复 PR 检查 | 2026-10-01：`/pulls?q=1682` 0 结果；`is:pr RESET` 只有已合并的 #1655（RESET ALL 恢复启动参数，不同问题）；issue 无 assignee、无评论 |
 
 ## 问题理解

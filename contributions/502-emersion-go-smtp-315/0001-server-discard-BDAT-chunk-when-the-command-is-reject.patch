@@ -1,0 +1,148 @@
+From 9c1a3cf47242081b0b0e9f6e638ad8c526168d51 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:11:36 +0000
+Subject: [PATCH] server: discard BDAT chunk when the command is rejected
+
+The client may send the chunk right after the BDAT command without waiting
+for a reply, so the server has to consume it even when the command is
+rejected (missing MAIL FROM/RCPT TO, bad arguments). Otherwise the chunk
+data is interpreted as SMTP commands.
+
+Closes #315
+---
+ conn.go        | 34 +++++++++++++++++++++++++---------
+ server_test.go | 47 +++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 72 insertions(+), 9 deletions(-)
+
+diff --git a/conn.go b/conn.go
+index 0c9968c..670d614 100644
+--- a/conn.go
++++ b/conn.go
+@@ -996,29 +996,36 @@ func (c *Conn) handleBdat(arg string) {
+ 		c.writeResponse(501, EnhancedCode{5, 5, 4}, "Missing chunk size argument")
+ 		return
+ 	}
+-	if len(args) > 2 {
+-		c.writeResponse(501, EnhancedCode{5, 5, 4}, "Too many arguments")
++
++	// ParseUint instead of Atoi so we will not accept negative values.
++	size, err := strconv.ParseUint(args[0], 10, 32)
++	if err != nil {
++		c.writeResponse(501, EnhancedCode{5, 5, 4}, "Malformed size argument")
+ 		return
+ 	}
+ 
+-	if !c.fromReceived || len(c.recipients) == 0 {
+-		c.writeResponse(502, EnhancedCode{5, 5, 1}, "Missing RCPT TO command.")
++	// From now on the chunk size is known. The client may send the chunk
++	// right after the command without waiting for a response, so the chunk
++	// must be consumed even if the command is rejected (RFC 3030 section 2).
++	if len(args) > 2 {
++		c.discardChunk(size)
++		c.writeResponse(501, EnhancedCode{5, 5, 4}, "Too many arguments")
+ 		return
+ 	}
+ 
+ 	last := false
+ 	if len(args) == 2 {
+ 		if !strings.EqualFold(args[1], "LAST") {
++			c.discardChunk(size)
+ 			c.writeResponse(501, EnhancedCode{5, 5, 4}, "Unknown BDAT argument")
+ 			return
+ 		}
+ 		last = true
+ 	}
+ 
+-	// ParseUint instead of Atoi so we will not accept negative values.
+-	size, err := strconv.ParseUint(args[0], 10, 32)
+-	if err != nil {
+-		c.writeResponse(501, EnhancedCode{5, 5, 4}, "Malformed size argument")
++	if !c.fromReceived || len(c.recipients) == 0 {
++		c.discardChunk(size)
++		c.writeResponse(502, EnhancedCode{5, 5, 1}, "Missing RCPT TO command.")
+ 		return
+ 	}
+ 
+@@ -1026,7 +1033,7 @@ func (c *Conn) handleBdat(arg string) {
+ 		c.writeResponse(552, EnhancedCode{5, 3, 4}, "Max message size exceeded")
+ 
+ 		// Discard chunk itself without passing it to backend.
+-		io.Copy(ioutil.Discard, io.LimitReader(c.text.R, int64(size)))
++		c.discardChunk(size)
+ 
+ 		c.reset()
+ 		return
+@@ -1122,6 +1129,15 @@ func (c *Conn) handleBdat(arg string) {
+ 	}
+ }
+ 
++// discardChunk reads and drops a BDAT chunk of the given size from the
++// connection.
++func (c *Conn) discardChunk(size uint64) {
++	lineLimit := c.lineLimitReader.LineLimit
++	c.lineLimitReader.LineLimit = 0
++	io.Copy(ioutil.Discard, io.LimitReader(c.text.R, int64(size)))
++	c.lineLimitReader.LineLimit = lineLimit
++}
++
+ // ErrDataReset is returned by Reader pased to Data function if client does not
+ // send another BDAT command and instead closes connection or issues RSET command.
+ var ErrDataReset = errors.New("smtp: message transmission aborted")
+diff --git a/server_test.go b/server_test.go
+index 1ea46e4..e74f38f 100644
+--- a/server_test.go
++++ b/server_test.go
+@@ -1796,3 +1796,50 @@ func TestServerMTPRIORITY(t *testing.T) {
+ 		t.Fatalf("MTPriority: want %d, got %d", expectedPriority, *opts.MTPriority)
+ 	}
+ }
++
++func TestServer_Chunking_rejectedChunkDiscarded(t *testing.T) {
++	for _, tc := range []struct {
++		name  string
++		setup []string
++		bdat  string
++		code  string
++	}{
++		{"noMail", nil, "BDAT 6 LAST", "502 "},
++		{"noRcpt", []string{"MAIL FROM:<root@nsa.gov>"}, "BDAT 6 LAST", "502 "},
++		{"badArg", []string{"MAIL FROM:<root@nsa.gov>", "RCPT TO:<root@gchq.gov.uk>"}, "BDAT 6 FIRST", "501 "},
++		{"tooManyArgs", []string{"MAIL FROM:<root@nsa.gov>", "RCPT TO:<root@gchq.gov.uk>"}, "BDAT 6 LAST X", "501 "},
++	} {
++		t.Run(tc.name, func(t *testing.T) {
++			be, s, c, scanner := testServerAuthenticated(t)
++			defer s.Close()
++			defer c.Close()
++
++			for _, cmd := range tc.setup {
++				io.WriteString(c, cmd+"\r\n")
++				scanner.Scan()
++				if !strings.HasPrefix(scanner.Text(), "250 ") {
++					t.Fatalf("Invalid response to %q: %v", cmd, scanner.Text())
++				}
++			}
++
++			// The chunk is pipelined right after the command, so the server
++			// must consume it even though the command is rejected.
++			io.WriteString(c, tc.bdat+"\r\n")
++			io.WriteString(c, "QUIT\r\n")
++			scanner.Scan()
++			if !strings.HasPrefix(scanner.Text(), tc.code) {
++				t.Fatal("Invalid BDAT response:", scanner.Text())
++			}
++
++			io.WriteString(c, "NOOP\r\n")
++			scanner.Scan()
++			if !strings.HasPrefix(scanner.Text(), "250 ") {
++				t.Fatal("Invalid NOOP response, chunk was not discarded:", scanner.Text())
++			}
++
++			if len(be.messages) != 0 || len(be.anonmsgs) != 0 {
++				t.Fatal("Invalid number of sent messages:", be.messages, be.anonmsgs)
++			}
++		})
++	}
++}
+-- 
+2.43.0
+

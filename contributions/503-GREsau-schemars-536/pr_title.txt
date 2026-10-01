@@ -1,0 +1,1 @@
+Respect serde(default) when setting minItems for tuple structs

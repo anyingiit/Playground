@@ -1,0 +1,83 @@
+From 82724af4e737fa751db44f76f6527a882fae8be1 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:27:30 +0000
+Subject: [PATCH] Use enum stream identifier when reading data enum variants
+
+When an enum used `#[br(stream = ident)]`, the original reader was moved
+into `ident` in the prelude, but each variant was generated as a struct
+without a stream identifier and so still referred to the original reader.
+This caused E0382 (borrow of moved value) as soon as a variant used the
+reader, e.g. via `count`.
+
+Variants now inherit the enum's stream identifier.
+
+Fixes #370.
+---
+ binrw/tests/derive/enum.rs                    | 25 +++++++++++++++++++
+ .../src/binrw/codegen/read_options/enum.rs    | 10 ++++++--
+ 2 files changed, 33 insertions(+), 2 deletions(-)
+
+diff --git a/binrw/tests/derive/enum.rs b/binrw/tests/derive/enum.rs
+index 0d46be1..abebfb2 100644
+--- a/binrw/tests/derive/enum.rs
++++ b/binrw/tests/derive/enum.rs
+@@ -366,3 +366,28 @@ fn mixed_enum() {
+         <Test as binrw::BinRead>::read(&mut binrw::io::Cursor::new(b"\x02\0\x03\0\x04")).unwrap();
+     t::assert_eq!(result, Test::Two { a: 3, b: 4 });
+ }
++
++// See https://github.com/jam1garner/binrw/issues/370
++#[test]
++fn enum_named_stream_with_count() {
++    #[binrw::binread]
++    #[derive(Debug, PartialEq)]
++    #[br(stream = s)]
++    enum Test {
++        #[br(magic = 0u8)]
++        A {
++            #[br(count = 1)]
++            a: t::Vec<u8>,
++        },
++        #[br(magic = 1u8)]
++        B {
++            #[br(count = 2)]
++            b: t::Vec<u8>,
++        },
++    }
++
++    t::assert_eq!(
++        <Test as binrw::BinRead>::read_le(&mut binrw::io::Cursor::new(b"\x01\x02\x03")).unwrap(),
++        Test::B { b: t::vec![2, 3] }
++    );
++}
+diff --git a/binrw_derive/src/binrw/codegen/read_options/enum.rs b/binrw_derive/src/binrw/codegen/read_options/enum.rs
+index 26fe0d2..c27636b 100644
+--- a/binrw_derive/src/binrw/codegen/read_options/enum.rs
++++ b/binrw_derive/src/binrw/codegen/read_options/enum.rs
+@@ -10,7 +10,7 @@ use crate::binrw::{
+             READ_METHOD, READER, RESTORE_POSITION_VARIANT, TEMP, VEC, WITH_CONTEXT,
+         },
+     },
+-    parser::{Enum, EnumErrorMode, EnumVariant, Input, UnitEnumField, UnitOnlyEnum},
++    parser::{Enum, EnumErrorMode, EnumVariant, Input, Struct, UnitEnumField, UnitOnlyEnum},
+ };
+ use proc_macro2::TokenStream;
+ use quote::quote;
+@@ -226,7 +226,13 @@ pub(super) fn generate_data_enum(input: &Input, name: Option<&Ident>, en: &Enum)
+ }
+ 
+ fn generate_variant_impl(en: &Enum, variant: &EnumVariant) -> TokenStream {
+-    let input = Input::Struct(variant.clone().into());
++    let mut variant_input: Struct = variant.clone().into();
++    // Variants read from the same stream as the enum, so they must use the
++    // enum's stream identifier instead of the original (moved) reader.
++    if variant_input.stream_ident.is_none() {
++        variant_input.stream_ident.clone_from(&en.stream_ident);
++    }
++    let input = Input::Struct(variant_input);
+ 
+     match variant {
+         EnumVariant::Variant { ident, options } => StructGenerator::new(&input, options)
+-- 
+2.43.0
+

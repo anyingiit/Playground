@@ -1,0 +1,294 @@
+From 4901f02a31148f858b4282a27d36c069157bd6fc Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:14:30 +0000
+Subject: [PATCH] Respect serde(default) when setting minItems for tuple
+ structs
+
+When deserializing a tuple struct, serde fills in trailing elements that
+are missing from the sequence using their default values, if the field or
+the container has `#[serde(default)]`. The generated "deserialize" schema
+previously always set `minItems` to the number of elements, so it rejected
+input like `["abc"]` that deserializes successfully.
+
+Now `minItems` (for the deserialize contract) only counts elements up to
+the last one without a default. The serialize schema is unchanged.
+
+Fixes #536
+---
+ schemars/tests/integration/default.rs         | 42 +++++++++++++++++++
+ ....rs~default_container_tuple_struct.de.json | 16 +++++++
+ ...rs~default_container_tuple_struct.ser.json | 17 ++++++++
+ ...ult.rs~default_fields_tuple_struct.de.json | 20 +++++++++
+ ...lt.rs~default_fields_tuple_struct.ser.json | 20 +++++++++
+ ...lt_skip_deserializing_tuple_struct.de.json | 17 ++++++++
+ ...t_skip_deserializing_tuple_struct.ser.json | 21 ++++++++++
+ schemars_derive/src/schema_exprs.rs           | 24 ++++++++++-
+ 8 files changed, 176 insertions(+), 1 deletion(-)
+ create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.de.json
+ create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.ser.json
+ create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_fields_tuple_struct.de.json
+ create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_fields_tuple_struct.ser.json
+ create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_skip_deserializing_tuple_struct.de.json
+ create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_skip_deserializing_tuple_struct.ser.json
+
+diff --git a/schemars/tests/integration/default.rs b/schemars/tests/integration/default.rs
+index 6df51cc..3ac4685 100644
+--- a/schemars/tests/integration/default.rs
++++ b/schemars/tests/integration/default.rs
+@@ -93,3 +93,45 @@ fn default_fields() {
+             "structs with `#derive(Deserialize)` can technically be deserialized from sequences, but that's not intended to be used via JSON, so schemars ignores it",
+         ));
+ }
++
++#[derive(JsonSchema, Deserialize, Serialize, Default)]
++struct TupleStructFieldDefault(String, #[serde(default)] u32, #[serde(default)] bool);
++
++#[test]
++fn default_fields_tuple_struct() {
++    test!(TupleStructFieldDefault)
++        .assert_snapshot()
++        .assert_allows_ser_roundtrip_default()
++        .assert_allows_de_roundtrip([json!(["abc"]), json!(["abc", 1]), json!(["abc", 1, true])])
++        .assert_rejects_de([json!([])])
++        .assert_matches_de_roundtrip(arbitrary_values());
++}
++
++#[derive(JsonSchema, Deserialize, Serialize, Default)]
++#[serde(default)]
++struct TupleStructContainerDefault(String, u32);
++
++#[test]
++fn default_container_tuple_struct() {
++    test!(TupleStructContainerDefault)
++        .assert_snapshot()
++        .assert_allows_ser_roundtrip_default()
++        .assert_allows_de_roundtrip([json!([]), json!(["abc"]), json!(["abc", 1])])
++        .assert_matches_de_roundtrip(arbitrary_values());
++}
++
++#[derive(JsonSchema, Deserialize, Serialize, Default)]
++struct TupleStructSkipDeserializingDefault(
++    String,
++    #[serde(skip_deserializing)] bool,
++    #[serde(default)] u32,
++);
++
++#[test]
++fn default_skip_deserializing_tuple_struct() {
++    test!(TupleStructSkipDeserializingDefault)
++        .assert_snapshot()
++        .assert_allows_ser_roundtrip_default()
++        .assert_allows_de_roundtrip([json!(["abc"]), json!(["abc", 1])])
++        .assert_matches_de_roundtrip(arbitrary_values());
++}
+diff --git a/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.de.json b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.de.json
+new file mode 100644
+index 0000000..fbf14d4
+--- /dev/null
++++ b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.de.json
+@@ -0,0 +1,16 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "maxItems": 2,
++  "prefixItems": [
++    {
++      "type": "string"
++    },
++    {
++      "format": "uint32",
++      "minimum": 0,
++      "type": "integer"
++    }
++  ],
++  "title": "TupleStructContainerDefault",
++  "type": "array"
++}
+\ No newline at end of file
+diff --git a/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.ser.json b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.ser.json
+new file mode 100644
+index 0000000..a562212
+--- /dev/null
++++ b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.ser.json
+@@ -0,0 +1,17 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "maxItems": 2,
++  "minItems": 2,
++  "prefixItems": [
++    {
++      "type": "string"
++    },
++    {
++      "format": "uint32",
++      "minimum": 0,
++      "type": "integer"
++    }
++  ],
++  "title": "TupleStructContainerDefault",
++  "type": "array"
++}
+\ No newline at end of file
+diff --git a/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_fields_tuple_struct.de.json b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_fields_tuple_struct.de.json
+new file mode 100644
+index 0000000..dfca7fe
+--- /dev/null
++++ b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_fields_tuple_struct.de.json
+@@ -0,0 +1,20 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "maxItems": 3,
++  "minItems": 1,
++  "prefixItems": [
++    {
++      "type": "string"
++    },
++    {
++      "format": "uint32",
++      "minimum": 0,
++      "type": "integer"
++    },
++    {
++      "type": "boolean"
++    }
++  ],
++  "title": "TupleStructFieldDefault",
++  "type": "array"
++}
+\ No newline at end of file
+diff --git a/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_fields_tuple_struct.ser.json b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_fields_tuple_struct.ser.json
+new file mode 100644
+index 0000000..f71f87e
+--- /dev/null
++++ b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_fields_tuple_struct.ser.json
+@@ -0,0 +1,20 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "maxItems": 3,
++  "minItems": 3,
++  "prefixItems": [
++    {
++      "type": "string"
++    },
++    {
++      "format": "uint32",
++      "minimum": 0,
++      "type": "integer"
++    },
++    {
++      "type": "boolean"
++    }
++  ],
++  "title": "TupleStructFieldDefault",
++  "type": "array"
++}
+\ No newline at end of file
+diff --git a/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_skip_deserializing_tuple_struct.de.json b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_skip_deserializing_tuple_struct.de.json
+new file mode 100644
+index 0000000..1a0be05
+--- /dev/null
++++ b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_skip_deserializing_tuple_struct.de.json
+@@ -0,0 +1,17 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "maxItems": 2,
++  "minItems": 1,
++  "prefixItems": [
++    {
++      "type": "string"
++    },
++    {
++      "format": "uint32",
++      "minimum": 0,
++      "type": "integer"
++    }
++  ],
++  "title": "TupleStructSkipDeserializingDefault",
++  "type": "array"
++}
+\ No newline at end of file
+diff --git a/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_skip_deserializing_tuple_struct.ser.json b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_skip_deserializing_tuple_struct.ser.json
+new file mode 100644
+index 0000000..7c0a7c5
+--- /dev/null
++++ b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_skip_deserializing_tuple_struct.ser.json
+@@ -0,0 +1,21 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "maxItems": 3,
++  "minItems": 3,
++  "prefixItems": [
++    {
++      "type": "string"
++    },
++    {
++      "readOnly": true,
++      "type": "boolean"
++    },
++    {
++      "format": "uint32",
++      "minimum": 0,
++      "type": "integer"
++    }
++  ],
++  "title": "TupleStructSkipDeserializingDefault",
++  "type": "array"
++}
+\ No newline at end of file
+diff --git a/schemars_derive/src/schema_exprs.rs b/schemars_derive/src/schema_exprs.rs
+index 45e7b13..4333739 100644
+--- a/schemars_derive/src/schema_exprs.rs
++++ b/schemars_derive/src/schema_exprs.rs
+@@ -644,12 +644,31 @@ fn expr_for_newtype_struct(cont: &Container, field: &Field) -> SchemaExpr {
+ }
+ 
+ fn expr_for_tuple_struct(cont: &Container, fields: &[Field]) -> SchemaExpr {
++    let container_has_default = !cont.serde_attrs.default().is_none();
++
+     let fields: Vec<_> = fields
+         .iter()
+         .map(|f| {
+             let field_expr = expr_for_field(cont, f, false);
++
++            // When deserializing, serde fills in trailing elements missing from the sequence
++            // using their default values (if they have any), so those elements are optional.
++            let has_default = container_has_default || !f.serde_attrs.default().is_none();
++            let update_min_len = if has_default {
++                quote! {
++                    if #GENERATOR.contract().is_serialize() {
++                        min_len = prefix_items.len();
++                    }
++                }
++            } else {
++                quote! {
++                    min_len = prefix_items.len();
++                }
++            };
++
+             f.with_contract_check(quote! {
+                 prefix_items.push((#field_expr).to_value());
++                #update_min_len
+             })
+         })
+         .collect();
+@@ -660,6 +679,7 @@ fn expr_for_tuple_struct(cont: &Container, fields: &[Field]) -> SchemaExpr {
+     // items have `skip_serializing` or `skip_deserializing` attributes.
+     quote!({
+         let mut prefix_items = schemars::_private::alloc::vec::Vec::<schemars::_private::serde_json::Value>::with_capacity(#max_len);
++        let mut min_len = 0usize;
+         #(#fields)*
+         let len = prefix_items.len();
+ 
+@@ -667,7 +687,9 @@ fn expr_for_tuple_struct(cont: &Container, fields: &[Field]) -> SchemaExpr {
+         map.insert("type".into(), "array".into());
+         if !prefix_items.is_empty() {
+             map.insert("prefixItems".into(), prefix_items.into());
+-            map.insert("minItems".into(), len.into());
++            if min_len > 0 {
++                map.insert("minItems".into(), min_len.into());
++            }
+         }
+         map.insert("maxItems".into(), len.into());
+ 
+-- 
+2.43.0
+

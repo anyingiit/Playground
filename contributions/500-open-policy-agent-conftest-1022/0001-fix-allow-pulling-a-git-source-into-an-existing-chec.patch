@@ -1,0 +1,152 @@
+From b3c40029807e5c192328647317394a2862b78f93 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:09:14 +0000
+Subject: [PATCH] fix: allow pulling a git source into an existing checkout
+
+Running `conftest pull git::<repo>` a second time failed because the
+destination already held a checkout, so go-getter took its update path
+and tried to fetch and check out an empty ref. Unlike cloning, the
+update path does not fall back to the remote's default branch.
+
+When the destination is already a git checkout and the URL has no
+ref, request ref=HEAD so the update fetches the remote's default
+branch, matching what a fresh clone checks out. URLs with an explicit
+ref, subdirectory sources and non-checkout destinations are unchanged.
+
+Fixes #1022
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ downloader/downloader.go      | 46 +++++++++++++++++++++++++++++++++++
+ downloader/downloader_test.go | 44 +++++++++++++++++++++++++++++++++
+ 2 files changed, 90 insertions(+)
+
+diff --git a/downloader/downloader.go b/downloader/downloader.go
+index def1b13..afdffda 100644
+--- a/downloader/downloader.go
++++ b/downloader/downloader.go
+@@ -3,6 +3,7 @@ package downloader
+ import (
+ 	"context"
+ 	"fmt"
++	"net/url"
+ 	"os"
+ 	"path/filepath"
+ 	"strings"
+@@ -94,6 +95,13 @@ func Download(ctx context.Context, dst string, urls []string, opts ...DownloadOp
+ 			}
+ 		}
+ 
++		if isGitSource {
++			detectedURL, err = withDefaultGitRefForUpdate(detectedURL, dst)
++			if err != nil {
++				return err
++			}
++		}
++
+ 		if err := get(ctx, detectedURL, dst, dst); err != nil {
+ 			return err
+ 		}
+@@ -102,6 +110,44 @@ func Download(ctx context.Context, dst string, urls []string, opts ...DownloadOp
+ 	return nil
+ }
+ 
++// withDefaultGitRefForUpdate sets ref=HEAD on a git source URL that has no
++// ref when dst already holds a git checkout (e.g. on a repeated pull).
++// go-getter's git getter updates an existing destination by fetching and
++// checking out the requested ref, and fails with an empty ref instead of
++// falling back to the remote's default branch as it does when cloning.
++// Fetching the remote's HEAD keeps the same "default branch" behavior.
++func withDefaultGitRefForUpdate(src string, dst string) (string, error) {
++	if !isGitCheckout(dst) {
++		return src, nil
++	}
++
++	// Subdirectory sources ("repo//dir") are cloned into a temporary
++	// directory by go-getter, so they never take the update path.
++	repo, subDir := getter.SourceDirSubdir(strings.TrimPrefix(src, "git::"))
++	if subDir != "" {
++		return src, nil
++	}
++
++	u, err := url.Parse(repo)
++	if err != nil {
++		return "", fmt.Errorf("parse git url: %w", err)
++	}
++
++	query := u.Query()
++	if query.Get("ref") != "" {
++		return src, nil
++	}
++	query.Set("ref", "HEAD")
++	u.RawQuery = query.Encode()
++
++	return "git::" + u.String(), nil
++}
++
++func isGitCheckout(dir string) bool {
++	_, err := os.Stat(filepath.Join(dir, ".git"))
++	return err == nil
++}
++
+ // removeEmptyDestination removes dst if it exists but is empty. go-getter's
+ // git getter decides whether to clone or update a destination based solely
+ // on whether it already exists, so a pre-existing, empty directory (created
+diff --git a/downloader/downloader_test.go b/downloader/downloader_test.go
+index d8d06d6..5a06965 100644
+--- a/downloader/downloader_test.go
++++ b/downloader/downloader_test.go
+@@ -164,6 +164,50 @@ func TestDownloadFailsWithPreexistingEmptyGitDestination(t *testing.T) {
+ 	}
+ }
+ 
++// TestDownloadGitUpdatesExistingCheckoutWithoutRef is a regression test for
++// https://github.com/open-policy-agent/conftest/issues/1022, where running
++// `conftest pull git::<repo>` a second time failed because the destination
++// already contained a checkout and go-getter's update path ran
++// `git fetch origin -- ""` when the URL had no ref.
++func TestDownloadGitUpdatesExistingCheckoutWithoutRef(t *testing.T) {
++	if _, err := exec.LookPath("git"); err != nil {
++		t.Skip("git is not available")
++	}
++
++	repoDir := t.TempDir()
++	runGit(t, repoDir, "init", "-q")
++	writeAndCommit(t, repoDir, "policy.rego", "package main\n", "first")
++
++	dst := filepath.Join(t.TempDir(), "policy")
++	urls := []string{fmt.Sprintf("git::file://%s", repoDir)}
++	if err := Download(context.Background(), dst, urls); err != nil {
++		t.Fatalf("first download: %v", err)
++	}
++
++	writeAndCommit(t, repoDir, "policy.rego", "package updated\n", "second")
++
++	if err := Download(context.Background(), dst, urls); err != nil {
++		t.Fatalf("expected download into an existing checkout to succeed, got: %v", err)
++	}
++
++	contents, err := os.ReadFile(filepath.Join(dst, "policy.rego"))
++	if err != nil {
++		t.Fatalf("read policy: %v", err)
++	}
++	if got, want := string(contents), "package updated\n"; got != want {
++		t.Errorf("expected existing checkout to be updated, got %q, want %q", got, want)
++	}
++}
++
++func writeAndCommit(t *testing.T, dir, name, contents, message string) {
++	t.Helper()
++	if err := os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o600); err != nil {
++		t.Fatalf("write %s: %v", name, err)
++	}
++	runGit(t, dir, "add", name)
++	runGit(t, dir, "-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "-q", "-m", message)
++}
++
+ func runGit(t *testing.T, dir string, args ...string) {
+ 	t.Helper()
+ 	cmd := exec.Command("git", args...)
+-- 
+2.43.0
+

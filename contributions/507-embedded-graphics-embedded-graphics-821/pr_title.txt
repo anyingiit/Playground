@@ -1,0 +1,1 @@
+Fix integer overflow in ImageRaw::draw_sub_image bounds check

@@ -5,7 +5,7 @@
 | Issue | https://github.com/floci-io/floci/issues/4740 |
 | Tier | 新锐 |
 | Labels | bug, lambda, sqs |
-| Status | ✅ ready (2026-10-01): patch 已导出，red→green 已验证，checkstyle / docs-check / partition-check 通过 |
+| Status | ⏭ skipped (2026-10-01 review): competing PR #4851 by @abdulwalidal (open, "Closes #4740", same fix: SQS 10 / others 100) appeared after prep; patch itself applied cleanly on main@f1d718c |
 | 重复 PR 检查 | 2026-10-01 在 `/pulls?q=4740` 和 `/pulls?q=BatchSize` 都没有找到处理此 issue 的 PR（唯一的 open PR #4739 是 CloudFormation mapping 测试，和本 issue 无关）。issue 没有 assignee，也没有评论 |
 | Base | `main` @ f1d718c |
 

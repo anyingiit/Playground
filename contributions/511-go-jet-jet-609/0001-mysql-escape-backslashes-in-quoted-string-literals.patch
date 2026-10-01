@@ -1,0 +1,79 @@
+From bb8aadc17513ff57c5beca9a4dc01800f77f873e Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:30:30 +0000
+Subject: [PATCH] mysql: escape backslashes in quoted string literals
+
+MySQL treats backslash as an escape character inside string literals
+(unless NO_BACKSLASH_ESCAPES sql mode is set). Quoting strings only by
+doubling single quotes allowed a FixedLiteral (or a DebugSql string
+argument) such as `\'; DROP TABLE t; --` to break out of the literal.
+
+Escape backslashes as well in the MySQL dialect argument serializer.
+
+Fixes #609
+---
+ mysql/dialect.go      | 11 +++++++++++
+ mysql/literal_test.go |  9 +++++++++
+ 2 files changed, 20 insertions(+)
+
+diff --git a/mysql/dialect.go b/mysql/dialect.go
+index 71a8e38..5e8a5fa 100644
+--- a/mysql/dialect.go
++++ b/mysql/dialect.go
+@@ -3,6 +3,7 @@ package mysql
+ import (
+ 	"encoding/hex"
+ 	"fmt"
++	"strings"
+ 
+ 	"github.com/go-jet/jet/v2/internal/jet"
+ )
+@@ -60,11 +61,21 @@ func argumentToString(value any) (string, bool) {
+ 	switch bindVal := value.(type) {
+ 	case []byte:
+ 		return fmt.Sprintf("X'%s'", hex.EncodeToString(bindVal)), true
++	case string:
++		return stringQuote(bindVal), true
+ 	}
+ 
+ 	return "", false
+ }
+ 
++// MySQL treats backslash as an escape character inside string literals (unless NO_BACKSLASH_ESCAPES sql mode
++// is enabled), so in addition to doubling single quotes, backslashes have to be escaped as well.
++var stringQuoteReplacer = strings.NewReplacer(`\`, `\\`, `'`, `''`)
++
++func stringQuote(value string) string {
++	return `'` + stringQuoteReplacer.Replace(value) + `'`
++}
++
+ func mysqlBitXor(expressions ...jet.Serializer) jet.SerializerFunc {
+ 	return func(statement jet.StatementType, out *jet.SQLBuilder, options ...jet.SerializeOption) {
+ 		if len(expressions) < 2 {
+diff --git a/mysql/literal_test.go b/mysql/literal_test.go
+index fb96641..c4858a2 100644
+--- a/mysql/literal_test.go
++++ b/mysql/literal_test.go
+@@ -1,6 +1,7 @@
+ package mysql
+ 
+ import (
++	"github.com/go-jet/jet/v2/internal/jet"
+ 	"math"
+ 	"testing"
+ 	"time"
+@@ -81,3 +82,11 @@ func TestTimestamp(t *testing.T) {
+ 	assertSerialize(t, Timestamp(2010, time.March, 30, 10, 15, 30), `TIMESTAMP(?)`, "2010-03-30 10:15:30")
+ 	assertSerialize(t, TimestampT(time.Now()), `TIMESTAMP(?)`)
+ }
++
++func TestStringLiteralBackslashEscaping(t *testing.T) {
++	// MySQL treats backslash as an escape character inside string literals (unless NO_BACKSLASH_ESCAPES is set),
++	// so backslashes have to be escaped as well, otherwise value can break out of the string literal.
++	assertSerialize(t, jet.FixedLiteral(`\'; DROP TABLE sensitive; --`), `'\\''; DROP TABLE sensitive; --'`)
++	assertSerialize(t, jet.FixedLiteral(`C:\path\to\file`), `'C:\\path\\to\\file'`)
++	assertDebugSerialize(t, String(`it's a \ backslash`), `'it''s a \\ backslash'`)
++}
+-- 
+2.43.0
+

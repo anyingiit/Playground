@@ -1,0 +1,87 @@
+From 9e4d51dcf0db038ca5e97f5d8b77f56dfbe777d5 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:23:22 +0000
+Subject: [PATCH] Fix integer overflow in ImageRaw::draw_sub_image bounds check
+
+The bounds check in `ImageRaw::draw_sub_image` added the sub image size
+to its top left corner using `u32` arithmetic. For very large areas this
+addition overflows, which caused a panic in debug builds. In release
+builds the sum wrapped around and could pass the check, which led to an
+underflow when calculating the row skip and to an invalid pixel iterator.
+
+Use checked additions and treat an overflow as an area that lies outside
+of the image, in which case nothing is drawn.
+
+Fixes #821
+---
+ CHANGELOG.md           |  1 +
+ src/image/image_raw.rs | 33 +++++++++++++++++++++++++++++++--
+ 2 files changed, 32 insertions(+), 2 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 2515a4e..9ea7cb1 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -35,6 +35,7 @@ Embedded Graphics is a `no_std` library for adding graphics features to display
+ ### Fixed
+ 
+ - [#824](https://github.com/embedded-graphics/embedded-graphics/pull/824) Fixed an integer overflow in the line joint calculation, which caused a panic when a `Triangle` or `Polyline` with a large corner was drawn with a stroke.
++- [#821](https://github.com/embedded-graphics/embedded-graphics/issues/821) Fixed an integer overflow in the bounds check of `ImageRaw::draw_sub_image`, which caused a panic in debug builds or an incorrect bounds check in release builds when a very large sub image area was used.
+ 
+ ## [0.8.2] - 2026-02-15
+ 
+diff --git a/src/image/image_raw.rs b/src/image/image_raw.rs
+index 036c73e..fd689ba 100644
+--- a/src/image/image_raw.rs
++++ b/src/image/image_raw.rs
+@@ -221,11 +221,16 @@ where
+         D: DrawTarget<Color = Self::Color>,
+     {
+         // Don't draw anything if `area` is zero sized or partially outside the image.
++        // Checked additions are used to prevent overflows for very large areas.
+         if area.is_zero_sized()
+             || area.top_left.x < 0
+             || area.top_left.y < 0
+-            || area.top_left.x as u32 + area.size.width > self.size.width
+-            || area.top_left.y as u32 + area.size.height > self.size.height
++            || (area.top_left.x as u32)
++                .checked_add(area.size.width)
++                .map_or(true, |right| right > self.size.width)
++            || (area.top_left.y as u32)
++                .checked_add(area.size.height)
++                .map_or(true, |bottom| bottom > self.size.height)
+         {
+             return Ok(());
+         }
+@@ -746,4 +751,28 @@ mod tests {
+         assert_eq!(image_data.pixel(Point::new(9, 0)), None);
+         assert_eq!(image_data.pixel(Point::new(9, 3)), None);
+     }
++
++    #[test]
++    fn draw_sub_image_with_overflowing_area() {
++        let data = [
++            0xAA, 0x00, //
++            0x55, 0xFF, //
++            0xAA, 0x80, //
++        ];
++        let image_data = ImageRaw::<BinaryColor>::new(&data, Size::new(9, 3)).unwrap();
++
++        // `top_left + size` overflows `u32` and would wrap around to a value inside the image.
++        let areas = [
++            Rectangle::new(Point::new(1, 0), Size::new(u32::MAX, 1)),
++            Rectangle::new(Point::new(0, 1), Size::new(1, u32::MAX)),
++            Rectangle::new(Point::new(i32::MAX, 0), Size::new(u32::MAX, 1)),
++            Rectangle::new(Point::new(0, i32::MAX), Size::new(1, u32::MAX)),
++        ];
++
++        for area in areas {
++            let mut display = MockDisplay::<BinaryColor>::new();
++            image_data.draw_sub_image(&mut display, &area).unwrap();
++            display.assert_pattern(&[]);
++        }
++    }
+ }
+-- 
+2.43.0
+

@@ -49,3 +49,9 @@ tools/submit_pr.sh contributions/259-DeusData-codebase-memory-mcp-2232 DeusData/
 ```
 
 PR 标题见 `pr_title.txt`，正文见 `pr_body.md`。
+
+## 独立复核（2026-10-01）
+- issue #2232 仍为 open、无 assignee、无评论；`/pulls?q=2232` 只有已合并的 #2065 和无关的 #924；`project-health` 的 open PR（#2258、#2068）都不相关。
+- 补丁可以 `git am` 到最新 main @ c61b380（已比 0f52d30c 更新）。
+- `make -f Makefile.cbm -j2 test-focused TEST_SUITES=httpd`：带修复 → `66 passed, 1 skipped`；只回退 `src/ui/http_server.c` → `FAIL tests/test_httpd.c:1470`，rc=2。
+- author 和 Signed-off-by 都是 noreply 身份，符合 WORKER_BRIEF（repo 要求 DCO）。

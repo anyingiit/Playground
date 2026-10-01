@@ -52,3 +52,11 @@ tools/submit_pr.sh contributions/250-symfony-ai-2430 symfony/ai main platform-as
 ```
 
 PR 标题见 `pr_title.txt`，正文见 `pr_body.md`。
+
+## 独立复核（2026-10-01）
+- issue #2430 仍 open、无 assignee/评论；`pulls?q=2430` 仅已合并的 #2382 → 无竞争 PR。
+- 补丁在 main@9209a92 新浅克隆上 `git am` 干净应用；新测试 OK (18 tests, 56 assertions)。
+- RED 复现：禁用 `CustomToolCallResult` 分支 → Errors: 1；新增 `Result\FooResult` → Failures: 1（"neither mapped…"）；恢复后 GREEN。`tests/Message` 全部通过。
+- 符合 AGENTS.md（测试方法无 void、`$this->assert*`、无 AI co-author）。
+- 修正：pr_body.md 去掉与模板重复的 "Related issue" 段和 n/a 的未勾选项，Checklist 改为 Verification。补丁未改动。
+- 注：`git am`（无 `-k`）会去掉提交主题里的 `[Platform]` 前缀，对 Symfony（按 PR 标题合并）无影响。
