@@ -1,0 +1,404 @@
+[
+ {
+  "url": "https://github.com/prometheus/prometheus/issues/11964",
+  "repo": "prometheus/prometheus",
+  "tier": "高星",
+  "note": "Go. promtool tsdb create-blocks-from openmetrics drops exemplars; the backfill path never calls AppendExemplar. Concrete, unit-testable in cmd/promtool. help wanted, unassigned, no PR found. AGENTS.md exists and has no AI ban. DCO sign-off is required (owner signs)."
+ },
+ {
+  "url": "https://github.com/phpmyadmin/phpmyadmin/issues/19578",
+  "repo": "phpmyadmin/phpmyadmin",
+  "tier": "高星",
+  "note": "PHP. After creating an event or procedure whose body has ';', the query shown is missing DELIMITER $$, so it cannot be re-run. Bug, help wanted, unassigned, no PR (#19942 fixed only the trigger export). Testable with phpunit. No AI rule found. Commits need a Signed-off-by (owner adds it)."
+ },
+ {
+  "url": "https://github.com/external-secrets/external-secrets/issues/6064",
+  "repo": "external-secrets/external-secrets",
+  "tier": "高星",
+  "note": "Go, 6.9k stars. Add decodingStrategy: Properties to parse key=value blobs. good first issue, size/s, unassigned, no PR. AGENTS.md has no ban; the gate is make reviewable plus make check-diff. Do not hand-edit zz_generated files."
+ },
+ {
+  "url": "https://github.com/prefix-dev/pixi/issues/7105",
+  "repo": "prefix-dev/pixi",
+  "tier": "高星",
+  "note": "Rust, 7.8k stars, very active. Add an optional description field to [environments] entries in the manifest and show it in pixi info. Labels approved + help wanted, opened 2026-09-27, no PR found for 7105. No AI policy file found."
+ },
+ {
+  "url": "https://github.com/NLog/NLog/issues/5916",
+  "repo": "NLog/NLog",
+  "tier": "高星",
+  "note": "C#. Enable the .NET analyzers (EnableNETAnalyzers, AnalysisMode Recommended) and tune .editorconfig severities as the issue lists. up-for-grabs, opened by the maintainer, unassigned, no PR. Builds with the dotnet SDK on Linux. No AI rule found."
+ },
+ {
+  "url": "https://github.com/protocolbuffers/protobuf/issues/30162",
+  "repo": "protocolbuffers/protobuf",
+  "tier": "高星",
+  "note": "CMake. protobuf_generate() ignores --proto_path given via PROTOC_OPTIONS (configure error or wrong output paths); IMPORT_DIRS works. help wanted, opened 5 days ago, no PR. Testable with a small cmake project. Needs the Google CLA (owner). No AI rule."
+ },
+ {
+  "url": "https://github.com/supercollider/supercollider/issues/7556",
+  "repo": "supercollider/supercollider",
+  "tier": "高星",
+  "note": "C++. LinExp gives wrong output for an audio-rate dsthi; bug is in LinExp_next_aa in server/plugins/LFUGens.cpp. good-first-issue, unassigned, no PR. Build scsynth headless (no Qt). No AI policy in the wiki."
+ },
+ {
+  "url": "https://github.com/dotnet/machinelearning/issues/6820",
+  "repo": "dotnet/machinelearning",
+  "tier": "高星",
+  "note": "C#. DataFrame PrimitiveColumn ElementwiseEquals/NotEquals ignore null validity (0 == null returns true); the issue includes a failing unit test. help wanted, no PR found. Label 'yellow' means maintenance only. Re-check current main before starting."
+ },
+ {
+  "url": "https://github.com/grpc-ecosystem/grpc-gateway/issues/2824",
+  "repo": "grpc-ecosystem/grpc-gateway",
+  "tier": "高星",
+  "note": "Go. Refactor: replace the duplicate path-template parser in genopenapi with the httprule parser. help wanted, unassigned, no PR. Existing go tests cover both generators. No AI, CLA or DCO rule in CONTRIBUTING."
+ },
+ {
+  "url": "https://github.com/PowerShell/PowerShell/issues/7495",
+  "repo": "PowerShell/PowerShell",
+  "tier": "高星",
+  "note": "C#. Test-ModuleManifest checks only that RequiredModules exist, not their ModuleVersion. Issue-Bug, Up-for-Grabs, WG-Reviewed, no PR. Pester-testable on Linux (pwsh + .NET SDK, about 3 GB). Microsoft CLA. No AI rule."
+ },
+ {
+  "url": "https://github.com/OpenRCT2/OpenRCT2/issues/21432",
+  "repo": "OpenRCT2/OpenRCT2",
+  "tier": "高星",
+  "note": "C++. Rename old SHOUTING_CASE/TitleCase constants to kCamelCase. Done in small per-header slices; many earlier slices merged, none open now. Pick an untouched header; check is a compile plus unit tests. No AI rule in CONTRIBUTING. Build is fairly heavy."
+ },
+ {
+  "url": "https://github.com/OpenRefine/OpenRefine/issues/5207",
+  "repo": "OpenRefine/OpenRefine",
+  "tier": "高星",
+  "note": "Java. New facet that lists hidden/invisible Unicode chars in a column. help wanted, unassigned, no PR. Feature-sized and needs backend + UI; weakest pick. Check the docs contributing page for a 'get assigned first' rule."
+ },
+ {
+  "url": "https://github.com/ipython/ipython/issues/12164",
+  "repo": "ipython/ipython",
+  "tier": "高星",
+  "note": "Bug, labeled help wanted. In IPython/utils/_process_posix.py, the `except KeyboardInterrupt` branch of system() still calls child.sendline on main, so a Ctrl-C during pexpect.spawn raises UnboundLocalError. Small fix (child=None plus a guard) and a unit test with spawn mocked. No PR found for '12164' or '_process_posix'. No AI rules in CONTRIBUTING. Last merge Sep 14."
+ },
+ {
+  "url": "https://github.com/xtermjs/xterm.js/issues/4296",
+  "repo": "xtermjs/xterm.js",
+  "tier": "高星",
+  "note": "Bug, help wanted. Linkifier._removeIntersectingLinks in src/browser/Linkifier.ts tracks occupied cells by x only, so several wrapped links on one merged line wrongly remove each other; still present on master. Can be covered by a node unit test. Only PR found is #4288 (merged, the source of this issue). AGENTS.md exists, so agents are allowed. Last merge Aug 30."
+ },
+ {
+  "url": "https://github.com/conventional-changelog/commitlint/issues/3294",
+  "repo": "conventional-changelog/commitlint",
+  "tier": "高星",
+  "note": "Bug, help wanted. Reproduced locally on the latest npm packages: subject-case start-case rejects 'feat: Add Module 1.0.0' and 'Add Core.js'. Fix goes in @commitlint/ensure case detection. No PR for 3294; #5010 (single-word start-case) was closed. No AI policy. Last human merge Aug 31."
+ },
+ {
+  "url": "https://github.com/mochajs/mocha/issues/2598",
+  "repo": "mochajs/mocha",
+  "tier": "高星",
+  "note": "Bug, labeled 'status: accepting prs'. Reproduced on mocha 12.0.3: done(circularObj) fails with 'Converting circular structure to JSON' and no hint where it came from. Small fix to how runnable/errors stringify a non-Error passed to done, plus a unit test. No PR for 2598. AI is allowed, but the PR description must be short and human-reviewed (CONTRIBUTING); AGENTS.md exists."
+ },
+ {
+  "url": "https://github.com/pyinstaller/pyinstaller/issues/5502",
+  "repo": "pyinstaller/pyinstaller",
+  "tier": "高星",
+  "note": "Feature, labeled pull-request wanted. With MERGE and multiple Analysis steps, xref-<specnm>.html and graph-<specnm>.dot overwrite each other. Still true in build_main.py (CONF['xref-file'] uses specnm). Name the files per Analysis script instead, add a functional test, add a news fragment. No PR. No AI rules found."
+ },
+ {
+  "url": "https://github.com/compiler-explorer/compiler-explorer/issues/3546",
+  "repo": "compiler-explorer/compiler-explorer",
+  "tier": "高星",
+  "note": "Help wanted. solc's 'Compiler run successful. Artifact(s) can be found in directory ...' shows up as a warning. Filter it in lib/compilers/solidity.ts the way MSVC output is filtered, and test with vitest using stubbed output (no real solc needed). No PR for 3546. AGENTS.md is agent-friendly. Very active repo."
+ },
+ {
+  "url": "https://github.com/pylint-dev/pylint/issues/7534",
+  "repo": "pylint-dev/pylint",
+  "tier": "高星",
+  "note": "Enhancement, labeled Help wanted and Needs PR: warn when __exit__ uses non-standard argument names (the data model names are exc_type, exc_value, traceback). New checker message plus functional tests. Settle the message name or reuse of arguments-renamed in the PR. No PR found for __exit__. AGENTS.md welcomes agents. I dropped #7911: #11296 (merged Aug) changed pragma handling and #11447 is open."
+ },
+ {
+  "url": "https://github.com/rjsf-team/react-jsonschema-form/issues/3882",
+  "repo": "rjsf-team/react-jsonschema-form",
+  "tier": "高星",
+  "note": "Feature, labeled help wanted and core: let a string field with const use the checkbox widget (checked sets the const value, unchecked removes the property). Testable with jest in packages/core. No PR for 3882. The repo has CLAUDE.md and is very active (merges Oct 1)."
+ },
+ {
+  "url": "https://github.com/PyCQA/isort/issues/2462",
+  "repo": "PyCQA/isort",
+  "tier": "高星",
+  "note": "Help wanted, PEP 810. Sorting `lazy import` lines already landed in #2503 (verified: isort 9.0.2 handles them). What remains is sorting the `__lazy_modules__` list. The design is open (alphabetical vs isort sections), so propose one in an issue comment first. No open PR. Very active repo."
+ },
+ {
+  "url": "https://github.com/highlightjs/highlight.js/issues/4489",
+  "repo": "highlightjs/highlight.js",
+  "tier": "高星",
+  "note": "Help welcome: consistency work across CSS-like grammars. Take one slice, e.g. Stylus/Sass at-rules or @keyframes from/to; avoid function highlighting, which open PR #4497 covers. Markup tests. AI is allowed but needs an 'Assisted-by:' trailer (docs/ai-contributions.md). Risk: review is slow (many open PRs; last merge Aug 16)."
+ },
+ {
+  "url": "https://github.com/semantic-release/semantic-release/issues/1624",
+  "repo": "semantic-release/semantic-release",
+  "tier": "高星",
+  "note": "Bug, help wanted: .releaserc saved as UTF-16LE (PowerShell echo) is read as raw bytes, so the config is silently ignored. Fix is a BOM-aware read or loader in lib/get-config.js plus a test. Check whether cosmiconfig should handle it upstream. No PR for 1624. No AI policy. Last human merge Sep 21."
+ },
+ {
+  "url": "https://github.com/sktime/sktime/issues/10652",
+  "repo": "sktime/sktime",
+  "tier": "高星",
+  "note": "Labeled good first issue. The issue explicitly asks for 'AI plus human oversight' to finish the remaining test exceptions in tests._config. Task 2 is already merged (#10663, #11193, #11221). Take one small Task 1 slice (add get_test_params or remove a skip for one estimator not covered by open PRs #11335/#11218) and say the scope in a comment first. The PR template asks LLM content to be labelled."
+ },
+ {
+  "url": "https://github.com/vavallee/bindery/issues/2792",
+  "repo": "vavallee/bindery",
+  "tier": "新锐",
+  "note": "Go, created 2026-04, very active. AuthorAliasRepo.Merge in internal/db/author_aliases.go:368 binds a raw time.Now().UTC() where it should use timeValueArg(); line 424 does the same and can be fixed with it. Fix is one line plus a sqlite test of the stored text shape. No PR for #2792. AGENTS.md welcomes AI agents. Sibling #2793 is already fixed on main by #2824, so skip that one."
+ },
+ {
+  "url": "https://github.com/OWASP/cve-lite-cli/issues/1255",
+  "repo": "OWASP/cve-lite-cli",
+  "tier": "新锐",
+  "note": "TS, created 2026-03. Add a regression test that pins the prerelease fix in positionAgainstRange (src/utils/version.ts), covering cases like 3.0.0-rc.1 vs 3.x. No comments and no PR (open PRs #1257/#1258 are for sibling issues #1254/#1256). Labeled first-timers-only, meaning 'reserved for first contribution to this project', so it suits anyingiit only if this is their first PR there. No AI ban."
+ },
+ {
+  "url": "https://github.com/hahwul/urx/issues/285",
+  "repo": "hahwul/urx",
+  "tier": "新锐",
+  "note": "Rust CLI, created 2025-03, merges weekly. Add unit tests for fmt_count in src/runner/mod.rs; checked on main, no test covers it yet. 0 open PRs. AGENTS.md gives the commands: cargo test / fmt / clippy. Several sibling GFIs (#290, #295) are already silently fixed on main, so re-check before starting."
+ },
+ {
+  "url": "https://github.com/brekkylab/backlot/issues/388",
+  "repo": "brekkylab/backlot",
+  "tier": "新锐",
+  "note": "Python FastAPI, created 2026-07. The _flag() helper in backlot/routers/hubspot.py treats archived=1/yes as true; real HubSpot only accepts true/TRUE. Small fix plus a pytest test. Opened today, no PR. CONTRIBUTING allows Claude Code: a bot only handles issues labeled 'agent', and this one isn't. Need pytest plus ruff check/format. Fresh hacktoberfest issue, so start soon."
+ },
+ {
+  "url": "https://github.com/OpsiMate/OpsiMate/issues/1041",
+  "repo": "OpsiMate/OpsiMate",
+  "tier": "新锐",
+  "note": "TS server, created 2025-06. Add apps/server/tests/rulesById.test.ts, modeled on tests/tags.test.ts, for GET/PUT/DELETE /mute-policies/:id and /enrichments/:id (404, 400 for non-numeric id, 401, empty PUT). The file does not exist yet and no PR. The repo asks you to claim via comment first and work on one GFI at a time; run Prettier on the new file."
+ },
+ {
+  "url": "https://github.com/repowise-dev/repowise/issues/2796",
+  "repo": "repowise-dev/repowise",
+  "tier": "新锐",
+  "note": "Python, created 2026-03, merges daily. The _GO_CALL_DECL regex in packages/core/src/repowise/core/ingestion/languages/receiver_types.py needs to allow an optional [...] type-argument group so x := New[T](...) gets typed. Single regex change plus unit tests. Opened today; no PR for 2796 and no AI policy file."
+ },
+ {
+  "url": "https://github.com/astrid-runtime/astrid/issues/476",
+  "repo": "astrid-runtime/astrid",
+  "tier": "新锐",
+  "note": "Rust, created 2026-02. In crates/astrid-capsule/src/registry.rs, register and register_connector return UnsupportedEntryPoint('Already registered'); add AlreadyRegistered / ConnectorAlreadyRegistered variants and fix the docs. Still present on main and no PR. AI is allowed with disclosure in the PR's 'AI / Tool Assistance' section (Assisted-by:). The owner must sign off DCO personally (-s). Newcomer PRs need the newcomer-approved label."
+ },
+ {
+  "url": "https://github.com/spec-kitty/spec-kitty/issues/4292",
+  "repo": "spec-kitty/spec-kitty",
+  "tier": "新锐",
+  "note": "Python, created 2025-10, very active. Fix 3 mypy-strict no-any-return errors in src/charter/offering/agent_profiles/repository.py (lines ~163/268/922) by narrowing types, with no ignore comments. Labeled status:ready, no PR. Verify with mypy. AGENTS.md requires reading .kittify/charter/charter.md first."
+ },
+ {
+  "url": "https://github.com/ENTERPILOT/GoModel/issues/884",
+  "repo": "ENTERPILOT/GoModel",
+  "tier": "新锐",
+  "note": "Go, created 2025-12. Document the JSON library policy (goccy vs encoding/json vs gjson vs yaml) and fold 3 duplicate encode/decode helpers (users/store_sql.go, virtualmodels/store.go, storage/sqlutil) into one; also fix the wrong comment in messages_native.go. No PR. AI tools are OK, but per AGENTS.md: no AI co-author trailers or AI links, and keep PR text concise. Medium size."
+ },
+ {
+  "url": "https://github.com/ssrajadh/sentrysearch/issues/62",
+  "repo": "ssrajadh/sentrysearch",
+  "tier": "新锐",
+  "note": "Python Click CLI, created 2026-03. Add `stats --json` in sentrysearch/cli.py with keys backend/model/total_chunks/unique_source_files/source_files/missing_files, plus tests in tests/test_cli.py and a README update. No PR, merged 2026-09-29. Caveat: the maintainer mostly merges their own PRs. Run tests with `uv sync --group test`; tests must not use real APIs."
+ },
+ {
+  "url": "https://github.com/algorithmicsuperintelligence/openevolve/issues/290",
+  "repo": "algorithmicsuperintelligence/openevolve",
+  "tier": "新锐",
+  "note": "Python, created 2025-05, outside PRs merged 2026-09-28. Add an optional log prefix parameter to run() so concurrent runs can be told apart. No PR or claim (searched for 'prefix'). The repo has a CLAUDE.md and no ban. Small, testable with caplog."
+ },
+ {
+  "url": "https://github.com/maziyarpanahi/openmed/issues/3101",
+  "repo": "maziyarpanahi/openmed",
+  "tier": "新锐",
+  "note": "Python, created 2025-10, outside contributors' PRs merged 2026-09. New openmed/core/language_coverage_diff.py, its unit test and a docs page; must produce stable golden output for added/removed/reordered manifests and run fully offline. The file does not exist yet and no PR. Issue reads like part of an auto-generated roadmap; confirm the scope against existing language_coverage code first."
+ },
+ {
+  "url": "https://github.com/decompme/decomp.me/issues/2118",
+  "repo": "decompme/decomp.me",
+  "tier": "自由",
+  "note": "bug+gfi, opened 2026-09-30 by maintainer ethteck. backend/compilers/download.py counts failed downloads as successes ('Updated 213/213') and exits 0. Fix: track failures, exclude them from the count, exit non-zero. Unit-testable with mocks. No PR (pulls?q=2118 returns 0), not assigned. No AI policy found. Merges active (latest 2026-09-27)."
+ },
+ {
+  "url": "https://github.com/scikit-hep/pyhf/issues/2123",
+  "repo": "scikit-hep/pyhf",
+  "tier": "自由",
+  "note": "gfi/chore: move tbump.toml into pyproject.toml [tool.tbump]. tbump.toml still on main. No comments, no PR (all tbump PRs are older and merged). Verify with `tbump --dry-run` / `tbump current-version`. No AI policy. Very active (merges 2026-09-18)."
+ },
+ {
+  "url": "https://github.com/hist/hist/issues/237",
+  "repo": "scikit-hep/hist",
+  "tier": "自由",
+  "note": "(real URL: https://github.com/scikit-hep/hist/issues/237) gfi docs: BaseHist.plot() docstring is only 'Plot method for BaseHist object.' Copy or adapt the mplhep.histplot parameter docs. No PR found. AGENTS.md exists and is AI-friendly. Active (merges 2026-10-01). Check with a docs build or pytest."
+ },
+ {
+  "url": "https://github.com/commitizen-tools/commitizen/issues/819",
+  "repo": "commitizen-tools/commitizen",
+  "tier": "自由",
+  "note": "gfi docs, wait-for-implementation: add a FAQ entry for when a dependency's version equals the project version and version_files rewrites it (anchor the regex with ^ or use version_provider; see #496). The only PR (#1910) was closed by its own author, not merged. docs/faq.md has no such entry. AGENTS.md welcomes agents; Conventional Commits required. Verify with mkdocs build."
+ },
+ {
+  "url": "https://github.com/Rohithgilla12/data-peek/issues/273",
+  "repo": "Rohithgilla12/data-peek",
+  "tier": "自由",
+  "note": "TS, 1.7k stars, gfi+hacktoberfest: add Markdown table export (exportToMarkdown escapes pipes and newlines; wire into serializeExport and the export menu; add tests). 0 comments, no PR. Repo rule: claim by commenting before opening a PR, so the owner must comment first. Test with `pnpm --filter @data-peek/desktop test` and `pnpm typecheck`; style is single quotes, no semicolons. Has CLAUDE.md."
+ },
+ {
+  "url": "https://github.com/python-humanize/humanize/issues/181",
+  "repo": "python-humanize/humanize",
+  "tier": "自由",
+  "note": "help wanted: intword ignores locale number grouping (Japanese should use 万/億, i.e. 10^4 and 10^8). Needs per-locale powers in the translation tables. Medium size and design-ish. No PR (pulls?q=181 returns 0), not assigned. Very active repo, no AI policy. Test with pytest plus a ja_JP case."
+ },
+ {
+  "url": "https://github.com/shadcn-labs/pdfcn/issues/75",
+  "repo": "shadcn-labs/pdfcn",
+  "tier": "自由",
+  "note": "TS, 2.8k stars, gfi+help wanted (2026-09-24): new Timeline registry component (date/title/body items, vertical spine with dots, takumi and forme bases, page-break safe, docs and registry.json entry). 0 comments, no PR. Visual output cannot be checked in a browser here; check with `pnpm registry:build` and a typecheck. Neighbouring component issues (#69, #72, #73, #76) already have PRs."
+ },
+ {
+  "url": "https://github.com/privateerproj/privateer-sdk/issues/311",
+  "repo": "privateerproj/privateer-sdk",
+  "tier": "自由",
+  "note": "Go. When a run produces only NeedsReview results, it exits 1 with an 'Unexpected exit' error. The reporter has already traced the root causes (ExitCodeFor/runOne/closeClient). Small fix that unit tests can cover. No assignee, no comments, no PR. Repo merged PRs Sep 24-30. No AI policy found (no CONTRIBUTING or AGENTS file). Open design question: should NeedsReview get its own exit code? Pick the minimal option, treating it as an ordinary failure logged at Warn."
+ },
+ {
+  "url": "https://github.com/grafana/sigma-rule-deployment/issues/403",
+  "repo": "grafana/sigma-rule-deployment",
+  "tier": "自由",
+  "note": "Go. Warn or error when the configured query time window is shorter than the correlation rule's timespan. Opened 2026-10-01, labels good first issue and integrator, no assignee, no PR. Repo last merged Oct 1. CONTRIBUTING has no AI rules. Implement the warning option first, since it's the smallest, and test it with a converter unit test."
+ },
+ {
+  "url": "https://github.com/mariadb-operator/mariadb-operator/issues/1828",
+  "repo": "mariadb-operator/mariadb-operator",
+  "tier": "自由",
+  "note": "Go. Add metrics.serviceMonitor.enabled to the MariaDB CRD so the operator can skip creating the ServiceMonitor; the Helm chart already supports this. Labels good first issue and help wanted, unassigned, no PR. AGENTS.md is written for AI agents (AI-friendly). Needs make generate/manifests plus unit or envtest tests (envtest binaries, no docker). Keep CRD size under its limit."
+ },
+ {
+  "url": "https://github.com/ipfs-cluster/ipfs-cluster/issues/2323",
+  "repo": "ipfs-cluster/ipfs-cluster",
+  "tier": "自由",
+  "note": "Go. Add a name-filter query parameter to the REST /allocations endpoint (also the client and ctl, optionally). Labels exp/novice, good first issue, help wanted. Unassigned, no PR. Last merges Aug 30 (just within 2 months; low activity). No AI rules. Testable with the REST API unit tests."
+ },
+ {
+  "url": "https://github.com/maciejhirsz/logos/issues/562",
+  "repo": "maciejhirsz/logos",
+  "tier": "自由",
+  "note": "Rust. Move the handbook explanations into rustdoc on the Logos derive macro (crate-level docs), so they show up with cargo doc --offline. Docs plus doctests, checked with cargo test --doc. Unassigned, no linked PR; the issue has 3 comments I could not read, so re-check them for claims. Repo merged PRs Sep 10. No CONTRIBUTING or AI policy."
+ },
+ {
+  "url": "https://github.com/rtk-ai/rtk/issues/1759",
+  "repo": "rtk-ai/rtk",
+  "tier": "自由",
+  "note": "Rust. Add rewrite-registry rules for find to fd and sed to sd, guarded on the tools being installed. Labels help wanted, area:cli. Unassigned, no PR found. Very active repo with a CLAUDE.md, so AI-friendly. CONTRIBUTING grants rtk-ai a license to your contribution. Caveat: CONTRIBUTING says output must stay a faithful subset of the original tool, so confirm maintainers still want a rewrite that swaps in a different tool."
+ },
+ {
+  "url": "https://github.com/aviator-co/av/issues/656",
+  "repo": "aviator-co/av",
+  "tier": "自由",
+  "note": "Go. When av sync fails to delete a merged branch that is checked out in another worktree, show a clear error with recovery hints and don't leave the user on a detached HEAD. good first issue, unassigned, no PR. Related PR #700 fixed a different path (checkout). Last merge Aug 18. Repo has a CLAUDE.md. Testable with a temporary git repo and worktree."
+ },
+ {
+  "url": "https://github.com/jasonjmcghee/ron-lsp/issues/15",
+  "repo": "jasonjmcghee/ron-lsp",
+  "tier": "自由",
+  "note": "Rust. The LSP can't resolve Rust types for .ron files in a sibling assets/ dir when the crates live under crates/; fix workspace/crate discovery. Labels bug, good first issue, help wanted. No comments, no PR. Owner merged PRs Sep 6. No AI policy. Small repo; reproduce with a fixture workspace test."
+ },
+ {
+  "url": "https://github.com/stephenafamo/bob/issues/741",
+  "repo": "stephenafamo/bob",
+  "tier": "自由",
+  "note": "Go ORM. Preload aliases come from the global NextUniqueInt counter, so the SQL differs on every call and defeats pgx's statement cache. Make the aliases deterministic per query. Labels Enhancement, Help Wanted. No PR among the 20 open ones. Last merge Aug 28. No AI policy. Medium-sized change; cover it with SQL-string golden or unit tests, no database needed."
+ },
+ {
+  "url": "https://github.com/Adam-Vandervorst/PathMap/issues/120",
+  "repo": "Adam-Vandervorst/PathMap",
+  "tier": "自由",
+  "note": "Rust trie/zipper library. Add to_prev_step/to_prev_val (default implementations mirroring to_next_*) plus benchmarks. Maintainer explicitly says not to add to_prev_k_path. Opened Sep 19, no comments, no PR. Very active (PRs Sep 29), though the repo has only 22 stars. No AI policy. Pure CPU unit tests."
+ },
+ {
+  "url": "https://github.com/kubernetes-sigs/dranet/issues/278",
+  "repo": "kubernetes-sigs/dranet",
+  "tier": "自由",
+  "note": "Go. Add an optional provider hook that validates the host-derived NetworkConfig before SetDeviceConfig/checkpoint and returns PrepareResult.Err so it retries. Labels help wanted, triage/accepted. Unassigned, no PR. Merges in Sep. Owner must sign the CNCF CLA. A design-ish change, but unit testable with a fake provider and no cluster."
+ },
+ {
+  "url": "https://github.com/Kuadrant/developer-portal-controller/issues/33",
+  "repo": "Kuadrant/developer-portal-controller",
+  "tier": "自由",
+  "note": "Go k8s controller. Add discovered policy names to APIProduct status as structured fields instead of human-readable messages. good first issue, no PR. Last merge Sep 25. AGENTS.md is AI-friendly. Caveat: CONTRIBUTING auto-closes PRs on unassigned issues, so the owner must comment and get assigned before submitting. Needs make generate/manifests and envtest."
+ },
+ {
+  "url": "https://github.com/roc-lang/roc/issues/11270",
+  "repo": "roc-lang/roc",
+  "tier": "自由",
+  "note": "Zig. Make `import pf.Elem exposing [Elem]` a compile error: fix scopeIntroduceModuleAliasAt in src/canonicalize/Can.zig and reuse the redundant_expose_main_type diagnostic. The issue lists acceptance tests. 0 comments, no PR for #11270 or redundant_expose_main_type. AGENTS.md exists and nothing bans AI. Commits must be signed (owner signs). CONTRIBUTING suggests a Zulip post first. Test with zig build run-test-zig --test-filter; minici is long."
+ },
+ {
+  "url": "https://github.com/Kotlin/dataframe/issues/1866",
+  "repo": "Kotlin/dataframe",
+  "tier": "自由",
+  "note": "Kotlin. Inline the AnyCol, AnyColumnReference, AnyColumnGroupAccessor, StringCol and ColumnGroupReference typealiases in public API signatures only; keep the alias declarations and internal uses. Part 1 was PR #1863, use it as the template. Unassigned, no PR. Active (merges in Sep 2026), no AI ban. Base branch master. Run ./gradlew :core:test -Pkotlin.dataframe.debug=true. JDK21 is installed."
+ },
+ {
+  "url": "https://github.com/getsentry/sentry-php/issues/1913",
+  "repo": "getsentry/sentry-php",
+  "tier": "自由",
+  "note": "PHP. Add a backward-compatible option (suggested name trace_ignore_status_codes) so tracing skips given HTTP statuses such as 404, with tests. No comments, no PR. Repo has AGENTS.md and CLAUDE.md, so it is AI-friendly. Run vendor/bin/phpunit. Fully testable locally (PHP 8.3 is installed)."
+ },
+ {
+  "url": "https://github.com/getsentry/sentry-laravel/issues/1070",
+  "repo": "getsentry/sentry-laravel",
+  "tier": "自由",
+  "note": "PHP. Add a class_serializer for Illuminate\\Http\\Client\\Response so stack traces show response info (status, headers, maybe a truncated body). Only the maintainer's description, no claim. No serializer PR; the newest PRs #1187/#1191 are about PII body collection, not this. Repo is very active. Test with phpunit and orchestra testbench."
+ },
+ {
+  "url": "https://github.com/getsentry/sentry-dotnet/issues/4903",
+  "repo": "getsentry/sentry-dotnet",
+  "tier": "自由",
+  "note": "C#. The string overloads of SentrySdk.StartTransaction(name, operation[, description]) map parameters wrongly: description is unused and name/op are swapped onto span fields. Labels: Good First Issue and Needs Reproduction. No claim; no PR among the StartTransaction PRs. Needs the dotnet SDK installed (about 1GB). Check API-approval snapshot tests and keep public parameter names stable."
+ },
+ {
+  "url": "https://github.com/esbmc/esbmc/issues/7467",
+  "repo": "esbmc/esbmc",
+  "tier": "自由",
+  "note": "C. In ESBMC's operational-model <sys/socket.h>, wrap struct iovec in #ifndef __iovec_defined (as ssize_t already is) and audit sockaddr, msghdr and friends. Add a regression test in regression/. 0 comments, no PR. Repo has CLAUDE.md and AGENTS.md (AI-friendly). The build needs clang/LLVM dev libs plus a solver: heavy, about 2-3GB."
+ },
+ {
+  "url": "https://github.com/IntersectMBO/lsm-tree/issues/871",
+  "repo": "IntersectMBO/lsm-tree",
+  "tier": "自由",
+  "note": "Haskell. The public SnapshotCorruptedError depends on internal FileCorruptedError/FileFormat. Add public wrapper types in Database.LSMTree (SnapshotName, FsErrorPath, message) and in .Simple (FilePath). Opened by maintainer wenkokke, no PR, no AI policy found. Needs GHC/cabal plus liburing-dev, a CHANGELOG entry and stylish-haskell. Recently merged #887 touched snapshot errors, so rebase on it."
+ },
+ {
+  "url": "https://github.com/danger/danger/issues/1327",
+  "repo": "danger/danger",
+  "tier": "自由",
+  "note": "Ruby. Bitbucket Server URLs like https://host/bitbucket/scm/PROJ/repo.git parse into project=bitbucket, slug=scm, which then crashes with NoMethodError. Fix repo_slug_from or the bitbucket_server split to handle a context path and /scm/, and add an rspec. Label 'You Can Do This' (their GFI). Code is still unfixed and there is no PR. Last merge was 2026-07-29, right at the 2-month limit. Pure rspec, easy to test."
+ },
+ {
+  "url": "https://github.com/TheAlgorithms/C-Plus-Plus/issues/3234",
+  "repo": "TheAlgorithms/C-Plus-Plus",
+  "tier": "自由",
+  "note": "C++/Doxygen. Files with JAVADOC_BANNER-style comments (/*****) don't render in the generated docs. Fix the Doxyfile (e.g. JAVADOC_BANNER=YES) or normalise the comments, then verify with a local doxygen run (apt). 0 comments, no PR. Merges on 2026-09-30, no AI policy (only a no-plagiarism rule). Open PR #3229 also touches Doxygen but a different bug, so check for overlap."
+ },
+ {
+  "url": "https://github.com/spectreconsole/spectre.console/issues/2197",
+  "repo": "spectreconsole/spectre.console",
+  "tier": "自由",
+  "note": "C#. When all BreakdownChart values are 0, BreakdownBar.Render does 0/0 and Ratio.Distribute gives the full width to the first item. Guard total==0 so labels show without a bar, and add a snapshot test. No PR found; merges in Sep 2026; no AI policy. The issue shows 3 comments that were not visible: confirm there is no claim and comment to sign up first, as CONTRIBUTING asks. Needs the dotnet SDK."
+ },
+ {
+  "url": "https://github.com/unoplatform/uno/issues/24880",
+  "repo": "unoplatform/uno",
+  "tier": "自由",
+  "note": "C#. Remove the dead internal UIElement.CompleteGesturesOnTree and the unused public SetterHelper.GetPropertySetterWithResourceValue (and the then-empty SetterHelper). Labelled difficulty/starter, created 2026-10-01, no PR, no AI policy in CONTRIBUTING. Caveat: a large repo (heavy build, needs a recent .NET SDK). Build only the Uno.UI reference/Skia target and check the public-API/binary-compat baseline."
+ },
+ {
+  "url": "https://github.com/hardwood-hq/hardwood/issues/874",
+  "repo": "hardwood-hq/hardwood",
+  "tier": "自由",
+  "note": "Java. Trivial fix: pad the five labels in `hardwood footer` (FooterCommand.java:72-76) to one width so values align. Still open. CAUTION: PRs #881 and #882 were closed because the author mass-submitted PRs across 55 repos, and the maintainer refuses such accounts. CONTRIBUTING allows LLM help but needs an accountable human and a '#874 ...' commit prefix. Build needs JDK 25 (only 21 installed). Lowest priority."
+ }
+]
