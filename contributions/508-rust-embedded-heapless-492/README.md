@@ -46,3 +46,9 @@ tools/submit_pr.sh contributions/508-rust-embedded-heapless-492 rust-embedded/he
 ```
 
 PR 标题见 `pr_title.txt`，正文见 `pr_body.md`。
+
+## 独立复核 (2026-10-01)
+- Issue #492 仍 open、无 assignee/关联 PR；/pulls?q=492 无结果。
+- 补丁在最新 main (a50891c) 上 `git am` 干净应用。
+- 红→绿复核：去掉 impl 后 `cargo test --lib into_iter_mut` 编译失败 (E0277)；带 impl 通过。`cargo fmt --check` 干净。
+- 结论：✅ 可提交，无需修改。

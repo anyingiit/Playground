@@ -5,7 +5,7 @@
 | Issue | https://github.com/open-policy-agent/conftest/issues/1022 |
 | Tier | 自由（~3k stars） |
 | Labels | enhancement |
-| Status | ✅ ready — patch + PR 文本已完成 |
+| Status | ✅ ready — patch + PR 文本已完成（独立复核 2026-10-01：作者邮箱改为 winshyon@gmail.com、移除自加 Signed-off-by，红→绿复验通过） |
 | 重复 PR 检查 | `/pulls?q=1022` 无相关 PR；issue 无评论、无指派、无关联 PR（2026-10-01 复核） |
 | Base | `master` @ 8345c40 |
 
@@ -29,15 +29,15 @@
 - 未运行：`make test-acceptance`（bats）、`test-examples`、OCI e2e（与本改动无关）
 
 ## 需要提交者注意
-- 仓库要求 **DCO**：patch 已含 `Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>`，提交时**不要**再加 `--signoff`（避免重复）。
+- 仓库要求 **DCO**：patch **不含** `Signed-off-by`（按 brief 须由所有者本人签署），提交时**必须**加 `--signoff`（脚本参数 `--signoff`，或手动 `git am --signoff`）。
 - 要求 Conventional Commit 前缀（PR 标题会被 `validate-conventional-commit-prefix.sh` 校验），标题已为 `fix: ...`。
 - 仓库无 AI 政策，PR body 中已含 disclosure 段落。
 
 ## 如何提交
 ```bash
-tools/submit_pr.sh contributions/500-open-policy-agent-conftest-1022 open-policy-agent/conftest master fix-pull-existing-git-checkout contributions/500-open-policy-agent-conftest-1022/pr_title.txt contributions/500-open-policy-agent-conftest-1022/pr_body.md
+tools/submit_pr.sh contributions/500-open-policy-agent-conftest-1022 open-policy-agent/conftest master fix-pull-existing-git-checkout contributions/500-open-policy-agent-conftest-1022/pr_title.txt contributions/500-open-policy-agent-conftest-1022/pr_body.md --signoff
 ```
-手动方式：fork → `git checkout -b fix-pull-existing-git-checkout origin/master` → `git am 0001-*.patch` → push → 开 PR（base `master`）。
+手动方式：fork → `git checkout -b fix-pull-existing-git-checkout origin/master` → `git am --signoff 0001-*.patch` → push → 开 PR（base `master`）。
 
 ## PR
 - Title: 见 `pr_title.txt`

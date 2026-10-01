@@ -1,6 +1,6 @@
-From b3c40029807e5c192328647317394a2862b78f93 Mon Sep 17 00:00:00 2001
-From: anyingiit <49945850+anyingiit@users.noreply.github.com>
-Date: Thu, 1 Oct 2026 19:09:14 +0000
+From bfe65b2b8b78d54e324f756d4ba6d8ce1ce30819 Mon Sep 17 00:00:00 2001
+From: anyingiit <winshyon@gmail.com>
+Date: Thu, 1 Oct 2026 19:33:39 +0000
 Subject: [PATCH] fix: allow pulling a git source into an existing checkout
 
 Running `conftest pull git::<repo>` a second time failed because the
@@ -14,8 +14,6 @@ branch, matching what a fresh clone checks out. URLs with an explicit
 ref, subdirectory sources and non-checkout destinations are unchanged.
 
 Fixes #1022
-
-Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
 ---
  downloader/downloader.go      | 46 +++++++++++++++++++++++++++++++++++
  downloader/downloader_test.go | 44 +++++++++++++++++++++++++++++++++

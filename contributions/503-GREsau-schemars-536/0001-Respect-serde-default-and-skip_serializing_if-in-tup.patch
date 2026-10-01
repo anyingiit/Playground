@@ -1,8 +1,8 @@
-From 4901f02a31148f858b4282a27d36c069157bd6fc Mon Sep 17 00:00:00 2001
+From 65b7ebc50158e2abea78794ea51c987f76b00117 Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Thu, 1 Oct 2026 19:14:30 +0000
-Subject: [PATCH] Respect serde(default) when setting minItems for tuple
- structs
+Subject: [PATCH] Respect serde(default) and skip_serializing_if in tuple
+ struct minItems
 
 When deserializing a tuple struct, serde fills in trailing elements that
 are missing from the sequence using their default values, if the field or
@@ -10,32 +10,39 @@ the container has `#[serde(default)]`. The generated "deserialize" schema
 previously always set `minItems` to the number of elements, so it rejected
 input like `["abc"]` that deserializes successfully.
 
-Now `minItems` (for the deserialize contract) only counts elements up to
-the last one without a default. The serialize schema is unchanged.
+Similarly, when serializing, elements with `skip_serializing_if` may be
+omitted, so the "serialize" schema should not count them in `minItems`.
+
+Now `minItems` only counts elements that are always present for the
+current contract, and is omitted when that count is zero.
 
 Fixes #536
 ---
- schemars/tests/integration/default.rs         | 42 +++++++++++++++++++
- ....rs~default_container_tuple_struct.de.json | 16 +++++++
- ...rs~default_container_tuple_struct.ser.json | 17 ++++++++
- ...ult.rs~default_fields_tuple_struct.de.json | 20 +++++++++
- ...lt.rs~default_fields_tuple_struct.ser.json | 20 +++++++++
- ...lt_skip_deserializing_tuple_struct.de.json | 17 ++++++++
- ...t_skip_deserializing_tuple_struct.ser.json | 21 ++++++++++
- schemars_derive/src/schema_exprs.rs           | 24 ++++++++++-
- 8 files changed, 176 insertions(+), 1 deletion(-)
+ schemars/tests/integration/default.rs         | 61 +++++++++++++++++++
+ ....rs~default_container_tuple_struct.de.json | 16 +++++
+ ...rs~default_container_tuple_struct.ser.json | 17 ++++++
+ ...ult.rs~default_fields_tuple_struct.de.json | 20 ++++++
+ ...lt.rs~default_fields_tuple_struct.ser.json | 20 ++++++
+ ...lt_skip_deserializing_tuple_struct.de.json | 17 ++++++
+ ...t_skip_deserializing_tuple_struct.ser.json | 21 +++++++
+ ...s~skip_serializing_if_tuple_struct.de.json | 17 ++++++
+ ...~skip_serializing_if_tuple_struct.ser.json | 17 ++++++
+ schemars_derive/src/schema_exprs.rs           | 31 +++++++++-
+ 10 files changed, 236 insertions(+), 1 deletion(-)
  create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.de.json
  create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.ser.json
  create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_fields_tuple_struct.de.json
  create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_fields_tuple_struct.ser.json
  create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_skip_deserializing_tuple_struct.de.json
  create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_skip_deserializing_tuple_struct.ser.json
+ create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~skip_serializing_if_tuple_struct.de.json
+ create mode 100644 schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~skip_serializing_if_tuple_struct.ser.json
 
 diff --git a/schemars/tests/integration/default.rs b/schemars/tests/integration/default.rs
-index 6df51cc..3ac4685 100644
+index 6df51cc..893ff40 100644
 --- a/schemars/tests/integration/default.rs
 +++ b/schemars/tests/integration/default.rs
-@@ -93,3 +93,45 @@ fn default_fields() {
+@@ -93,3 +93,64 @@ fn default_fields() {
              "structs with `#derive(Deserialize)` can technically be deserialized from sequences, but that's not intended to be used via JSON, so schemars ignores it",
          ));
  }
@@ -80,6 +87,25 @@ index 6df51cc..3ac4685 100644
 +        .assert_allows_ser_roundtrip_default()
 +        .assert_allows_de_roundtrip([json!(["abc"]), json!(["abc", 1])])
 +        .assert_matches_de_roundtrip(arbitrary_values());
++}
++
++#[derive(JsonSchema, Deserialize, Serialize, Default)]
++struct TupleStructSkipSerializingIf(String, #[serde(skip_serializing_if = "is_zero")] u32);
++
++fn is_zero(value: &u32) -> bool {
++    *value == 0
++}
++
++#[test]
++fn skip_serializing_if_tuple_struct() {
++    test!(TupleStructSkipSerializingIf)
++        .assert_snapshot()
++        .assert_allows_ser_roundtrip([
++            TupleStructSkipSerializingIf::default(),
++            TupleStructSkipSerializingIf("abc".to_owned(), 1),
++        ])
++        .assert_allows_de_roundtrip([json!(["abc", 0]), json!(["abc", 1])])
++        .assert_rejects_de([json!(["abc"])]);
 +}
 diff --git a/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.de.json b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~default_container_tuple_struct.de.json
 new file mode 100644
@@ -234,11 +260,59 @@ index 0000000..7c0a7c5
 +  "type": "array"
 +}
 \ No newline at end of file
+diff --git a/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~skip_serializing_if_tuple_struct.de.json b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~skip_serializing_if_tuple_struct.de.json
+new file mode 100644
+index 0000000..725c70c
+--- /dev/null
++++ b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~skip_serializing_if_tuple_struct.de.json
+@@ -0,0 +1,17 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "title": "TupleStructSkipSerializingIf",
++  "type": "array",
++  "prefixItems": [
++    {
++      "type": "string"
++    },
++    {
++      "type": "integer",
++      "format": "uint32",
++      "minimum": 0
++    }
++  ],
++  "minItems": 2,
++  "maxItems": 2
++}
+\ No newline at end of file
+diff --git a/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~skip_serializing_if_tuple_struct.ser.json b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~skip_serializing_if_tuple_struct.ser.json
+new file mode 100644
+index 0000000..5db62f8
+--- /dev/null
++++ b/schemars/tests/integration/snapshots/schemars/tests/integration/default.rs~skip_serializing_if_tuple_struct.ser.json
+@@ -0,0 +1,17 @@
++{
++  "$schema": "https://json-schema.org/draft/2020-12/schema",
++  "title": "TupleStructSkipSerializingIf",
++  "type": "array",
++  "prefixItems": [
++    {
++      "type": "string"
++    },
++    {
++      "type": "integer",
++      "format": "uint32",
++      "minimum": 0
++    }
++  ],
++  "minItems": 1,
++  "maxItems": 2
++}
+\ No newline at end of file
 diff --git a/schemars_derive/src/schema_exprs.rs b/schemars_derive/src/schema_exprs.rs
-index 45e7b13..4333739 100644
+index 45e7b13..6902cf4 100644
 --- a/schemars_derive/src/schema_exprs.rs
 +++ b/schemars_derive/src/schema_exprs.rs
-@@ -644,12 +644,31 @@ fn expr_for_newtype_struct(cont: &Container, field: &Field) -> SchemaExpr {
+@@ -644,12 +644,38 @@ fn expr_for_newtype_struct(cont: &Container, field: &Field) -> SchemaExpr {
  }
  
  fn expr_for_tuple_struct(cont: &Container, fields: &[Field]) -> SchemaExpr {
@@ -251,17 +325,24 @@ index 45e7b13..4333739 100644
 +
 +            // When deserializing, serde fills in trailing elements missing from the sequence
 +            // using their default values (if they have any), so those elements are optional.
++            // When serializing, elements with `skip_serializing_if` may be omitted.
 +            let has_default = container_has_default || !f.serde_attrs.default().is_none();
-+            let update_min_len = if has_default {
-+                quote! {
++            let has_skip_serializing_if = f.serde_attrs.skip_serializing_if().is_some();
++            let update_min_len = match (has_default, has_skip_serializing_if) {
++                (false, false) => quote! {
++                    min_len += 1;
++                },
++                (true, false) => quote! {
 +                    if #GENERATOR.contract().is_serialize() {
-+                        min_len = prefix_items.len();
++                        min_len += 1;
 +                    }
-+                }
-+            } else {
-+                quote! {
-+                    min_len = prefix_items.len();
-+                }
++                },
++                (false, true) => quote! {
++                    if #GENERATOR.contract().is_deserialize() {
++                        min_len += 1;
++                    }
++                },
++                (true, true) => quote! {},
 +            };
 +
              f.with_contract_check(quote! {
@@ -270,7 +351,7 @@ index 45e7b13..4333739 100644
              })
          })
          .collect();
-@@ -660,6 +679,7 @@ fn expr_for_tuple_struct(cont: &Container, fields: &[Field]) -> SchemaExpr {
+@@ -660,6 +686,7 @@ fn expr_for_tuple_struct(cont: &Container, fields: &[Field]) -> SchemaExpr {
      // items have `skip_serializing` or `skip_deserializing` attributes.
      quote!({
          let mut prefix_items = schemars::_private::alloc::vec::Vec::<schemars::_private::serde_json::Value>::with_capacity(#max_len);
@@ -278,7 +359,7 @@ index 45e7b13..4333739 100644
          #(#fields)*
          let len = prefix_items.len();
  
-@@ -667,7 +687,9 @@ fn expr_for_tuple_struct(cont: &Container, fields: &[Field]) -> SchemaExpr {
+@@ -667,7 +694,9 @@ fn expr_for_tuple_struct(cont: &Container, fields: &[Field]) -> SchemaExpr {
          map.insert("type".into(), "array".into());
          if !prefix_items.is_empty() {
              map.insert("prefixItems".into(), prefix_items.into());

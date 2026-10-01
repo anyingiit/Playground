@@ -1,4 +1,4 @@
-From bb8aadc17513ff57c5beca9a4dc01800f77f873e Mon Sep 17 00:00:00 2001
+From 26fd0b32a32b4495cbce83fecfbcc453278c97cb Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Thu, 1 Oct 2026 19:30:30 +0000
 Subject: [PATCH] mysql: escape backslashes in quoted string literals
@@ -13,8 +13,8 @@ Escape backslashes as well in the MySQL dialect argument serializer.
 Fixes #609
 ---
  mysql/dialect.go      | 11 +++++++++++
- mysql/literal_test.go |  9 +++++++++
- 2 files changed, 20 insertions(+)
+ mysql/literal_test.go | 10 ++++++++++
+ 2 files changed, 21 insertions(+)
 
 diff --git a/mysql/dialect.go b/mysql/dialect.go
 index 71a8e38..5e8a5fa 100644
@@ -51,18 +51,19 @@ index 71a8e38..5e8a5fa 100644
  	return func(statement jet.StatementType, out *jet.SQLBuilder, options ...jet.SerializeOption) {
  		if len(expressions) < 2 {
 diff --git a/mysql/literal_test.go b/mysql/literal_test.go
-index fb96641..c4858a2 100644
+index fb96641..5fdc6a8 100644
 --- a/mysql/literal_test.go
 +++ b/mysql/literal_test.go
-@@ -1,6 +1,7 @@
- package mysql
- 
- import (
-+	"github.com/go-jet/jet/v2/internal/jet"
+@@ -4,6 +4,8 @@ import (
  	"math"
  	"testing"
  	"time"
-@@ -81,3 +82,11 @@ func TestTimestamp(t *testing.T) {
++
++	"github.com/go-jet/jet/v2/internal/jet"
+ )
+ 
+ func TestBool(t *testing.T) {
+@@ -81,3 +83,11 @@ func TestTimestamp(t *testing.T) {
  	assertSerialize(t, Timestamp(2010, time.March, 30, 10, 15, 30), `TIMESTAMP(?)`, "2010-03-30 10:15:30")
  	assertSerialize(t, TimestampT(time.Now()), `TIMESTAMP(?)`)
  }

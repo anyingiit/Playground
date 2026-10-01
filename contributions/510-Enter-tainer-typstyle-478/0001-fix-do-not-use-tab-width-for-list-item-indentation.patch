@@ -1,0 +1,282 @@
+From 12ba5aebca3e24e64b6606b49097a841d0f2cf9a Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:37:31 +0000
+Subject: [PATCH] fix: do not use tab-width for list item indentation
+
+List, enum and term item bodies were nested by the configured
+tab_spaces, so with --tab-width=4 wrapped lines and nested items got a
+four-space hanging indent. Use a fixed two-space indent (the width of
+`- `) for item bodies; tab_spaces keeps applying to code.
+
+Closes #478
+---
+ CHANGELOG.md                                  |  9 ++
+ crates/typstyle-core/src/pretty/markup.rs     | 13 ++-
+ .../fixtures/unit/markup/list-indent-tab4.typ | 14 +++
+ .../markup/snap/list-indent-tab4.typ-0.snap   | 91 +++++++++++++++++++
+ .../markup/snap/list-indent-tab4.typ-120.snap | 18 ++++
+ .../markup/snap/list-indent-tab4.typ-40.snap  | 29 ++++++
+ .../markup/snap/list-indent-tab4.typ-80.snap  | 21 +++++
+ 7 files changed, 193 insertions(+), 2 deletions(-)
+ create mode 100644 tests/fixtures/unit/markup/list-indent-tab4.typ
+ create mode 100644 tests/fixtures/unit/markup/snap/list-indent-tab4.typ-0.snap
+ create mode 100644 tests/fixtures/unit/markup/snap/list-indent-tab4.typ-120.snap
+ create mode 100644 tests/fixtures/unit/markup/snap/list-indent-tab4.typ-40.snap
+ create mode 100644 tests/fixtures/unit/markup/snap/list-indent-tab4.typ-80.snap
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 72069f4..7746bc1 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,14 @@
+ # Changelog
+ 
++## Unreleased
++
++- Fix: list, enum and term items no longer use the configured `tab_spaces` (`--tab-width`) as the hanging indent of their wrapped lines and nested content. Item bodies are now always indented by two spaces, so the output with `--tab-width=4` looks like:
++  ```typst
++  - this is a wrapped list item
++    with a tab-width of 4
++    - nested item
++  ```
++
+ ## v0.15.1 - [2026-07-28]
+ 
+ - Update `typst` to v0.15.1.
+diff --git a/crates/typstyle-core/src/pretty/markup.rs b/crates/typstyle-core/src/pretty/markup.rs
+index 8d98bd2..3890265 100644
+--- a/crates/typstyle-core/src/pretty/markup.rs
++++ b/crates/typstyle-core/src/pretty/markup.rs
+@@ -155,7 +155,7 @@ impl<'a> PrettyPrinter<'a> {
+             }
+             _ => FlowItem::none(),
+         });
+-        self.indent(body)
++        self.indent_item(body)
+     }
+ 
+     fn convert_list_item_like(&'a self, ctx: Context, item: &'a SyntaxNode) -> ArenaDoc<'a> {
+@@ -181,7 +181,16 @@ impl<'a> PrettyPrinter<'a> {
+             }
+             _ => FlowItem::none(),
+         });
+-        self.indent(body)
++        self.indent_item(body)
++    }
++
++    /// Indents the body of a list/enum/term item.
++    ///
++    /// Item bodies use a fixed hanging indent of two spaces (the width of `- `),
++    /// independent of the configured `tab_spaces`, which only applies to code.
++    fn indent_item(&'a self, body: ArenaDoc<'a>) -> ArenaDoc<'a> {
++        const ITEM_INDENT: isize = 2;
++        body.nest(ITEM_INDENT)
+     }
+ 
+     fn convert_markup_impl(
+diff --git a/tests/fixtures/unit/markup/list-indent-tab4.typ b/tests/fixtures/unit/markup/list-indent-tab4.typ
+new file mode 100644
+index 0000000..8a9cf7d
+--- /dev/null
++++ b/tests/fixtures/unit/markup/list-indent-tab4.typ
+@@ -0,0 +1,14 @@
++/// typstyle: tab_spaces=4 wrap_text
++
++- this is the formatting of a wrapped list item with a tab-width of 4, which should keep a hanging indent of two spaces
++  - nested item
++    - deeper nested item
++
+++ an enum item that is long enough to be wrapped onto the next line when the width is small
+++ another
++
++/ Term: a term item whose description is long enough to be wrapped onto the next line too
++
++#{
++  [- a list item inside code with a long enough body to get wrapped somewhere]
++}
+diff --git a/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-0.snap b/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-0.snap
+new file mode 100644
+index 0000000..a45ee0d
+--- /dev/null
++++ b/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-0.snap
+@@ -0,0 +1,91 @@
++---
++source: tests/src/unit.rs
++input_file: tests/fixtures/unit/markup/list-indent-tab4.typ
++---
++/// typstyle: tab_spaces=4 wrap_text
++
++- this
++  is
++  the
++  formatting
++  of
++  a
++  wrapped
++  list
++  item
++  with
++  a
++  tab-width
++  of
++  4,
++  which
++  should
++  keep
++  a
++  hanging
++  indent
++  of
++  two
++  spaces
++  - nested
++    item
++    - deeper
++      nested
++      item
++
+++ an
++  enum
++  item
++  that
++  is
++  long
++  enough
++  to
++  be
++  wrapped
++  onto
++  the
++  next
++  line
++  when
++  the
++  width
++  is
++  small
+++ another
++
++/ Term: a
++  term
++  item
++  whose
++  description
++  is
++  long
++  enough
++  to
++  be
++  wrapped
++  onto
++  the
++  next
++  line
++  too
++
++#{
++    [
++        - a
++          list
++          item
++          inside
++          code
++          with
++          a
++          long
++          enough
++          body
++          to
++          get
++          wrapped
++          somewhere
++    ]
++}
+diff --git a/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-120.snap b/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-120.snap
+new file mode 100644
+index 0000000..0bc68e9
+--- /dev/null
++++ b/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-120.snap
+@@ -0,0 +1,18 @@
++---
++source: tests/src/unit.rs
++input_file: tests/fixtures/unit/markup/list-indent-tab4.typ
++---
++/// typstyle: tab_spaces=4 wrap_text
++
++- this is the formatting of a wrapped list item with a tab-width of 4, which should keep a hanging indent of two spaces
++  - nested item
++    - deeper nested item
++
+++ an enum item that is long enough to be wrapped onto the next line when the width is small
+++ another
++
++/ Term: a term item whose description is long enough to be wrapped onto the next line too
++
++#{
++    [- a list item inside code with a long enough body to get wrapped somewhere]
++}
+diff --git a/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-40.snap b/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-40.snap
+new file mode 100644
+index 0000000..286cfc7
+--- /dev/null
++++ b/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-40.snap
+@@ -0,0 +1,29 @@
++---
++source: tests/src/unit.rs
++input_file: tests/fixtures/unit/markup/list-indent-tab4.typ
++---
++/// typstyle: tab_spaces=4 wrap_text
++
++- this is the formatting of a wrapped
++  list item with a tab-width of 4, which
++  should keep a hanging indent of two
++  spaces
++  - nested item
++    - deeper nested item
++
+++ an enum item that is long enough to be
++  wrapped onto the next line when the
++  width is small
+++ another
++
++/ Term: a term item whose description is
++  long enough to be wrapped onto the
++  next line too
++
++#{
++    [
++        - a list item inside code with a
++          long enough body to get
++          wrapped somewhere
++    ]
++}
+diff --git a/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-80.snap b/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-80.snap
+new file mode 100644
+index 0000000..fa0d857
+--- /dev/null
++++ b/tests/fixtures/unit/markup/snap/list-indent-tab4.typ-80.snap
+@@ -0,0 +1,21 @@
++---
++source: tests/src/unit.rs
++input_file: tests/fixtures/unit/markup/list-indent-tab4.typ
++---
++/// typstyle: tab_spaces=4 wrap_text
++
++- this is the formatting of a wrapped list item with a tab-width of 4, which
++  should keep a hanging indent of two spaces
++  - nested item
++    - deeper nested item
++
+++ an enum item that is long enough to be wrapped onto the next line when the
++  width is small
+++ another
++
++/ Term: a term item whose description is long enough to be wrapped onto the next
++  line too
++
++#{
++    [- a list item inside code with a long enough body to get wrapped somewhere]
++}
+-- 
+2.43.0
+

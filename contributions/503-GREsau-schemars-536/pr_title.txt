@@ -1,1 +1,1 @@
-Respect serde(default) when setting minItems for tuple structs
+Respect serde(default) and skip_serializing_if in tuple struct minItems
