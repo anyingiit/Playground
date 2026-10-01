@@ -1,4 +1,4 @@
-# Malicious-code audit — cashapp/licensee @ 117a759 (trunk, 2026-10-01)
+# Malicious-code audit — cashapp/licensee @ 117a759 (trunk, 2026-10-01; re-verified same HEAD on resume)
 
 Tool: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/licensee-545` (246 text files scanned): no auto-executing hooks, no npm lifecycle hooks, no pattern findings. Committed binaries: `gradle/wrapper/gradle-wrapper.jar` and ~100 fixture `*.jar` files of 22 bytes each. Manual review below.
 

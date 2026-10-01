@@ -1,0 +1,1 @@
+Fix px per-point opacity array being misapplied when traces are split

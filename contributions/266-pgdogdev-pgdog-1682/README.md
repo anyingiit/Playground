@@ -3,6 +3,6 @@
 | 项 | 值 |
 |---|---|
 | Issue | https://github.com/pgdogdev/pgdog/issues/1682 |
-| Status | 🚧 unfinished — stopped 2026-10-01 ~15:30 UTC by coordinator budget stop (quota exhausted); no commit/patch, not tested/reviewed. Uncommitted WIP saved as wip.diff (1 files) — unverified. |
+| Status | 🚧 in progress — resumed 2026-10-01; red run building |
 | Tier | 新锐 |
 | Base | `main` @ 80d6059 |

@@ -1,0 +1,164 @@
+From 4d93c022d5dde5a878482bc5d91e0ea9e4100f43 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:03:38 +0000
+Subject: [PATCH] Fix px per-point opacity array being misapplied when traces
+ are split
+
+When opacity is given as an array, store it as a hidden column of the
+internal dataframe so it is grouped and reordered together with the
+data, and give each trace only its own slice in marker.opacity.
+
+Closes #4580
+---
+ CHANGELOG.md                           |  1 +
+ plotly/express/_core.py                | 42 +++++++++++++++++++++++++
+ tests/test_optional/test_px/test_px.py | 43 ++++++++++++++++++++++++++
+ 3 files changed, 86 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 0583fec..6aaa5b0 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -5,6 +5,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
+ ## Unreleased
+ 
+ ### Fixed
++- Fix `px.scatter` and other Plotly Express functions applying a per-point `opacity` array to the wrong points when traces are split by `color`, `symbol`, facets or animation frames (or reordered, as in `px.ecdf`); the array is now split along with the data [[#4580](https://github.com/plotly/plotly.py/issues/4580)]
+ - Fix concurrent first access to lazily initialized graph object properties, which could raise `ValueError("Invalid value")` [[#3441](https://github.com/plotly/plotly.py/issues/3441)], with thanks to @hb1915 for the contribution!
+ - Fix `px.sunburst`, `px.treemap` and `px.icicle` listing sectors in a different order on every run when `path` is used with a Polars DataFrame; sectors now follow their order of first appearance for all dataframe backends [[#5765](https://github.com/plotly/plotly.py/issues/5765)], with thanks to @Irahan2 for the contribution!
+ 
+diff --git a/plotly/express/_core.py b/plotly/express/_core.py
+index e99bf40..dea3f91 100644
+--- a/plotly/express/_core.py
++++ b/plotly/express/_core.py
+@@ -7,6 +7,7 @@ from .trendline_functions import ols, lowess, rolling, expanding, ewm
+ from _plotly_utils.basevalidators import ColorscaleValidator
+ from plotly.colors import qualitative, sequential
+ import math
++from numbers import Number
+ 
+ from plotly._subplots import (
+     make_subplots,
+@@ -318,6 +319,16 @@ def make_trace_kwargs(args, trace_spec, trace_data, mapping_labels, sizeref):
+     trace_patch = trace_spec.trace_patch.copy() or {}
+     fit_results = None
+     hover_header = ""
++    opacity_col = args.get("opacity_col")
++    if (
++        opacity_col is not None
++        and isinstance(trace_patch.get("marker"), dict)
++        and trace_patch["marker"].get("opacity") is args["opacity"]
++    ):
++        # per-point opacity array: only keep the values belonging to this trace
++        trace_patch["marker"] = dict(
++            trace_patch["marker"], opacity=trace_data.get_column(opacity_col)
++        )
+     for attr_name in trace_spec.attrs:
+         attr_value = args[attr_name]
+         attr_label = get_decorated_label(args, attr_value, attr_name)
+@@ -326,6 +337,7 @@ def make_trace_kwargs(args, trace_spec, trace_data, mapping_labels, sizeref):
+                 (name, trace_data.get_column(name))
+                 for name in trace_data.columns
+                 if ((not attr_value) or (name in attr_value))
++                and name != args.get("opacity_col")
+                 and (trace_spec.constructor != go.Parcoords or _is_continuous(df, name))
+                 and (
+                     trace_spec.constructor != go.Parcats
+@@ -2529,6 +2541,34 @@ def get_groups_and_orders(args, grouper):
+     return groups, orders
+ 
+ 
++def _add_opacity_column(args):
++    """
++    If `opacity` was given as a per-point array, store it as a hidden column of
++    `args["data_frame"]` so that it is split along with the rest of the data when
++    traces are grouped (e.g. by `color`) or reordered. The column name is recorded
++    in `args["opacity_col"]` and picked up in `make_trace_kwargs`.
++    """
++    args["opacity_col"] = None
++    opacity = args.get("opacity")
++    if opacity is None or isinstance(opacity, (str, Number)):
++        return
++    df: nw.DataFrame = args["data_frame"]
++    opacity = nw.from_native(opacity, series_only=True, pass_through=True)
++    if isinstance(opacity, nw.Series):
++        values = opacity.to_list()
++    elif hasattr(opacity, "__len__"):
++        values = list(opacity)
++    else:
++        return
++    if len(values) != len(df):
++        return
++    col_name = _escape_col_name(df.columns, "_px_opacity", [])
++    args["data_frame"] = df.with_columns(
++        to_named_series(values, col_name, nw.get_native_namespace(df))
++    )
++    args["opacity_col"] = col_name
++
++
+ def make_figure(args, constructor, trace_patch=None, layout_patch=None):
+     trace_patch = trace_patch or {}
+     layout_patch = layout_patch or {}
+@@ -2546,6 +2586,8 @@ def make_figure(args, constructor, trace_patch=None, layout_patch=None):
+         constructor = go.Bar
+         args = process_dataframe_timeline(args)
+ 
++    _add_opacity_column(args)
++
+     # If we have marginal histograms, set barmode to "overlay"
+     if "histogram" in [args.get("marginal_x"), args.get("marginal_y")]:
+         layout_patch["barmode"] = "overlay"
+diff --git a/tests/test_optional/test_px/test_px.py b/tests/test_optional/test_px/test_px.py
+index d4773de..39930b9 100644
+--- a/tests/test_optional/test_px/test_px.py
++++ b/tests/test_optional/test_px/test_px.py
+@@ -473,3 +473,46 @@ def test_no_warn_on_update_template():
+     with warnings.catch_warnings():
+         warnings.simplefilter("error")
+         fig.update_layout(template="plotly_white")
++
++
++def test_opacity_array_split_by_group(constructor):
++    # https://github.com/plotly/plotly.py/issues/4580
++    data = constructor(dict(y=[1, 2, 3, 4], c=["r", "b", "r", "b"]))
++    opacity = [1.0, 0.2, 0.3, 0.4]
++    fig = px.scatter(data, y="y", color="c", opacity=opacity)
++    assert len(fig.data) == 2
++    assert list(fig.data[0].y) == [1, 3]
++    assert list(fig.data[0].marker.opacity) == [1.0, 0.3]
++    assert list(fig.data[1].y) == [2, 4]
++    assert list(fig.data[1].marker.opacity) == [0.2, 0.4]
++
++
++@pytest.mark.parametrize(
++    "opacity", [[1.0, 0.2, 0.3, 0.4], np.array([1.0, 0.2, 0.3, 0.4])]
++)
++def test_opacity_array_split_by_facet_and_symbol(opacity):
++    fig = px.scatter(
++        y=[1, 2, 3, 4],
++        symbol=["a", "a", "b", "b"],
++        facet_col=["x", "y", "x", "y"],
++        opacity=opacity,
++    )
++    by_y = {}
++    for trace in fig.data:
++        by_y.update(zip(trace.y, trace.marker.opacity))
++    assert by_y == {1: 1.0, 2: 0.2, 3: 0.3, 4: 0.4}
++    # the per-point opacity must not leak into the hover label
++    assert all("opacity" not in trace.hovertemplate for trace in fig.data)
++
++
++def test_opacity_scalar_unchanged():
++    fig = px.scatter(y=[1, 2, 3, 4], color=["r", "b", "r", "b"], opacity=0.5)
++    assert all(trace.marker.opacity == 0.5 for trace in fig.data)
++
++
++def test_opacity_array_scatter_matrix_dimensions():
++    df = pd.DataFrame(dict(a=[1, 2, 3], b=[4, 5, 6], c=["r", "b", "r"]))
++    fig = px.scatter_matrix(df, color="c", opacity=[0.1, 0.2, 0.3])
++    assert [d.label for d in fig.data[0].dimensions] == ["a", "b", "c"]
++    assert list(fig.data[0].marker.opacity) == [0.1, 0.3]
++    assert list(fig.data[1].marker.opacity) == [0.2]
+-- 
+2.43.0
+

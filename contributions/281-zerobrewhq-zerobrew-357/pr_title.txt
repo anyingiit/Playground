@@ -1,0 +1,1 @@
+fix(zb_cli): show help for bare zb when env options are set

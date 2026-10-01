@@ -1,0 +1,204 @@
+From 6c07246d2d18cd896c00158a4af85493457b9d0d Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:55:24 +0000
+Subject: [PATCH] fix(client): require application/json content type on
+ discovery
+
+OpenID Connect Discovery 1.0, section 4.2, requires the provider
+configuration response to use the application/json content type.
+client.Discover did not check the Content-Type header and accepted any
+response body that happened to decode as JSON.
+
+Add httphelper.HttpJSONRequest, which behaves like HttpRequest but
+rejects successful responses whose media type is not application/json
+(parameters such as charset are allowed), returning an error wrapping
+the new ErrInvalidContentType. Use it in client.Discover; the error is
+joined with oidc.ErrDiscoveryFailed as before. HttpRequest is unchanged
+for all other callers.
+
+Closes #967
+---
+ pkg/client/client.go                |  4 ++-
+ pkg/client/client_test.go           | 40 +++++++++++++++++++++++++++++
+ pkg/client/rp/relying_party_test.go |  3 +++
+ pkg/http/errors.go                  |  5 +++-
+ pkg/http/http.go                    | 30 ++++++++++++++++++++++
+ 5 files changed, 80 insertions(+), 2 deletions(-)
+
+diff --git a/pkg/client/client.go b/pkg/client/client.go
+index 5067f53..6962719 100644
+--- a/pkg/client/client.go
++++ b/pkg/client/client.go
+@@ -51,7 +51,9 @@ func Discover(ctx context.Context, issuer string, httpClient *http.Client, wellK
+ 		return nil, err
+ 	}
+ 	discoveryConfig := new(oidc.DiscoveryConfiguration)
+-	err = httphelper.HttpRequest(httpClient, req, &discoveryConfig)
++	// OpenID Connect Discovery 1.0, section 4.2: the response MUST use the
++	// application/json content type.
++	err = httphelper.HttpJSONRequest(httpClient, req, &discoveryConfig)
+ 	if err != nil {
+ 		return nil, errors.Join(oidc.ErrDiscoveryFailed, err)
+ 	}
+diff --git a/pkg/client/client_test.go b/pkg/client/client_test.go
+index dfff86c..639d67b 100644
+--- a/pkg/client/client_test.go
++++ b/pkg/client/client_test.go
+@@ -16,6 +16,7 @@ import (
+ 	"github.com/go-jose/go-jose/v4"
+ 	"github.com/stretchr/testify/assert"
+ 	"github.com/stretchr/testify/require"
++	httphelper "github.com/zitadel/oidc/v3/pkg/http"
+ 	"github.com/zitadel/oidc/v3/pkg/oidc"
+ )
+ 
+@@ -67,6 +68,45 @@ func TestDiscover(t *testing.T) {
+ 	}
+ }
+ 
++func TestDiscover_ContentType(t *testing.T) {
++	tests := []struct {
++		name        string
++		contentType string
++		wantErr     bool
++	}{
++		{name: "application/json", contentType: "application/json"},
++		{name: "application/json with charset", contentType: "application/json; charset=utf-8"},
++		{name: "mixed case", contentType: "Application/JSON"},
++		{name: "missing", contentType: "", wantErr: true},
++		{name: "text/plain", contentType: "text/plain; charset=utf-8", wantErr: true},
++		{name: "text/html", contentType: "text/html", wantErr: true},
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			var issuer string
++			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				// Setting the header to nil prevents net/http from sniffing a content type.
++				w.Header()["Content-Type"] = nil
++				if tt.contentType != "" {
++					w.Header().Set("Content-Type", tt.contentType)
++				}
++				_, _ = w.Write([]byte(`{"issuer":"` + issuer + `"}`))
++			}))
++			defer server.Close()
++			issuer = server.URL
++
++			got, err := Discover(context.Background(), issuer, server.Client())
++			if tt.wantErr {
++				require.ErrorIs(t, err, oidc.ErrDiscoveryFailed)
++				require.ErrorIs(t, err, httphelper.ErrInvalidContentType)
++				return
++			}
++			require.NoError(t, err)
++			assert.Equal(t, issuer, got.Issuer)
++		})
++	}
++}
++
+ type mockRevokeCaller struct {
+ 	endpoint   string
+ 	httpClient *http.Client
+diff --git a/pkg/client/rp/relying_party_test.go b/pkg/client/rp/relying_party_test.go
+index 48e96f3..a05564c 100644
+--- a/pkg/client/rp/relying_party_test.go
++++ b/pkg/client/rp/relying_party_test.go
+@@ -186,6 +186,7 @@ func Test_PKCEFromDiscovery(t *testing.T) {
+ 						return
+ 					}
+ 
++					w.Header().Set("Content-Type", "application/json")
+ 					if err := json.NewEncoder(w).Encode(map[string]interface{}{
+ 						"issuer":                           "http://" + r.Host,
+ 						"code_challenge_methods_supported": tt.methods,
+@@ -255,6 +256,7 @@ func Test_CodeExchangeHandler_JWTProfileAudience(t *testing.T) {
+ 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+ 		switch r.URL.Path {
+ 		case oidc.DiscoveryEndpoint:
++			w.Header().Set("Content-Type", "application/json")
+ 			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+ 				"issuer":                 server.URL,
+ 				"authorization_endpoint": server.URL + "/authorize",
+@@ -308,6 +310,7 @@ func newJWTProfileServer(t *testing.T) *jwtProfileServer {
+ 	s.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+ 		switch r.URL.Path {
+ 		case oidc.DiscoveryEndpoint:
++			w.Header().Set("Content-Type", "application/json")
+ 			assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+ 				"issuer":                 s.URL,
+ 				"authorization_endpoint": s.URL + "/authorize",
+diff --git a/pkg/http/errors.go b/pkg/http/errors.go
+index f52e13a..ac459ec 100644
+--- a/pkg/http/errors.go
++++ b/pkg/http/errors.go
+@@ -2,4 +2,7 @@ package http
+ 
+ import "errors"
+ 
+-var ErrResponseBodyTooLarge = errors.New("http response too large")
++var (
++	ErrResponseBodyTooLarge = errors.New("http response too large")
++	ErrInvalidContentType   = errors.New("invalid response content type")
++)
+diff --git a/pkg/http/http.go b/pkg/http/http.go
+index c93fd1c..d5ef9fb 100644
+--- a/pkg/http/http.go
++++ b/pkg/http/http.go
+@@ -6,6 +6,7 @@ import (
+ 	"fmt"
+ 	"io"
+ 	"log"
++	"mime"
+ 	"net/http"
+ 	"net/url"
+ 	"strings"
+@@ -57,7 +58,22 @@ func FormRequest(ctx context.Context, endpoint string, request any, encoder Enco
+ 	return req, nil
+ }
+ 
++// HttpRequest sends req using client and unmarshals a successful JSON response
++// body into response. The Content-Type of the response is not checked;
++// use [HttpJSONRequest] when the server is required to respond with
++// application/json.
+ func HttpRequest(client *http.Client, req *http.Request, response any) error {
++	return httpRequest(client, req, response, false)
++}
++
++// HttpJSONRequest works like [HttpRequest], but additionally requires a
++// successful response to carry an application/json Content-Type header.
++// If it does not, an error wrapping [ErrInvalidContentType] is returned.
++func HttpJSONRequest(client *http.Client, req *http.Request, response any) error {
++	return httpRequest(client, req, response, true)
++}
++
++func httpRequest(client *http.Client, req *http.Request, response any, requireJSON bool) error {
+ 	resp, err := client.Do(req)
+ 	if err != nil {
+ 		return err
+@@ -82,6 +98,12 @@ func HttpRequest(client *http.Client, req *http.Request, response any) error {
+ 		return ErrResponseBodyTooLarge
+ 	}
+ 
++	if requireJSON {
++		if err := checkJSONContentType(resp.Header.Get("Content-Type")); err != nil {
++			return err
++		}
++	}
++
+ 	err = json.Unmarshal(body, response)
+ 	if err != nil {
+ 		return fmt.Errorf("failed to unmarshal response: %v %s", err, body)
+@@ -116,3 +138,11 @@ func StartServer(ctx context.Context, address string) {
+ 		}
+ 	}()
+ }
++
++func checkJSONContentType(contentType string) error {
++	mediaType, _, err := mime.ParseMediaType(contentType)
++	if err != nil || mediaType != "application/json" {
++		return fmt.Errorf("%w: expected application/json, got %q", ErrInvalidContentType, contentType)
++	}
++	return nil
++}
+-- 
+2.43.0
+

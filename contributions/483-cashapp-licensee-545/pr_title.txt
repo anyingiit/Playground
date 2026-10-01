@@ -1,0 +1,1 @@
+Print artifact coordinates with errors and warnings in quiet mode

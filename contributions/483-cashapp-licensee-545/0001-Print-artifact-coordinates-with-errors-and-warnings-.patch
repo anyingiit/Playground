@@ -1,0 +1,166 @@
+From 5ce71b1380c534f20d3de20e70db6194df28ffa9 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:57:21 +0000
+Subject: [PATCH] Print artifact coordinates with errors and warnings in quiet
+ mode
+
+The coordinate header for each artifact was always logged at LIFECYCLE, which
+Gradle hides with --quiet, while the errors and warnings beneath it were still
+shown. Log the header at the most severe level of its results instead so it is
+visible whenever any of its results are.
+
+Fixes #545
+---
+ CHANGELOG.md                                   |   1 +
+ src/main/kotlin/app/cash/licensee/task.kt      |  17 +++++++++++------
+ .../spdx-not-allowed-log-quiet/build.gradle    |  14 ++++++++++++++
+ .../build/reports/licensee/validation.txt      |   2 ++
+ .../example/example/1.0.0/example-1.0.0.jar    | Bin 0 -> 22 bytes
+ .../example/example/1.0.0/example-1.0.0.pom    |  12 ++++++++++++
+ .../spdx-not-allowed-log-quiet/settings.gradle |   7 +++++++
+ .../cash/licensee/LicenseePluginFixtureTest.kt |  15 +++++++++++++++
+ 8 files changed, 62 insertions(+), 6 deletions(-)
+ create mode 100644 src/test/fixtures/spdx-not-allowed-log-quiet/build.gradle
+ create mode 100644 src/test/fixtures/spdx-not-allowed-log-quiet/expected/build/reports/licensee/validation.txt
+ create mode 100644 src/test/fixtures/spdx-not-allowed-log-quiet/repo/com/example/example/1.0.0/example-1.0.0.jar
+ create mode 100644 src/test/fixtures/spdx-not-allowed-log-quiet/repo/com/example/example/1.0.0/example-1.0.0.pom
+ create mode 100644 src/test/fixtures/spdx-not-allowed-log-quiet/settings.gradle
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 93aafc7..276ebff 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -16,6 +16,7 @@
+ **Fixed**
+ 
+ - Replace usage of Gradle's to-be-deprecated `lenientConfiguration` API with `ArtifactView`.
++- Print artifact coordinates alongside their errors and warnings when running with `--quiet`.
+ 
+ 
+ ## [1.14.1] - 2025-10-08
+diff --git a/src/main/kotlin/app/cash/licensee/task.kt b/src/main/kotlin/app/cash/licensee/task.kt
+index c446d8d..334d6c1 100644
+--- a/src/main/kotlin/app/cash/licensee/task.kt
++++ b/src/main/kotlin/app/cash/licensee/task.kt
+@@ -334,12 +334,17 @@ abstract class LicenseeTask : DefaultTask() {
+       }
+       validationReport.appendLine(coordinateHeader)
+ 
+-      val hasNonInfo = results.any { it !is ValidationResult.Info }
+-      if (hasNonInfo) {
+-        logger.log(lifecycleLevel, coordinateHeader)
+-      } else {
+-        logger.info(coordinateHeader)
+-      }
++      // Log the header at the most severe level of its results so that it is visible whenever
++      // any of them are (e.g., errors and warnings are still shown with --quiet).
++      val headerLevel =
++        results.maxOfOrNull {
++          when (it) {
++            is ValidationResult.Error -> violationErrorLevel
++            is ValidationResult.Warning -> violationWarningLevel
++            is ValidationResult.Info -> INFO
++          }
++        } ?: INFO
++      logger.log(headerLevel, coordinateHeader)
+       for (result in results) {
+         logResult(result, violationErrorLevel, violationWarningLevel, prefix = " - ")
+       }
+diff --git a/src/test/fixtures/spdx-not-allowed-log-quiet/build.gradle b/src/test/fixtures/spdx-not-allowed-log-quiet/build.gradle
+new file mode 100644
+index 0000000..bec8ce4
+--- /dev/null
++++ b/src/test/fixtures/spdx-not-allowed-log-quiet/build.gradle
+@@ -0,0 +1,14 @@
++import app.cash.licensee.ViolationAction
++
++plugins {
++  id("java-library")
++  alias(libs.plugins.licensee)
++}
++
++dependencies {
++  implementation 'com.example:example:1.0.0'
++}
++
++licensee {
++  violationAction ViolationAction.LOG
++}
+diff --git a/src/test/fixtures/spdx-not-allowed-log-quiet/expected/build/reports/licensee/validation.txt b/src/test/fixtures/spdx-not-allowed-log-quiet/expected/build/reports/licensee/validation.txt
+new file mode 100644
+index 0000000..7af86cf
+--- /dev/null
++++ b/src/test/fixtures/spdx-not-allowed-log-quiet/expected/build/reports/licensee/validation.txt
+@@ -0,0 +1,2 @@
++com.example:example:1.0.0
++ - ERROR: SPDX identifier 'Apache-2.0' is NOT allowed
+diff --git a/src/test/fixtures/spdx-not-allowed-log-quiet/repo/com/example/example/1.0.0/example-1.0.0.jar b/src/test/fixtures/spdx-not-allowed-log-quiet/repo/com/example/example/1.0.0/example-1.0.0.jar
+new file mode 100644
+index 0000000000000000000000000000000000000000..15cb0ecb3e219d1701294bfdf0fe3f5cb5d208e7
+GIT binary patch
+literal 22
+NcmWIWW@Tf*000g10H*)|
+
+literal 0
+HcmV?d00001
+
+diff --git a/src/test/fixtures/spdx-not-allowed-log-quiet/repo/com/example/example/1.0.0/example-1.0.0.pom b/src/test/fixtures/spdx-not-allowed-log-quiet/repo/com/example/example/1.0.0/example-1.0.0.pom
+new file mode 100644
+index 0000000..fe1fe18
+--- /dev/null
++++ b/src/test/fixtures/spdx-not-allowed-log-quiet/repo/com/example/example/1.0.0/example-1.0.0.pom
+@@ -0,0 +1,12 @@
++<project>
++  <modelVersion>4.0.0</modelVersion>
++  <groupId>com.example</groupId>
++  <artifactId>example</artifactId>
++  <version>1.0.0</version>
++  <licenses>
++    <license>
++      <name>Apache-2.0</name>
++      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
++    </license>
++  </licenses>
++</project>
+diff --git a/src/test/fixtures/spdx-not-allowed-log-quiet/settings.gradle b/src/test/fixtures/spdx-not-allowed-log-quiet/settings.gradle
+new file mode 100644
+index 0000000..379dbf5
+--- /dev/null
++++ b/src/test/fixtures/spdx-not-allowed-log-quiet/settings.gradle
+@@ -0,0 +1,7 @@
++pluginManagement {
++  includeBuild("../../test-build-logic")
++}
++
++plugins {
++  id("licenseeTests")
++}
+diff --git a/src/test/kotlin/app/cash/licensee/LicenseePluginFixtureTest.kt b/src/test/kotlin/app/cash/licensee/LicenseePluginFixtureTest.kt
+index f4c670d..6347686 100644
+--- a/src/test/kotlin/app/cash/licensee/LicenseePluginFixtureTest.kt
++++ b/src/test/kotlin/app/cash/licensee/LicenseePluginFixtureTest.kt
+@@ -292,6 +292,21 @@ class LicenseePluginFixtureTest(
+       )
+   }
+ 
++  @Test
++  fun violationsLoggedQuiet(@TestParameter("spdx-not-allowed-log-quiet") fixtureName: String) {
++    val fixtureDir = File(fixturesDir, fixtureName)
++    val result = createRunner(fixtureDir, "clean", "licensee", "--quiet").build()
++    assertExpectedFiles(fixtureDir)
++    assertThat(result.output)
++      .contains(
++        """
++        |com.example:example:1.0.0
++        | - ERROR: SPDX identifier 'Apache-2.0' is NOT allowed
++        |"""
++          .trimMargin()
++      )
++  }
++
+   @Test
+   fun violationsIgnored(
+     @TestParameter("spdx-not-allowed-ignore", "spdx-not-allowed-ignore-kts") fixtureName: String
+-- 
+2.43.0
+

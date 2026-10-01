@@ -1,0 +1,131 @@
+From bbcf4940aeb4accdd1e774cd95d219924c6db497 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:54:34 +0000
+Subject: [PATCH] Write first field of id_pat variant normally when enum id is
+ given
+
+When an enum sets `id = "..."` (e.g. from ctx), the id is not read from
+the input, so an `id_pat` variant has no id storage field. DekuRead already
+handles this (`pad_id` is only set when `id` is None), but DekuWrite treated
+the first field of every `id_pat` variant as id storage, writing it with the
+enum's endian/bits/bytes and dropping the field's own `ctx`, `endian`, etc.
+
+This failed to compile when the first field needs a ctx, and silently wrote
+the wrong bytes when it has its own `endian`.
+
+Closes #655
+---
+ CHANGELOG.md                         |  3 ++
+ deku-derive/src/macros/deku_write.rs |  5 ++-
+ tests/test_attributes/test_ctx.rs    | 65 ++++++++++++++++++++++++++++
+ 3 files changed, 72 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 709afd4..5564889 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -6,6 +6,9 @@
+ 
+ - `Writer`: an `Lsb0` write that ends on a byte boundary no longer reorders the
+   whole bytes of the `Msb0` write that follows it ([#677](https://github.com/sharksforarms/deku/pull/677))
++- `DekuWrite`: an `id_pat` variant of an enum whose id is given by `id = "..."` (e.g. from
++  `ctx`) now writes its first field with that field's own attributes (`ctx`, `endian`, ...)
++  instead of treating it as id storage ([#655](https://github.com/sharksforarms/deku/issues/655))
+ 
+ ### Other
+ 
+diff --git a/deku-derive/src/macros/deku_write.rs b/deku-derive/src/macros/deku_write.rs
+index 8665557..907483e 100644
+--- a/deku-derive/src/macros/deku_write.rs
++++ b/deku-derive/src/macros/deku_write.rs
+@@ -322,10 +322,13 @@ fn emit_enum(input: &DekuData) -> Result<TokenStream, syn::Error> {
+         let variant_write = if variant_writer.is_some() {
+             quote! { #variant_writer ?; }
+         } else {
++            // The first field only stores the id when the id is read from the
++            // input. With `id = "..."` (e.g. from ctx) there is no storage field,
++            // matching the read side's `pad_id`.
+             let field_writes = emit_field_writes(
+                 input,
+                 &variant.fields.as_ref(),
+-                variant.id_pat.is_some(),
++                variant.id_pat.is_some() && id.is_none(),
+                 None,
+                 &ident,
+             )?;
+diff --git a/tests/test_attributes/test_ctx.rs b/tests/test_attributes/test_ctx.rs
+index c76d632..5754cc4 100644
+--- a/tests/test_attributes/test_ctx.rs
++++ b/tests/test_attributes/test_ctx.rs
+@@ -286,3 +286,68 @@ fn test_enum_endian_ctx() {
+     let ret_write: Vec<u8> = ret_read.try_into().unwrap();
+     assert_eq!(ret_write, test_data)
+ }
++
++/// https://github.com/sharksforarms/deku/issues/655
++///
++/// When the enum id comes from `id = "..."` (e.g. via ctx), an `id_pat` variant does not
++/// store the id in its first field, so that field must be written with its own attributes.
++#[test]
++fn test_enum_id_pat_ctx_id_first_field_attributes() {
++    #[derive(PartialEq, Debug, DekuRead, DekuWrite)]
++    #[deku(ctx = "other_value: u8")]
++    struct Inner {
++        #[deku(assert_eq = "other_value")]
++        field: u8,
++    }
++
++    #[derive(PartialEq, Debug, DekuRead, DekuWrite)]
++    #[deku(ctx = "id: u8, other_value: u8", id = "id")]
++    enum Outer {
++        #[deku(id_pat = "_ if (0..69u8).contains(&id)")]
++        Thing {
++            #[deku(ctx = "other_value")]
++            inner: Inner,
++        },
++        #[deku(id_pat = "_")]
++        Other {
++            #[deku(endian = "big")]
++            value: u16,
++        },
++    }
++
++    #[derive(PartialEq, Debug, DekuRead, DekuWrite)]
++    struct Container {
++        id: u8,
++        other_value: u8,
++        #[deku(ctx = "*id, *other_value")]
++        outer: Outer,
++    }
++
++    let test_data = [0x01u8, 0xab, 0xab];
++    let ret_read = Container::try_from(test_data.as_slice()).unwrap();
++    assert_eq!(
++        Container {
++            id: 0x01,
++            other_value: 0xab,
++            outer: Outer::Thing {
++                inner: Inner { field: 0xab }
++            },
++        },
++        ret_read
++    );
++    let ret_write: Vec<u8> = ret_read.try_into().unwrap();
++    assert_eq!(test_data.to_vec(), ret_write);
++
++    let test_data = [0x80u8, 0x00, 0x12, 0x34];
++    let ret_read = Container::try_from(test_data.as_slice()).unwrap();
++    assert_eq!(
++        Container {
++            id: 0x80,
++            other_value: 0x00,
++            outer: Outer::Other { value: 0x1234 },
++        },
++        ret_read
++    );
++    let ret_write: Vec<u8> = ret_read.try_into().unwrap();
++    assert_eq!(test_data.to_vec(), ret_write);
++}
+-- 
+2.43.0
+

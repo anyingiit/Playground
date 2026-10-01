@@ -1,0 +1,96 @@
+From a43f0eba859234d6123892b41e5defbf1f525a1b Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:01:03 +0000
+Subject: [PATCH] fix: sanitize standalone snapshot file names
+
+Standalone snapshot file names are derived from the test name, which can
+contain characters that are invalid in file names on some platforms (e.g.
+':', '<', '>', '"', '|', '?', '*' and '\' on Windows) or that break the
+'_%d' format verb used to number standalone snapshots ('%'). Replace those
+characters, as well as control characters, with '_'.
+
+Closes #156
+---
+ snaps/snapshot.go      | 21 ++++++++++++++++++++-
+ snaps/snapshot_test.go | 19 +++++++++++++++++++
+ 2 files changed, 39 insertions(+), 1 deletion(-)
+
+diff --git a/snaps/snapshot.go b/snaps/snapshot.go
+index fc5b503..25126de 100644
+--- a/snaps/snapshot.go
++++ b/snaps/snapshot.go
+@@ -262,6 +262,7 @@ func getPrevStandaloneSnapshot(snapPath string) (string, error) {
+ //   - if filename provided we return the filename with `.snap` extension
+ //   - if extension provided we return the filename with `.snap` and the provided extension
+ //   - if it's standalone snapshot we also append an integer (_%d) in the filename (even before `.snap`)
++//   - if it's standalone snapshot and no filename provided, the test name is sanitized for use as a filename
+ //
+ // Returns the relative path of the caller and the snapshot path.
+ func snapshotPath(c *Config, tName string, isStandalone bool) (string, string) {
+@@ -289,7 +290,7 @@ func constructFilename(c *Config, callerFilename, tName string, isStandalone boo
+ 		filename = strings.TrimSuffix(base, filepath.Ext(base))
+ 
+ 		if isStandalone {
+-			filename = strings.ReplaceAll(tName, "/", "_")
++			filename = sanitizeFilename(tName)
+ 		}
+ 	}
+ 
+@@ -301,6 +302,24 @@ func constructFilename(c *Config, callerFilename, tName string, isStandalone boo
+ 	return filename
+ }
+ 
++// sanitizeFilename replaces characters that are either path separators, invalid in file names
++// on some operating systems (e.g. Windows) or have special meaning for the `_%d` formatting
++// verb appended to standalone snapshot file names, with `_`.
++func sanitizeFilename(s string) string {
++	return strings.Map(func(r rune) rune {
++		if r < 0x20 || r == 0x7f {
++			return '_'
++		}
++
++		switch r {
++		case '/', '\\', ':', '*', '?', '"', '<', '>', '|', '%':
++			return '_'
++		}
++
++		return r
++	}, s)
++}
++
+ func unescapeEndChars(s string) string {
+ 	ss := strings.Split(s, "\n")
+ 	for idx, s := range ss {
+diff --git a/snaps/snapshot_test.go b/snaps/snapshot_test.go
+index 70e814c..d4edc14 100644
+--- a/snaps/snapshot_test.go
++++ b/snaps/snapshot_test.go
+@@ -303,6 +303,25 @@ func TestSnapshotPath(t *testing.T) {
+ 		)
+ 	})
+ 
++	t.Run("should return standalone snapPath with sanitized test name", func(t *testing.T) {
++		snapPath, snapPathRel := snapshotPathWrapper(
++			&defaultConfig,
++			`TestFunction/a:b<c>d"e\f|g?h*i%j`,
++			true,
++		)
++
++		test.HasSuffix(
++			t,
++			snapPath,
++			filepath.FromSlash("/snaps/__snapshots__/TestFunction_a_b_c_d_e_f_g_h_i_j_%d.snap"),
++		)
++		test.Equal(
++			t,
++			filepath.FromSlash("__snapshots__/TestFunction_a_b_c_d_e_f_g_h_i_j_%d.snap"),
++			snapPathRel,
++		)
++	})
++
+ 	t.Run("should return standalone snapPath with overridden filename", func(t *testing.T) {
+ 		snapPath, snapPathRel := snapshotPathWrapper(&Config{
+ 			filename: "my_file",
+-- 
+2.43.0
+

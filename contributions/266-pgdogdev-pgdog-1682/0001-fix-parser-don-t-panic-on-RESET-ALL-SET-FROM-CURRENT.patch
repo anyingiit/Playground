@@ -1,0 +1,120 @@
+From 14fb6bb0751b9b375127b332f6f12b7b099c1869 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:04:57 +0000
+Subject: [PATCH] fix(parser): don't panic on RESET ALL / SET FROM CURRENT in
+ multi-statement queries
+
+try_multi_set() passed every VariableSetStmt except SET TRANSACTION to
+parse_set_param(), which panics on any kind other than SET x TO value,
+SET x TO DEFAULT and RESET x. A multi-statement query containing
+RESET ALL (e.g. the connection reset sequence Npgsql sends) or
+SET x FROM CURRENT therefore panicked the client's task. A single
+SET x FROM CURRENT hit the same panic through set().
+
+Only treat statements that change a single named parameter as SET
+params. RESET ALL and SET ... FROM CURRENT now count as "other"
+statements, so the existing mixed-SET handling either splits the query
+or returns a MultiStatementSafety error. A standalone SET ... FROM
+CURRENT is forwarded to the server like SET TRANSACTION.
+
+Closes #1682
+---
+ pgdog/src/frontend/router/parser/query/set.rs | 13 ++++--
+ .../router/parser/query/test/test_set.rs      | 43 +++++++++++++++++++
+ 2 files changed, 53 insertions(+), 3 deletions(-)
+
+diff --git a/pgdog/src/frontend/router/parser/query/set.rs b/pgdog/src/frontend/router/parser/query/set.rs
+index 923da72..30bbe1f 100644
+--- a/pgdog/src/frontend/router/parser/query/set.rs
++++ b/pgdog/src/frontend/router/parser/query/set.rs
+@@ -16,8 +16,8 @@ impl QueryParser {
+     ) -> Result<Command, Error> {
+         if stmt.kind == VAR_RESET_ALL {
+             Ok(Command::ResetAll)
+-        } else if stmt.kind == VAR_SET_MULTI {
+-            // SET TRANSACTION
++        } else if !Self::is_set_param(stmt) {
++            // SET TRANSACTION, SET ... FROM CURRENT: forward to the server as-is.
+             Ok(Command::Query(
+                 Route::write(context.shards_calculator.shard().clone())
+                     .with_read(context.read_only),
+@@ -32,6 +32,13 @@ impl QueryParser {
+         }
+     }
+ 
++    /// Whether this SET/RESET statement changes a single named parameter
++    /// that we can track on the client, i.e. `SET x TO ...`, `SET x TO DEFAULT`
++    /// or `RESET x`.
++    fn is_set_param(stmt: &nodes::VariableSetStmt) -> bool {
++        matches!(stmt.kind, VAR_SET_VALUE | VAR_SET_DEFAULT | VAR_RESET)
++    }
++
+     /// Parse a single SET statement into a SetParam
+     fn parse_set_param(stmt: &nodes::VariableSetStmt) -> Result<SetParam, Error> {
+         let value = if stmt.kind == VAR_SET_VALUE {
+@@ -74,7 +81,7 @@ impl QueryParser {
+         let params = stmts
+             .into_iter()
+             .filter_map(|stmt| match stmt.stmt() {
+-                Node::VariableSetStmt(stmt) if stmt.kind != VAR_SET_MULTI => {
++                Node::VariableSetStmt(stmt) if Self::is_set_param(stmt) => {
+                     Some(Self::parse_set_param(stmt))
+                 }
+                 _ => {
+diff --git a/pgdog/src/frontend/router/parser/query/test/test_set.rs b/pgdog/src/frontend/router/parser/query/test/test_set.rs
+index 8917f29..5508bd1 100644
+--- a/pgdog/src/frontend/router/parser/query/test/test_set.rs
++++ b/pgdog/src/frontend/router/parser/query/test/test_set.rs
+@@ -254,6 +254,49 @@ fn test_reset() {
+     );
+ }
+ 
++#[test]
++fn test_multi_statement_reset_all() {
++    let mut test = QueryParserTest::new();
++
++    // Npgsql sends this when resetting a pooled connection.
++    let result = test
++        .try_execute(vec![
++            Query::new(
++                "SET SESSION AUTHORIZATION DEFAULT;RESET ALL;CLOSE ALL;UNLISTEN *;SELECT pg_advisory_unlock_all();DISCARD SEQUENCES;DISCARD TEMP",
++            )
++            .into(),
++        ])
++        .unwrap_err();
++    assert!(matches!(result, Error::MultiStatementSafety));
++
++    let command = test.execute(vec![
++        Query::new("SET statement_timeout TO 1; RESET ALL").into(),
++    ]);
++    assert!(
++        matches!(command, Command::Split(ref queries) if queries.len() == 2),
++        "expected Command::Split, got {command:#?}",
++    );
++}
++
++#[test]
++fn test_set_from_current() {
++    let mut test = QueryParserTest::new();
++
++    let command = test.execute(vec![Query::new("SET search_path FROM CURRENT").into()]);
++    assert!(
++        matches!(command, Command::Query(ref route) if route.is_write()),
++        "expected Command::Query, got {command:#?}",
++    );
++
++    let command = test.execute(vec![
++        Query::new("SET statement_timeout TO 1; SET search_path FROM CURRENT").into(),
++    ]);
++    assert!(
++        matches!(command, Command::Split(ref queries) if queries.len() == 2),
++        "expected Command::Split, got {command:#?}",
++    );
++}
++
+ #[test]
+ fn test_set_single_primary() {
+     let mut test = QueryParserTest::new_single_primary(&config());
+-- 
+2.43.0
+
