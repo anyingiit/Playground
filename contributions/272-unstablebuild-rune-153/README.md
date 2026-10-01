@@ -54,3 +54,10 @@ tools/submit_pr.sh contributions/272-unstablebuild-rune-153 unstablebuild/rune m
 ```
 
 PR 标题见 `pr_title.txt`，正文见 `pr_body.md`。
+
+## 独立复核 (2026-10-01)
+- issue #153 仍 open、无 assignee/评论；`/pulls?q=153` 0 条结果。
+- 新浅克隆 main 仍为 587cdfd，`git am` 干净应用。
+- `go test -race -run TestConvertTabArgs ./internal/ide/`：带修复 ok；只还原 convertTab 函数体后 no_args / empty_name 失败（红）。
+- 提交作者、DCO Signed-off-by、标题 (Update …)、PR 模板均符合约定；gofmt 无输出。
+- 修正：pr_body.md 中 4 行超过模板要求的 90 列，已重新折行。

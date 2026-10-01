@@ -5,7 +5,7 @@
 | Issue | https://github.com/mitsuhiko/minijinja/issues/956 |
 | Tier | 自由 |
 | Labels | 无 |
-| Status | ✅ ready — patch + PR 文本已完成（2026-10-01） |
+| Status | ✅ ready — independently reviewed 2026-10-01 (issue open, 0 PRs; git am clean on main@5978498; red→green re-run; commit scope aligned to upstream `fix(py):`) |
 | 重复 PR 检查 | 2026-10-01 复查：`/pulls?q=956` 0 条；open PR 仅 #957(match)、#940(wordwrap)、#902(auto escape)，无重叠；issue 无 assignee、无评论 |
 | Base | `main` @ 5978498 |
 

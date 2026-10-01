@@ -40,3 +40,6 @@ base 分支：`main`
 tools/submit_pr.sh contributions/614-agavra-tuicr-597 agavra/tuicr main fix/pr-container-grammar-highlight contributions/614-agavra-tuicr-597/pr_title.txt contributions/614-agavra-tuicr-597/pr_body.md
 ```
 或手动：fork → `git checkout -b fix/pr-container-grammar-highlight origin/main` → `git am 0001-*.patch` → push → 用 pr_title.txt / pr_body.md 开 PR。
+
+## 独立复核 (2026-10-01)
+issue 仍 open、无指派、`/pulls?q=597` 0 结果；patch 在 main 新浅克隆上 `git am` 干净；`cargo test --lib forge::pr_open` 去掉 `attach_container_file_contents` 调用 → 2 failed，恢复 → 全绿；`cargo fmt --all --check` ✅；CI 同款 `cargo clippy -- -D warnings` ✅（`--all-targets` 有一个 main 上既有的 `src/vcs/git/mod.rs:708` clippy 警告，与本 PR 无关）。

@@ -1,6 +1,6 @@
 # kubecolor/kubecolor#171
 
-Status: ✅ ready — 补丁、测试 red→green、全量检查、PR 文本均已完成 (2026-10-01)
+Status: ✅ ready — 独立复核通过 (2026-10-01)：issue 仍开放无竞争 PR，git am 干净，red(7)→green，pr_body 已改为仓库 PR 模板格式
 
 | 项 | 内容 |
 |---|---|

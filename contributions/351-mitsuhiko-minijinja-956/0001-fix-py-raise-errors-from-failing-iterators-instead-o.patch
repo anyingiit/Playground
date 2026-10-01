@@ -1,7 +1,7 @@
-From 69ca063bd6e2cb5e7e12cab3b5777afc34ca2a97 Mon Sep 17 00:00:00 2001
+From 16cf303355d52f49d1ed66b94edd4b085ec037c4 Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Thu, 1 Oct 2026 16:26:43 +0000
-Subject: [PATCH] fix(python): raise errors from failing iterators instead of
+Subject: [PATCH] fix(py): raise errors from failing iterators instead of
  looping forever
 
 DynamicObject::enumerate silently dropped errors returned by the Python

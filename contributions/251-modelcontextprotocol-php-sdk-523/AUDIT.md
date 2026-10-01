@@ -14,4 +14,6 @@ Tool: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/php-sdk
 | `src/Client/Transport/StdioTransport.php` `proc_open` | Product feature: client launches the MCP server process given by the user | benign |
 | `base64_decode` in `src/Server/Stateless/RequestStateCodec.php`, `src/Schema/Wire/McpHeader.php`, `src/Capability/Registry.php` | Decoding of cursors / state tokens / headers; no `eval` | benign |
 
+Re-checked 2026-10-01 against the same HEAD (3175614); composer was run with plugins disabled (root, non-interactive).
+
 Conclusion: nothing malicious found. Safe to run `composer install`, phpunit, php-cs-fixer, phpstan.

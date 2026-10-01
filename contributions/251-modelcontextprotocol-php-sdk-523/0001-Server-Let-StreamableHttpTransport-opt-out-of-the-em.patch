@@ -1,0 +1,131 @@
+From c1bef771989717e02ac7aabdf90f442cef619696 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:11:11 +0000
+Subject: [PATCH] [Server] Let StreamableHttpTransport opt out of the
+ empty-middleware warning
+
+Framework integrations such as Drupal's mcp_server pass `middleware: []` on
+purpose because CORS and trusted-host validation already happen in the
+framework's own HTTP layer. Since a transport is created per request, the
+warning was logged once per MCP request.
+
+Add a `$warnOnEmptyMiddleware` constructor argument (default `true`) so an
+integration can mark the empty list as deliberate, while an accidental empty
+list keeps warning. The warning no longer claims protocol version validation
+is disabled: handshake-era traffic always runs through handshakeMiddleware().
+
+Fixes #523
+---
+ CHANGELOG.md                                  |  1 +
+ docs/run/http.md                              | 12 +++++++++
+ .../Transport/StreamableHttpTransport.php     |  9 ++++---
+ .../Transport/StreamableHttpTransportTest.php | 27 +++++++++++++++++++
+ 4 files changed, 46 insertions(+), 3 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index e77f062..d1cc677 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -8,6 +8,7 @@ All notable changes to `mcp/sdk` will be documented in this file.
+ * [BC Break] Remove the `providerClass` argument of `#[CompletionProvider]`. Use `provider:`, which takes the same class-string and is now the first positional argument.
+ * Add `HttpTransport::getSessionId()` to read the server-minted `Mcp-Session-Id`: a request-scoped caller can persist it and pass it back through the constructor's `$headers` on a later transport. Always `null` on `2026-07-28`, which removed protocol-level sessions.
+ * Fix OIDC discovery rejecting issuers with a trailing slash (e.g. Authentik, Auth0).
++* Add `StreamableHttpTransport`'s `$warnOnEmptyMiddleware` constructor argument: pass `false` alongside `middleware: []` when the surrounding framework already enforces CORS and host validation, to skip the empty-middleware warning.
+ 
+ 0.8.0
+ -----
+diff --git a/docs/run/http.md b/docs/run/http.md
+index a57a8db..73be790 100644
+--- a/docs/run/http.md
++++ b/docs/run/http.md
+@@ -258,3 +258,15 @@ $transport = new StreamableHttpTransport(
+     middleware: [new AuthMiddleware($responseFactory)],
+ );
+ ```
++
++An empty `middleware: []` logs a warning on every request, since it usually means the defaults were
++dropped by accident. If your framework already handles CORS and host validation in its own HTTP layer,
++pass `warnOnEmptyMiddleware: false` to say the empty list is deliberate:
++
++```php
++$transport = new StreamableHttpTransport(
++    $request,
++    middleware: [],
++    warnOnEmptyMiddleware: false,
++);
++```
+diff --git a/src/Server/Transport/StreamableHttpTransport.php b/src/Server/Transport/StreamableHttpTransport.php
+index c01503e..69c0e50 100644
+--- a/src/Server/Transport/StreamableHttpTransport.php
++++ b/src/Server/Transport/StreamableHttpTransport.php
+@@ -78,7 +78,9 @@ class StreamableHttpTransport extends BaseTransport implements StatelessAwareTra
+     private ?array $middleware;
+ 
+     /**
+-     * @param iterable<MiddlewareInterface>|null $middleware `null` installs {@see self::defaultMiddleware()}; `[]` disables all middleware
++     * @param iterable<MiddlewareInterface>|null $middleware            `null` installs {@see self::defaultMiddleware()}; `[]` disables all middleware
++     * @param bool                               $warnOnEmptyMiddleware set to `false` when `[]` is deliberate (e.g. CORS and host validation are already enforced by
++     *                                                                  the surrounding framework) to skip the warning logged for an empty middleware list
+      */
+     public function __construct(
+         private readonly ServerRequestInterface $request,
+@@ -88,6 +90,7 @@ class StreamableHttpTransport extends BaseTransport implements StatelessAwareTra
+         ?iterable $middleware = null,
+         private readonly int $maxBodyBytes = self::DEFAULT_MAX_BODY_BYTES,
+         private readonly ClockInterface $clock = new NativeClock(),
++        bool $warnOnEmptyMiddleware = true,
+     ) {
+         parent::__construct($logger);
+ 
+@@ -107,8 +110,8 @@ class StreamableHttpTransport extends BaseTransport implements StatelessAwareTra
+             $this->middleware = null;
+         } else {
+             $this->middleware = self::normalizeMiddleware($middleware);
+-            if ([] === $this->middleware) {
+-                $this->logger->warning('Streamable HTTP transport started with an empty middleware list. Default security protections (CORS, DNS rebinding, protocol version validation) are disabled. Pass null (or omit the argument) to use the secure defaults, or include them via [...StreamableHttpTransport::defaultMiddleware(), $yourMiddleware].');
++            if ([] === $this->middleware && $warnOnEmptyMiddleware) {
++                $this->logger->warning('Streamable HTTP transport started with an empty middleware list. Default security protections (CORS, DNS rebinding) are disabled. Pass null (or omit the argument) to use the secure defaults, include them via [...StreamableHttpTransport::defaultMiddleware(), $yourMiddleware], or pass warnOnEmptyMiddleware: false if the surrounding application already enforces them.');
+             }
+ 
+             // Custom middleware runs before the request's era is classified, so a
+diff --git a/tests/Unit/Server/Transport/StreamableHttpTransportTest.php b/tests/Unit/Server/Transport/StreamableHttpTransportTest.php
+index 186432f..4aa07ba 100644
+--- a/tests/Unit/Server/Transport/StreamableHttpTransportTest.php
++++ b/tests/Unit/Server/Transport/StreamableHttpTransportTest.php
+@@ -151,6 +151,33 @@ final class StreamableHttpTransportTest extends TestCase
+         $this->assertFalse($response->hasHeader('Access-Control-Allow-Methods'));
+     }
+ 
++    #[TestDox('an explicit empty middleware list does not warn when the opt-out flag is set')]
++    public function testEmptyMiddlewareListWithOptOutDoesNotWarn(): void
++    {
++        $request = $this->factory
++            ->createServerRequest('POST', 'http://localhost/')
++            ->withHeader('Host', 'evil.example.com')
++            ->withHeader('Origin', 'http://evil.example.com');
++
++        $logger = $this->createMock(LoggerInterface::class);
++        $logger->expects($this->never())->method('warning');
++
++        $transport = new StreamableHttpTransport(
++            $request,
++            $this->factory,
++            $this->factory,
++            $logger,
++            middleware: [],
++            warnOnEmptyMiddleware: false,
++        );
++
++        $response = $transport->listen();
++
++        // The opt-out only silences the log: the defaults stay disabled.
++        $this->assertNotSame(403, $response->getStatusCode());
++        $this->assertFalse($response->hasHeader('Access-Control-Allow-Origin'));
++    }
++
+     #[TestDox('a custom middleware list carrying ProtocolVersionMiddleware warns that it will reject the modern era')]
+     public function testCustomMiddlewareWithProtocolVersionMiddlewareWarns(): void
+     {
+-- 
+2.43.0
+

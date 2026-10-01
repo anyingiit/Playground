@@ -1,7 +1,7 @@
 `windowconverttab` failed with "command expects at least one argument with tab name" when
 run without a name, even though the "Convert to Tab…" menu entry and the preset bindings
-(`<ctrl-meta-enter>`) open a prompt prefilled with `windowconverttab `. Pressing enter there
-did nothing useful.
+(`<ctrl-meta-enter>`) open a prompt prefilled with `windowconverttab `. Pressing enter
+there did nothing useful.
 
 The name is now optional. When it is missing or empty, the tab gets a two-word petname
 such as `brave-otter`, generated with the `golang-petname` dependency that Rune Agent
@@ -10,10 +10,10 @@ interface so the tests can make the name predictable. As the issue suggests, a c
 still needs an explicit name, which keeps the positional arguments unambiguous. The
 command synopsis/summary and the layout-management docs are updated.
 
-**Motivation / disclosure:** I had some spare AI-assistant quota (Claude Code) and am using
-it to try to help projects with open good-first-issues. The change was prepared with Claude
-Code and verified as listed below. If it doesn't fit, isn't up to your bar, or you'd simply
-rather not take it, please feel free to close it, no hard feelings at all 🙂
+**Motivation / disclosure:** I had some spare AI-assistant quota (Claude Code) and am
+using it to try to help projects with open good-first-issues. The change was prepared with
+Claude Code and verified as listed below. If it doesn't fit, isn't up to your bar, or
+you'd simply rather not take it, please feel free to close it, no hard feelings at all 🙂
 
 Fixes #153
 

@@ -11,7 +11,7 @@ Fixes the stack overflow in `Pdf::new` on deeply nested arrays/dictionaries repo
 Objects that exceed the limit simply fail to parse, like any other malformed object.
 
 Tests (in `hayro-syntax`):
-- `pdf::tests::deeply_nested_arrays`, `deeply_nested_dicts`, `deeply_nested_garbage_dicts`: a small PDF with 10 000 levels of nesting. All three abort with `has overflowed its stack` (SIGABRT) on `main` and pass with this change. (I also checked that the garbage-dict test still overflows if only the skip side is fixed.)
+- `pdf::tests::deeply_nested_arrays`, `deeply_nested_dicts`, `deeply_nested_garbage_dicts`: a small PDF with 10 000 levels of nesting. All three abort with `has overflowed its stack` (SIGABRT) on `master` and pass with this change. (I also checked that the garbage-dict test still overflows if only the skip side is fixed.)
 - `pdf::tests::moderately_nested_arrays`: 100 levels still parse fine and resolve via the catalog.
 - `object::array::tests::nesting_depth_limit`: pins the boundary (256 levels ok, 257 rejected).
 
@@ -26,6 +26,6 @@ Closes #1347
 
 ## Checklist
 
-- [x] Tests pass locally (`cargo test -p hayro-syntax --lib nested` → 4 passed, red on `main` (stack overflow) → green; `cargo test -p hayro-syntax` → 204 passed (incl. `nesting_depth_limit`), the only 2 failures are `pdf_version_*`, which need the downloaded corpus (`hayro-tests/downloads`) and fail identically without this change; CI's `cargo test -p hayro-tests -- "load::"` → 112 passed; `cargo fmt --check --all` clean; `cargo clippy -p hayro-syntax --tests --examples` no new warnings; `cargo doc -p hayro-syntax --no-deps` with `-D warnings` clean; `cargo check -p hayro-syntax --no-default-features [--features std|images|unsafe]` with `-D warnings` clean)
+- [x] Tests pass locally (`cargo test -p hayro-syntax --lib nested` → 4 passed, red on `master` (stack overflow) → green; `cargo test -p hayro-syntax` → 204 passed (incl. `nesting_depth_limit`), the only 2 failures are `pdf_version_*`, which need the downloaded corpus (`hayro-tests/downloads`) and fail identically without this change; CI's `cargo test -p hayro-tests -- "load::"` → 112 passed; `cargo fmt --check --all` clean; `cargo clippy -p hayro-syntax --tests --examples` no new warnings; `cargo doc -p hayro-syntax --no-deps` with `-D warnings` clean; `cargo check -p hayro-syntax --no-default-features [--features std|images|unsafe]` with `-D warnings` clean)
 - [ ] `CHANGELOG.md` is updated (if applicable) — n/a (no changelog in the repo)
 - [ ] Documentation is updated (if applicable) — n/a (internal change)

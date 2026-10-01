@@ -1,3 +1,22 @@
+From ef29f1958f7aeb9791417bfd4547c77f312ef0e0 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:10:00 +0000
+Subject: [PATCH] fix(lambda): default ESM BatchSize per event source
+
+CreateEventSourceMapping defaulted BatchSize to 10 for every source.
+AWS uses 10 only for SQS; Kinesis, DynamoDB Streams, Kafka, Amazon MQ
+and DocumentDB default to 100. Pick the default from the event source
+ARN so a mapping created without BatchSize reports and polls with the
+same batch size as on AWS.
+
+Closes #4740
+---
+ docs/services/lambda.md                       |  2 +
+ .../floci/services/lambda/LambdaService.java  | 10 +++-
+ .../services/lambda/EsmIntegrationTest.java   | 34 ++++++++++++++
+ .../services/lambda/LambdaServiceTest.java    | 47 ++++++++++++++++++-
+ 4 files changed, 91 insertions(+), 2 deletions(-)
+
 diff --git a/docs/services/lambda.md b/docs/services/lambda.md
 index c57e553..de5cfc3 100644
 --- a/docs/services/lambda.md
@@ -11,6 +30,34 @@ index c57e553..de5cfc3 100644
  For DynamoDB Streams mappings, Floci retries failed batches with exponential backoff, honors `MaximumRetryAttempts` and `MaximumRecordAgeInSeconds`, and sends discarded batches to configured SQS, SNS, or S3 `DestinationConfig.OnFailure` destinations. With `BisectBatchOnFunctionError`, a batch that fails with a function error is split in half and retried, narrowing it down to the failing record, which then follows the normal retry and record age rules. Splits do not count as retry attempts, and only function errors split: throttles do not, and a partial batch response retries from the reported record. If the OnFailure destination refuses a discarded batch, Floci logs the failure, drops the batch and advances past it.
  
  For Kinesis mappings, a function error or throttle leaves the shard checkpoint in place and the same batch is read again on the next poll; there is no retry limit, backoff, or OnFailure destination. With `FunctionResponseTypes: ["ReportBatchItemFailures"]`, a partial batch response moves the checkpoint up to the lowest reported record, and a malformed response retries the whole batch. `FunctionResponseTypes` can be set or cleared on an existing mapping with `UpdateEventSourceMapping`.
+diff --git a/src/main/java/io/github/hectorvent/floci/services/lambda/LambdaService.java b/src/main/java/io/github/hectorvent/floci/services/lambda/LambdaService.java
+index e8b9de9..38d9450 100644
+--- a/src/main/java/io/github/hectorvent/floci/services/lambda/LambdaService.java
++++ b/src/main/java/io/github/hectorvent/floci/services/lambda/LambdaService.java
+@@ -1200,6 +1200,14 @@ public class LambdaService implements ResourceProvider {
+ 
+     // ──────────────────────────── Event Source Mapping (SQS) ────────────────────────────
+ 
++    /**
++     * AWS default BatchSize when CreateEventSourceMapping omits it: 10 for SQS,
++     * 100 for every other source (Kinesis, DynamoDB Streams, Kafka, MQ, DocumentDB).
++     */
++    private static int defaultBatchSize(String eventSourceArn) {
++        return eventSourceArn != null && eventSourceArn.contains(":sqs:") ? 10 : 100;
++    }
++
+     public EventSourceMapping createEventSourceMapping(String region, Map<String, Object> request) {
+         validateEventSourceMappingStructures(request);
+ 
+@@ -1332,7 +1340,7 @@ public class LambdaService implements ResourceProvider {
+ 
+         ResolvedFunctionTarget target = resolveFunctionTarget(resolvedRegion, fnRef);
+ 
+-        int batchSize = toInt(request.get("BatchSize"), 10);
++        int batchSize = toInt(request.get("BatchSize"), defaultBatchSize(eventSourceArn));
+         Integer maximumBatchingWindowInSeconds = parseMaximumBatchingWindow(request);
+         boolean enabled = !Boolean.FALSE.equals(request.get("Enabled"));
+ 
 diff --git a/src/test/java/io/github/hectorvent/floci/services/lambda/EsmIntegrationTest.java b/src/test/java/io/github/hectorvent/floci/services/lambda/EsmIntegrationTest.java
 index 0a79dae..b49837b 100644
 --- a/src/test/java/io/github/hectorvent/floci/services/lambda/EsmIntegrationTest.java
@@ -124,3 +171,6 @@ index b6ed7c6..1727f29 100644
      @Test
      void updateEventSourceMapping_functionTargetValidation() {
          service.createFunction(REGION, baseRequest("fn-esm-target-1"));
+-- 
+2.43.0
+

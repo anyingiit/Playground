@@ -16,3 +16,7 @@ Tool: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/floci` 
 | Committed binaries / npm lifecycle hooks | none | n/a |
 
 Verdict: nothing malicious was found. It is safe to run `./mvnw test -Dtest=...` and `./mvnw checkstyle:check`.
+
+## Re-check at f1d718c (2026-10-01)
+
+The repo moved from bc2592e to f1d718c, so I re-ran `audit_repo.py` (5156 files). The hit categories and files are the same as above: destructive string in the EKS test, SRP fixture, mvnw.cmd, healthcheck `/dev/tcp`, 28 link-local IMDS/ECS URLs, and secret-path comments. `pom.xml` still has no exec, antrun or `<executable>`. `tools/docs/*.py`, which `make docs-check` runs, has no subprocess, network or `os.system` calls. Verdict unchanged: benign. Also ran: `make docs-check` and `make partition-check` (local Python scripts).

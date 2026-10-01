@@ -1,0 +1,1 @@
+[Server] Let StreamableHttpTransport opt out of the empty-middleware warning
