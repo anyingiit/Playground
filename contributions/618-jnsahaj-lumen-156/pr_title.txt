@@ -1,0 +1,1 @@
+feat(highlight): add PHP syntax highlighting and context lines

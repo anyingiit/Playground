@@ -15,7 +15,7 @@ Closes #2232
 ## Checklist
 
 - [x] Tests pass locally (Ubuntu 24.04 x86_64, gcc + ASan/UBSan): `make -f Makefile.cbm test-focused TEST_SUITES=httpd` → `66 passed, 1 skipped`. Without the `src/ui/http_server.c` change the new test fails: `FAIL tests/test_httpd.c:1470: strstr(resp, "healthy") is not NULL`.
-- [x] Lint: `clang-format-20 --dry-run --Werror` shows no violations in the changed hunks. The violations it reports in `src/ui/http_server.c` (lines 56–716) are already on `main` and are untouched here. `make -f Makefile.cbm lint-cppcheck lint-no-suppress`: see below.
+- [x] Lint: `clang-format` 20.1.8 `--dry-run --Werror` is clean on `tests/test_httpd.c` and on the changed hunk. The violations it reports in `src/ui/http_server.c` (lines 56–716) are already on `main` and are untouched here. `cppcheck` (2.13, Makefile.cbm flags) on `src/ui/http_server.c` reports the same findings before and after the change, so nothing new. `make -f Makefile.cbm lint-no-suppress` passes.
 - [x] Commit is DCO signed-off.
 - [ ] `CHANGELOG.md` is updated (if applicable) — n/a
 - [ ] Documentation is updated (if applicable) — n/a, no API shape change (`corrupt` + `reason` already existed for `cannot open`)

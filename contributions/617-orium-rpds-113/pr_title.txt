@@ -1,0 +1,1 @@
+Reject a degree of one in `HashTrieMap` constructors

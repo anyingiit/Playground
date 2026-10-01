@@ -1,0 +1,307 @@
+From 4a7c874739241030595904f933db55d7a33f9ab5 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:53:49 +0000
+Subject: [PATCH] hayro-syntax: Limit nesting depth of arrays and dictionaries
+
+Skipping over nested arrays and dictionaries was implemented recursively
+without any depth limit, so a small file with deeply nested objects could
+overflow the stack and abort the whole process (which, unlike a panic,
+cannot be caught via catch_unwind).
+
+Track the nesting depth while skipping and bail out once it exceeds
+MAX_NESTING_DEPTH (256). In addition, only skip (instead of read) garbage
+objects in dictionary key position, since reading nested dictionaries
+recursed through the same code path without a limit.
+
+Closes #1347
+---
+ hayro-syntax/src/object/array.rs | 38 ++++++++++++------
+ hayro-syntax/src/object/dict.rs  | 47 ++++++++++++----------
+ hayro-syntax/src/object/mod.rs   | 67 ++++++++++++++++++++++++--------
+ hayro-syntax/src/pdf.rs          | 49 +++++++++++++++++++++++
+ 4 files changed, 154 insertions(+), 47 deletions(-)
+
+diff --git a/hayro-syntax/src/object/array.rs b/hayro-syntax/src/object/array.rs
+index 9f24f8a..83c1d01 100644
+--- a/hayro-syntax/src/object/array.rs
++++ b/hayro-syntax/src/object/array.rs
+@@ -2,7 +2,7 @@
+ 
+ use crate::object::macros::object;
+ use crate::object::r#ref::MaybeRef;
+-use crate::object::{FromBytes, Object, ObjectLike};
++use crate::object::{FromBytes, MAX_NESTING_DEPTH, Object, ObjectLike, skip_nested_value};
+ use crate::reader::Reader;
+ use crate::reader::{Readable, ReaderContext, ReaderExt, Skippable};
+ use alloc::vec::Vec;
+@@ -83,18 +83,25 @@ object!(Array<'a>, Array);
+ 
+ impl Skippable for Array<'_> {
+     fn skip(r: &mut Reader<'_>, is_content_stream: bool) -> Option<()> {
+-        r.forward_tag(b"[")?;
++        skip_array(r, is_content_stream, 0)
++    }
++}
+ 
+-        loop {
+-            r.skip_white_spaces_and_comments();
++/// Skip an array that is nested `depth` levels deep inside of other arrays and dictionaries.
++pub(crate) fn skip_array(r: &mut Reader<'_>, is_content_stream: bool, depth: u32) -> Option<()> {
++    if depth >= MAX_NESTING_DEPTH {
++        return None;
++    }
+ 
+-            if let Some(()) = r.forward_tag(b"]") {
+-                return Some(());
+-            } else if is_content_stream {
+-                r.skip::<Object<'_>>(true)?;
+-            } else {
+-                r.skip::<MaybeRef<Object<'_>>>(false)?;
+-            }
++    r.forward_tag(b"[")?;
++
++    loop {
++        r.skip_white_spaces_and_comments();
++
++        if let Some(()) = r.forward_tag(b"]") {
++            return Some(());
++        } else {
++            skip_nested_value(r, is_content_stream, depth + 1)?;
+         }
+     }
+ }
+@@ -332,6 +339,15 @@ mod tests {
+     use crate::reader::{ReaderContext, ReaderExt};
+     use crate::xref::XRef;
+ 
++    #[test]
++    fn nesting_depth_limit() {
++        let nested = |depth: usize| format!("{}{}", "[".repeat(depth), "]".repeat(depth));
++        let max = crate::object::MAX_NESTING_DEPTH as usize;
++
++        assert!(array_impl(nested(max).as_bytes()).is_some());
++        assert!(array_impl(nested(max + 1).as_bytes()).is_none());
++    }
++
+     fn array_impl(data: &[u8]) -> Option<Vec<Object<'_>>> {
+         Reader::new(data)
+             .read_with_context::<Array<'_>>(&ReaderContext::new(XRef::dummy(), false))
+diff --git a/hayro-syntax/src/object/dict.rs b/hayro-syntax/src/object/dict.rs
+index eaab849..c6e5c3f 100644
+--- a/hayro-syntax/src/object/dict.rs
++++ b/hayro-syntax/src/object/dict.rs
+@@ -2,8 +2,8 @@
+ 
+ use crate::object::macros::object;
+ use crate::object::r#ref::{MaybeRef, ObjRef};
++use crate::object::{MAX_NESTING_DEPTH, Object, ObjectLike, skip_nested_value, skip_object};
+ use crate::object::{Name, ObjectIdentifier};
+-use crate::object::{Object, ObjectLike};
+ use crate::reader::Reader;
+ use crate::reader::{Readable, ReaderContext, ReaderExt, Skippable};
+ use crate::sync::Arc;
+@@ -175,28 +175,33 @@ impl Display for Dict<'_> {
+ 
+ impl Skippable for Dict<'_> {
+     fn skip(r: &mut Reader<'_>, is_content_stream: bool) -> Option<()> {
+-        r.forward_tag(b"<<")?;
++        skip_dict(r, is_content_stream, 0)
++    }
++}
+ 
+-        loop {
+-            r.skip_white_spaces_and_comments();
++/// Skip a dictionary that is nested `depth` levels deep inside of other arrays and dictionaries.
++pub(crate) fn skip_dict(r: &mut Reader<'_>, is_content_stream: bool, depth: u32) -> Option<()> {
++    if depth >= MAX_NESTING_DEPTH {
++        return None;
++    }
+ 
+-            if let Some(()) = r.forward_tag(b">>") {
+-                break Some(());
+-            } else {
+-                let Some(_) = r.skip::<Name<'_>>(is_content_stream) else {
+-                    // In case there is garbage in-between, be lenient and just try to skip it.
+-                    r.skip::<Object<'_>>(is_content_stream)?;
+-                    continue;
+-                };
++    r.forward_tag(b"<<")?;
+ 
+-                r.skip_white_spaces_and_comments();
++    loop {
++        r.skip_white_spaces_and_comments();
+ 
+-                if is_content_stream {
+-                    r.skip::<Object<'_>>(is_content_stream)?;
+-                } else {
+-                    r.skip::<MaybeRef<Object<'_>>>(is_content_stream)?;
+-                }
+-            }
++        if let Some(()) = r.forward_tag(b">>") {
++            break Some(());
++        } else {
++            let Some(_) = r.skip::<Name<'_>>(is_content_stream) else {
++                // In case there is garbage in-between, be lenient and just try to skip it.
++                skip_object(r, is_content_stream, depth + 1)?;
++                continue;
++            };
++
++            r.skip_white_spaces_and_comments();
++
++            skip_nested_value(r, is_content_stream, depth + 1)?;
+         }
+     }
+ }
+@@ -316,7 +321,9 @@ where
+                     // In case there is garbage in-between, be lenient and just try to skip it.
+                     // But only do this if we are parsing a proper dictionary as opposed to an
+                     // inline dictionary.
+-                    r.read::<Object<'_>>(ctx)?;
++                    // Note that we only skip the object (instead of reading it), since
++                    // reading nested dictionaries would recurse without a depth limit.
++                    r.skip::<Object<'_>>(ctx.in_content_stream())?;
+                     continue;
+                 } else {
+                     return None;
+diff --git a/hayro-syntax/src/object/mod.rs b/hayro-syntax/src/object/mod.rs
+index be9f1c2..9cf3c65 100644
+--- a/hayro-syntax/src/object/mod.rs
++++ b/hayro-syntax/src/object/mod.rs
+@@ -176,25 +176,60 @@ impl<'a> ObjectRefLike<'a> for Object<'a> {
+ 
+ impl Skippable for Object<'_> {
+     fn skip(r: &mut Reader<'_>, is_content_stream: bool) -> Option<()> {
+-        match r.peek_byte()? {
+-            b'n' => Null::skip(r, is_content_stream),
+-            b't' | b'f' => bool::skip(r, is_content_stream),
+-            b'/' => Name::skip(r, is_content_stream),
+-            b'<' => match r.peek_bytes(2)? {
+-                // A stream can never appear in a dict/array, so it should never be skipped.
+-                b"<<" => Dict::skip(r, is_content_stream),
+-                _ => String::skip(r, is_content_stream),
+-            },
+-            b'(' => String::skip(r, is_content_stream),
+-            b'.' | b'+' | b'-' | b'0'..=b'9' => Number::skip(r, is_content_stream),
+-            b'[' => Array::skip(r, is_content_stream),
+-            // See test case operator-in-TJ-array-0: Be lenient and skip content operators in
+-            // array
+-            _ => skip_name_like(r, false),
+-        }
++        skip_object(r, is_content_stream, 0)
+     }
+ }
+ 
++/// The maximum nesting depth of arrays and dictionaries that we accept.
++///
++/// Skipping over nested arrays and dictionaries is implemented recursively, so
++/// without a limit, a (malicious) file with deeply nested objects could overflow
++/// the stack and abort the whole process. The PDF specification suggests a limit
++/// of 28 in Annex C, but we are a bit more lenient here.
++pub(crate) const MAX_NESTING_DEPTH: u32 = 256;
++
++/// Skip an object that is nested `depth` levels deep inside of arrays and dictionaries.
++pub(crate) fn skip_object(r: &mut Reader<'_>, is_content_stream: bool, depth: u32) -> Option<()> {
++    let old_offset = r.offset;
++
++    let res = match r.peek_byte()? {
++        b'n' => Null::skip(r, is_content_stream),
++        b't' | b'f' => bool::skip(r, is_content_stream),
++        b'/' => Name::skip(r, is_content_stream),
++        b'<' => match r.peek_bytes(2)? {
++            // A stream can never appear in a dict/array, so it should never be skipped.
++            b"<<" => dict::skip_dict(r, is_content_stream, depth),
++            _ => String::skip(r, is_content_stream),
++        },
++        b'(' => String::skip(r, is_content_stream),
++        b'.' | b'+' | b'-' | b'0'..=b'9' => Number::skip(r, is_content_stream),
++        b'[' => array::skip_array(r, is_content_stream, depth),
++        // See test case operator-in-TJ-array-0: Be lenient and skip content operators in
++        // array
++        _ => skip_name_like(r, false),
++    };
++
++    if res.is_none() {
++        r.offset = old_offset;
++    }
++
++    res
++}
++
++/// Skip an object (or, outside of content streams, an object reference) that is
++/// nested `depth` levels deep inside of arrays and dictionaries.
++pub(crate) fn skip_nested_value(
++    r: &mut Reader<'_>,
++    is_content_stream: bool,
++    depth: u32,
++) -> Option<()> {
++    if !is_content_stream && r.skip::<ObjRef>(false).is_some() {
++        return Some(());
++    }
++
++    skip_object(r, is_content_stream, depth)
++}
++
+ impl<'a> Readable<'a> for Object<'a> {
+     fn read(r: &mut Reader<'a>, ctx: &ReaderContext<'a>) -> Option<Self> {
+         let object = match r.peek_byte()? {
+diff --git a/hayro-syntax/src/pdf.rs b/hayro-syntax/src/pdf.rs
+index c196cb1..855842b 100644
+--- a/hayro-syntax/src/pdf.rs
++++ b/hayro-syntax/src/pdf.rs
+@@ -182,4 +182,53 @@ mod tests {
+ 
+         assert_eq!(pdf.version(), PdfVersion::Pdf14);
+     }
++
++    fn nested_pdf(open: &str, close: &str, depth: usize) -> Vec<u8> {
++        let mut obj = String::from("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Nested ");
++        obj.push_str(&open.repeat(depth));
++        obj.push_str(&close.repeat(depth));
++        obj.push_str(" >>\nendobj\n");
++
++        let mut data = b"%PDF-1.7\n".to_vec();
++        let offset_1 = data.len();
++        data.extend_from_slice(obj.as_bytes());
++        let offset_2 = data.len();
++        data.extend_from_slice(b"2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
++        let xref_offset = data.len();
++        data.extend_from_slice(
++            format!(
++                "xref\n0 3\n0000000000 65535 f \n{offset_1:010} 00000 n \n{offset_2:010} 00000 n \ntrailer\n<< /Size 3 /Root 1 0 R >>\nstartxref\n{xref_offset}\n%%EOF\n"
++            )
++            .as_bytes(),
++        );
++
++        data
++    }
++
++    // See https://github.com/LaurenzV/hayro/issues/1347.
++    #[test]
++    fn deeply_nested_arrays() {
++        let _ = Pdf::new(nested_pdf("[", "]", 10_000));
++    }
++
++    #[test]
++    fn deeply_nested_dicts() {
++        let _ = Pdf::new(nested_pdf("<< /A ", " >>", 10_000));
++    }
++
++    #[test]
++    fn deeply_nested_garbage_dicts() {
++        let _ = Pdf::new(nested_pdf("<< ", " >>", 10_000));
++    }
++
++    #[test]
++    fn moderately_nested_arrays() {
++        let pdf = Pdf::new(nested_pdf("[", "]", 100)).unwrap();
++        let catalog = pdf
++            .xref()
++            .get::<crate::object::Dict<'_>>(pdf.xref().root_id())
++            .unwrap();
++
++        assert!(catalog.get::<crate::object::Array<'_>>(b"Nested").is_some());
++    }
+ }
+-- 
+2.43.0
+

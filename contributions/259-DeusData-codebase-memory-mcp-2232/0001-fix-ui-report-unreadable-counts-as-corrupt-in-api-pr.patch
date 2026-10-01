@@ -1,4 +1,4 @@
-From 724b9ca8ac2626df6a9004742246b3017feeed1f Mon Sep 17 00:00:00 2001
+From 89ece6e3504ce61959ae78ac3df3451150e3205a Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Thu, 1 Oct 2026 17:33:13 +0000
 Subject: [PATCH] fix(ui): report unreadable counts as corrupt in
@@ -19,25 +19,28 @@ Fixes #2232
 
 Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
 ---
- src/ui/http_server.c | 12 +++++++++++
+ src/ui/http_server.c | 15 ++++++++++++++
  tests/test_httpd.c   | 48 ++++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 60 insertions(+)
+ 2 files changed, 63 insertions(+)
 
 diff --git a/src/ui/http_server.c b/src/ui/http_server.c
-index 66f1aff..d3c689f 100644
+index 66f1aff..7da2de1 100644
 --- a/src/ui/http_server.c
 +++ b/src/ui/http_server.c
-@@ -1368,6 +1368,18 @@ static void handle_project_health(cbm_http_conn_t *c, const cbm_http_req_t *req)
+@@ -1368,6 +1368,21 @@ static void handle_project_health(cbm_http_conn_t *c, const cbm_http_req_t *req)
      int edge_count = cbm_store_count_edges(store, name);
      cbm_store_close(store);
  
 +    /* A negative count is a failed read (CBM_STORE_ERR), e.g. a store whose
 +     * nodes or edges table is missing or damaged. That is not a healthy
 +     * project with -1 rows; report it as corrupt and name what failed. */
-+    if (node_count < 0 || edge_count < 0) {
-+        const char *what = node_count < 0 && edge_count < 0 ? "nodes and edges"
-+                           : node_count < 0                 ? "nodes"
-+                                                            : "edges";
++    const bool nodes_unreadable = node_count < 0;
++    const bool edges_unreadable = edge_count < 0;
++    if (nodes_unreadable || edges_unreadable) {
++        const char *what = "edges";
++        if (nodes_unreadable) {
++            what = edges_unreadable ? "nodes and edges" : "nodes";
++        }
 +        cbm_http_replyf(c, 200, g_cors_json,
 +                        "{\"status\":\"corrupt\",\"reason\":\"cannot read %s\"}", what);
 +        return;

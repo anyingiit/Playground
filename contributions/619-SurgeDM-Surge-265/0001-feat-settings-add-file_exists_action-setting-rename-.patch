@@ -1,0 +1,422 @@
+From 3c06a8e80be575aaf966d735776dea1a237d4ffa Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:04:19 +0000
+Subject: [PATCH] feat(settings): add file_exists_action setting
+ (rename/overwrite)
+
+Surge always auto-renamed a download whose destination file already
+existed. Add a General setting, file_exists_action, that keeps rename as
+the default and adds overwrite, which reuses the existing name so the
+completed download replaces the old file.
+
+Overwrite never targets a name owned by an active download, a pending
+.surge working file or a directory; those still fall back to name(N).ext.
+finalizeCompletedFile now only treats an existing final path as success
+when the working file is gone, so a failed replace is reported instead
+of silently keeping the old file.
+
+The TUI cycles the value with Enter (shown as < Rename > / < Overwrite >),
+and docs/SETTINGS.md documents the new key.
+
+Refs #265
+---
+ cmd/root_downloads.go                     |  2 +-
+ docs/SETTINGS.md                          |  1 +
+ internal/config/settings.go               | 28 ++++++++
+ internal/config/settings_test.go          | 19 +++++
+ internal/orchestrator/events.go           |  9 ++-
+ internal/orchestrator/file_utils.go       | 30 +++++++-
+ internal/orchestrator/file_utils_test.go  | 88 +++++++++++++++++++++++
+ internal/tui/settings_file_exists_test.go | 47 ++++++++++++
+ internal/tui/update_settings.go           | 10 +++
+ internal/tui/view_settings.go             |  9 +++
+ 10 files changed, 239 insertions(+), 4 deletions(-)
+ create mode 100644 internal/tui/settings_file_exists_test.go
+
+diff --git a/cmd/root_downloads.go b/cmd/root_downloads.go
+index f0771f2..6d8eae8 100644
+--- a/cmd/root_downloads.go
++++ b/cmd/root_downloads.go
+@@ -359,7 +359,7 @@ func maybeRequireDownloadApproval(w http.ResponseWriter, service service.Downloa
+ 
+ 	// EXTENSION VETTING SHORTCUT:
+ 	// If SkipApproval is true, we trust the extension completely.
+-	// The backend will auto-rename duplicate files, so no need to reject.
++	// The backend resolves filename collisions per file_exists_action, so no need to reject.
+ 	if req.SkipApproval {
+ 		utils.Debug("Extension request: skipping all prompts, proceeding with download")
+ 		return false
+diff --git a/docs/SETTINGS.md b/docs/SETTINGS.md
+index 39fafcc..07e75f7 100644
+--- a/docs/SETTINGS.md
++++ b/docs/SETTINGS.md
+@@ -109,6 +109,7 @@ Surge follows OS conventions for storing its files. Below is a breakdown of ever
+ | `default_download_dir` | string | Directory where new downloads are saved. If empty, defaults to `~/Downloads` or current directory. | `""`    |
+ | `allow_remote_open_actions` | bool | Allow `/open-file` and `/open-folder` API requests from remote clients. Keep disabled unless you trust your network and auth setup. | `false` |
+ | `warn_on_duplicate`    | bool   | Show a warning when adding a download that already exists in the list.                             | `true`  |
++| `file_exists_action`   | string | What to do when the destination file already exists: `rename` saves the new download as `name(1).ext`; `overwrite` replaces the existing file once the download completes. Files that belong to another active or paused download are never overwritten (they are renamed instead). | `"rename"` |
+ | `extension_prompt`     | bool   | Prompt for confirmation in the TUI when adding downloads via the browser extension.                | `false` |
+ | `auto_resume`          | bool   | Automatically resume paused downloads when Surge starts.                                           | `false` |
+ | `auto_start`           | bool   | Automatically start Surge as a system service on boot. (See [Run Surge as a service](guides/run-as-a-service.md)).      | `false` |
+diff --git a/internal/config/settings.go b/internal/config/settings.go
+index f537d60..77cca91 100644
+--- a/internal/config/settings.go
++++ b/internal/config/settings.go
+@@ -37,6 +37,7 @@ type Settings struct {
+ type GeneralSettings struct {
+ 	DefaultDownloadDir           *Setting `json:"default_download_dir"`
+ 	WarnOnDuplicate              *Setting `json:"warn_on_duplicate"`
++	FileExistsAction             *Setting `json:"file_exists_action"`
+ 	DownloadCompleteNotification *Setting `json:"download_complete_notification"`
+ 	AutoShutdownAfterDownloads   *Setting `json:"auto_shutdown_after_downloads"`
+ 	AllowRemoteOpenActions       *Setting `json:"allow_remote_open_actions"`
+@@ -256,6 +257,7 @@ func (s *Settings) initializeCategoriesList() {
+ 			Settings: []*Setting{
+ 				s.General.DefaultDownloadDir,
+ 				s.General.WarnOnDuplicate,
++				s.General.FileExistsAction,
+ 				s.General.DownloadCompleteNotification,
+ 				s.General.AutoShutdownAfterDownloads,
+ 				s.General.AllowRemoteOpenActions,
+@@ -490,6 +492,13 @@ func CategoryOrder() []string {
+ 	}
+ }
+ 
++// File exists actions control what happens when a new download would land on
++// a file that is already present in the destination directory.
++const (
++	FileExistsRename    = "rename"
++	FileExistsOverwrite = "overwrite"
++)
++
+ const (
+ 	ThemeAdaptive = 0
+ 	ThemeLight    = 1
+@@ -546,6 +555,25 @@ func DefaultSettings() *Settings {
+ 				DefaultValue: true,
+ 				Value:        true,
+ 			},
++			FileExistsAction: &Setting{
++				Key:          "file_exists_action",
++				Label:        "If File Exists",
++				Description:  "What to do when the destination file already exists: rename (save as name(1).ext) or overwrite (replace the existing file once the download completes).",
++				Type:         TypeString,
++				DefaultValue: FileExistsRename,
++				Value:        FileExistsRename,
++				ValidateFunc: func(val any) error {
++					sVal, ok := val.(string)
++					if !ok {
++						return fmt.Errorf("must be a string")
++					}
++					switch sVal {
++					case FileExistsRename, FileExistsOverwrite:
++						return nil
++					}
++					return fmt.Errorf("must be %q or %q", FileExistsRename, FileExistsOverwrite)
++				},
++			},
+ 			DownloadCompleteNotification: &Setting{
+ 				Key:          "download_complete_notification",
+ 				Label:        "Download Complete Notification",
+diff --git a/internal/config/settings_test.go b/internal/config/settings_test.go
+index 965a3ac..2ad63ad 100644
+--- a/internal/config/settings_test.go
++++ b/internal/config/settings_test.go
+@@ -659,3 +659,22 @@ func TestCategorySettings_UnmarshalJSON_BackwardCompatibility(t *testing.T) {
+ 		t.Errorf("Expected category_enabled to remain false")
+ 	}
+ }
++
++func TestFileExistsActionValidation(t *testing.T) {
++	s := DefaultSettings()
++	if got := Resolve[string](s.General.FileExistsAction); got != FileExistsRename {
++		t.Fatalf("default file_exists_action = %q, want %q", got, FileExistsRename)
++	}
++
++	s.General.FileExistsAction.Value = FileExistsOverwrite
++	s.Validate()
++	if got := Resolve[string](s.General.FileExistsAction); got != FileExistsOverwrite {
++		t.Fatalf("valid value was reset: got %q", got)
++	}
++
++	s.General.FileExistsAction.Value = "delete-everything"
++	s.Validate()
++	if got := Resolve[string](s.General.FileExistsAction); got != FileExistsRename {
++		t.Fatalf("invalid value not reset: got %q", got)
++	}
++}
+diff --git a/internal/orchestrator/events.go b/internal/orchestrator/events.go
+index 4eea346..c52866c 100644
+--- a/internal/orchestrator/events.go
++++ b/internal/orchestrator/events.go
+@@ -82,8 +82,13 @@ func finalizeCompletedFile(finalPath string) error {
+ 			}
+ 			return nil
+ 		}
+-		if _, statErr := os.Stat(finalPath); statErr == nil {
+-			return nil
++		// The rename may already have happened (e.g. a retried finalize). Only
++		// treat it as done when the working file is gone; otherwise an existing
++		// file at finalPath (overwrite mode) would hide a failed replace.
++		if _, statErr := os.Stat(surgePath); os.IsNotExist(statErr) {
++			if _, statErr := os.Stat(finalPath); statErr == nil {
++				return nil
++			}
+ 		}
+ 		return err
+ 	}
+diff --git a/internal/orchestrator/file_utils.go b/internal/orchestrator/file_utils.go
+index d4c6f0f..144aea2 100644
+--- a/internal/orchestrator/file_utils.go
++++ b/internal/orchestrator/file_utils.go
+@@ -67,6 +67,15 @@ func InferFilenameFromURL(rawURL string) string {
+ // GetUniqueFilename keeps final files and .surge working files in the same
+ // collision namespace so concurrent or resumed downloads do not share a path.
+ func GetUniqueFilename(dir, filename string, isNameActive func(string, string) bool) string {
++	return resolveFilename(dir, filename, isNameActive, false)
++}
++
++// resolveFilename picks the final file name inside dir. With allowOverwrite,
++// an existing regular file with the requested name is not treated as a
++// collision, so the completed download replaces it. Active downloads and
++// .surge working files always count as collisions and fall back to suffixing,
++// because overwriting those would corrupt another in-flight download.
++func resolveFilename(dir, filename string, isNameActive func(string, string) bool, allowOverwrite bool) string {
+ 	if filename == "" {
+ 		return filename
+ 	}
+@@ -108,6 +117,10 @@ func GetUniqueFilename(dir, filename string, isNameActive func(string, string) b
+ 		return filename
+ 	}
+ 
++	if allowOverwrite && canOverwrite(dir, filename, isNameActive) {
++		return filename
++	}
++
+ 	// Keep suffixing from the same base so repeated retries stay deterministic.
+ 	ext := filepath.Ext(filename)
+ 	name := strings.TrimSuffix(filename, ext)
+@@ -136,6 +149,20 @@ func GetUniqueFilename(dir, filename string, isNameActive func(string, string) b
+ 	return ""
+ }
+ 
++// canOverwrite reports whether name in dir is only blocked by a finished
++// regular file (not a directory, an active download or a .surge working file).
++func canOverwrite(dir, name string, isNameActive func(string, string) bool) bool {
++	if isNameActive != nil && isNameActive(dir, name) {
++		return false
++	}
++	targetPath := filepath.Join(dir, name)
++	if _, err := os.Stat(targetPath + types.IncompleteSuffix); !os.IsNotExist(err) {
++		return false
++	}
++	info, err := os.Stat(targetPath)
++	return err == nil && info.Mode().IsRegular()
++}
++
+ // GetCategoryPath applies category routing only while the caller is still using
+ // the default destination, so explicit user paths are left untouched.
+ func GetCategoryPath(filename, defaultDir string, settings *config.Settings) (string, error) {
+@@ -190,7 +217,8 @@ func ResolveDestination(url, candidateFilename, defaultDir string, routeToCatego
+ 	// Safety: Truncate early so GetUniqueFilename has room to append a suffix
+ 	filename = utils.TruncateFilename(filename)
+ 
+-	finalFilename := GetUniqueFilename(destPath, filename, isNameActive)
++	allowOverwrite := settings != nil && config.Resolve[string](settings.General.FileExistsAction) == config.FileExistsOverwrite
++	finalFilename := resolveFilename(destPath, filename, isNameActive, allowOverwrite)
+ 	if finalFilename == "" {
+ 		return "", "", fmt.Errorf("could not determine a unique filename for %s", url)
+ 	}
+diff --git a/internal/orchestrator/file_utils_test.go b/internal/orchestrator/file_utils_test.go
+index bb653e3..5d1fc51 100644
+--- a/internal/orchestrator/file_utils_test.go
++++ b/internal/orchestrator/file_utils_test.go
+@@ -240,3 +240,91 @@ func TestResolveDestination_ErrorsWhenUniqueNameExhausted(t *testing.T) {
+ 		t.Fatal("expected unique-name exhaustion error")
+ 	}
+ }
++
++func TestResolveDestination_FileExistsAction(t *testing.T) {
++	dir := t.TempDir()
++	if err := os.WriteFile(filepath.Join(dir, "report.pdf"), []byte("old"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++
++	settings := config.DefaultSettings()
++	settings.Categories.CategoryEnabled.Value = false
++
++	// Default (rename) keeps the existing behavior.
++	if _, name, err := ResolveDestination("http://example.com/report.pdf", "report.pdf", dir, false, settings, nil, nil); err != nil || name != "report(1).pdf" {
++		t.Fatalf("rename: got %q, %v; want report(1).pdf", name, err)
++	}
++
++	settings.General.FileExistsAction.Value = config.FileExistsOverwrite
++
++	// Overwrite reuses the existing name so finalize replaces the old file.
++	if _, name, err := ResolveDestination("http://example.com/report.pdf", "report.pdf", dir, false, settings, nil, nil); err != nil || name != "report.pdf" {
++		t.Fatalf("overwrite: got %q, %v; want report.pdf", name, err)
++	}
++
++	// A name owned by an active download must never be overwritten.
++	active := func(_, name string) bool { return name == "report.pdf" }
++	if _, name, _ := ResolveDestination("http://example.com/report.pdf", "report.pdf", dir, false, settings, nil, active); name != "report(1).pdf" {
++		t.Fatalf("overwrite with active download: got %q, want report(1).pdf", name)
++	}
++
++	// Neither may a pending .surge working file of another download.
++	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("old"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(filepath.Join(dir, "notes.txt"+types.IncompleteSuffix), nil, 0o644); err != nil {
++		t.Fatal(err)
++	}
++	if _, name, _ := ResolveDestination("http://example.com/notes.txt", "notes.txt", dir, false, settings, nil, nil); name != "notes(1).txt" {
++		t.Fatalf("overwrite with .surge sibling: got %q, want notes(1).txt", name)
++	}
++
++	// Directories are not replaced.
++	if err := os.Mkdir(filepath.Join(dir, "data"), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if _, name, _ := ResolveDestination("http://example.com/data", "data", dir, false, settings, nil, nil); name != "data(1)" {
++		t.Fatalf("overwrite with directory: got %q, want data(1)", name)
++	}
++}
++
++func TestFinalizeCompletedFile_OverwritesExistingFile(t *testing.T) {
++	dir := t.TempDir()
++	finalPath := filepath.Join(dir, "report.pdf")
++	if err := os.WriteFile(finalPath, []byte("old"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(finalPath+types.IncompleteSuffix, []byte("new"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++
++	if err := finalizeCompletedFile(finalPath); err != nil {
++		t.Fatalf("finalizeCompletedFile: %v", err)
++	}
++	got, err := os.ReadFile(finalPath)
++	if err != nil || string(got) != "new" {
++		t.Fatalf("final file = %q, %v; want %q", got, err, "new")
++	}
++	if _, err := os.Stat(finalPath + types.IncompleteSuffix); !os.IsNotExist(err) {
++		t.Fatalf("working file still present: %v", err)
++	}
++}
++
++func TestFinalizeCompletedFile_FailedReplaceIsNotSuccess(t *testing.T) {
++	dir := t.TempDir()
++	finalPath := filepath.Join(dir, "report.pdf")
++	if err := os.WriteFile(finalPath, []byte("old"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(finalPath+types.IncompleteSuffix, []byte("new"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++
++	orig := renameCompletedFile
++	renameCompletedFile = func(string, string) error { return os.ErrPermission }
++	t.Cleanup(func() { renameCompletedFile = orig })
++
++	if err := finalizeCompletedFile(finalPath); err == nil {
++		t.Fatal("expected error when the working file could not replace the existing file")
++	}
++}
+diff --git a/internal/tui/settings_file_exists_test.go b/internal/tui/settings_file_exists_test.go
+new file mode 100644
+index 0000000..f8c7bd8
+--- /dev/null
++++ b/internal/tui/settings_file_exists_test.go
+@@ -0,0 +1,47 @@
++package tui
++
++import (
++	"testing"
++
++	tea "charm.land/bubbletea/v2"
++	"github.com/SurgeDM/Surge/internal/config"
++)
++
++func TestSettings_FileExistsActionCycles(t *testing.T) {
++	m := RootModel{
++		state:               SettingsState,
++		keys:                config.DefaultKeyMap(),
++		Settings:            config.DefaultSettings(),
++		SettingsActiveTab:   0,
++		SettingsFocusedPane: 1,
++	}
++
++	row := -1
++	for i, meta := range m.buildSettingsMetaForCategory("General") {
++		if meta.Key == "file_exists_action" {
++			row = i
++			break
++		}
++	}
++	if row < 0 {
++		t.Fatal("file_exists_action not listed in General settings")
++	}
++	m.SettingsSelectedRow = row
++
++	if got := formatSettingValueForEdit(config.Resolve[string](m.Settings.General.FileExistsAction), config.TypeString, "file_exists_action", true); got != "< Rename >" {
++		t.Fatalf("display = %q, want %q", got, "< Rename >")
++	}
++
++	enter := tea.KeyPressMsg{Code: tea.KeyEnter}
++	want := []string{config.FileExistsOverwrite, config.FileExistsRename}
++	for _, w := range want {
++		updated, _ := m.Update(enter)
++		m = updated.(RootModel)
++		if got := config.Resolve[string](m.Settings.General.FileExistsAction); got != w {
++			t.Fatalf("after Enter: file_exists_action = %q, want %q", got, w)
++		}
++		if m.SettingsIsEditing {
++			t.Fatal("cycling should not enter text edit mode")
++		}
++	}
++}
+diff --git a/internal/tui/update_settings.go b/internal/tui/update_settings.go
+index e151b9f..b22029b 100644
+--- a/internal/tui/update_settings.go
++++ b/internal/tui/update_settings.go
+@@ -289,6 +289,16 @@ func (m RootModel) updateSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+ 			return m, nil
+ 		}
+ 
++		// Cycle between the supported file exists actions
++		if settingKey == "file_exists_action" {
++			next := config.FileExistsOverwrite
++			if config.Resolve[string](m.Settings.General.FileExistsAction) == config.FileExistsOverwrite {
++				next = config.FileExistsRename
++			}
++			m.Settings.General.FileExistsAction.Value = next
++			return m, nil
++		}
++
+ 		// Toggle bool or enter edit mode for other types
+ 		typ := m.getCurrentSettingType()
+ 
+diff --git a/internal/tui/view_settings.go b/internal/tui/view_settings.go
+index 360d158..d1eb18a 100644
+--- a/internal/tui/view_settings.go
++++ b/internal/tui/view_settings.go
+@@ -953,6 +953,15 @@ func formatSettingValueForEdit(value interface{}, typ config.SettingType, key st
+ 		}
+ 	}
+ 
++	if key == "file_exists_action" {
++		switch value {
++		case config.FileExistsRename:
++			return "< Rename >"
++		case config.FileExistsOverwrite:
++			return "< Overwrite >"
++		}
++	}
++
+ 	// Default: use standard format
+ 	return formatSettingValue(value, typ, truncate)
+ }
+-- 
+2.43.0
+

@@ -1,0 +1,48 @@
+From 9d74a9e6859fa2311a9987ef2ca18cfe2916454f Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:55:33 +0000
+Subject: [PATCH] Reject a degree of one in `HashTrieMap` constructors.
+
+A degree of one passed the power-of-two check but makes every trie level
+consume zero bits of the hash, so inserting two distinct keys recursed
+forever and overflowed the stack.
+
+Fixes #113.
+---
+ src/map/hash_trie_map/mod.rs  | 3 +++
+ src/map/hash_trie_map/test.rs | 8 ++++++++
+ 2 files changed, 11 insertions(+)
+
+diff --git a/src/map/hash_trie_map/mod.rs b/src/map/hash_trie_map/mod.rs
+index 4ded787..fbcb285 100644
+--- a/src/map/hash_trie_map/mod.rs
++++ b/src/map/hash_trie_map/mod.rs
+@@ -750,6 +750,9 @@ where
+         degree: u8,
+     ) -> HashTrieMap<K, V, P, H> {
+         assert!(degree.is_power_of_two(), "degree must be a power of two");
++        // With a degree of one no bits of the hash are consumed per level, so colliding entries
++        // could never be separated.
++        assert!(degree >= 2, "degree must be at least 2");
+         assert!(degree <= DEFAULT_DEGREE, "degree is too big");
+ 
+         HashTrieMap {
+diff --git a/src/map/hash_trie_map/test.rs b/src/map/hash_trie_map/test.rs
+index 81c83af..3ad0c3f 100644
+--- a/src/map/hash_trie_map/test.rs
++++ b/src/map/hash_trie_map/test.rs
+@@ -1236,3 +1236,11 @@ fn test_serde() {
+ 
+     assert_eq!(map, decoded);
+ }
++
++#[test]
++#[should_panic(expected = "degree must be at least 2")]
++fn test_new_with_degree_one_panics() {
++    // A degree of one would make every level of the trie use zero bits of the hash, so two
++    // entries would never be separated and inserting would recurse forever.
++    let _: HashTrieMap<i32, i32> = HashTrieMap::new_with_degree(1);
++}
+-- 
+2.43.0
+

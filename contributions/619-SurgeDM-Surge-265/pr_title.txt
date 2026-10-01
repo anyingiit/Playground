@@ -1,0 +1,1 @@
+feat(settings): add file_exists_action setting (rename/overwrite)

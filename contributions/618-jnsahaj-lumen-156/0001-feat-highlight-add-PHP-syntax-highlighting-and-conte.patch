@@ -1,0 +1,209 @@
+From 743651fc5f7d4849c3e688d8ce2b660e721d574e Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:06:46 +0000
+Subject: [PATCH] feat(highlight): add PHP syntax highlighting and context
+ lines
+
+Register `.php` files with the tree-sitter-php grammar (using its bundled
+highlight queries) for diff syntax highlighting, and add a PHP context
+query so sticky context lines show the enclosing class/function/control
+blocks.
+
+Closes #156
+---
+ Cargo.lock                           | 11 ++++++
+ Cargo.toml                           |  1 +
+ src/command/diff/context.rs          | 54 ++++++++++++++++++++++++++++
+ src/command/diff/highlight/config.rs | 11 ++++++
+ src/command/diff/highlight/mod.rs    | 19 ++++++++++
+ 5 files changed, 96 insertions(+)
+
+diff --git a/Cargo.lock b/Cargo.lock
+index c296c7c..18e8aac 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -2597,6 +2597,7 @@ dependencies = [
+  "tree-sitter-javascript",
+  "tree-sitter-json",
+  "tree-sitter-md",
++ "tree-sitter-php",
+  "tree-sitter-python",
+  "tree-sitter-ruby",
+  "tree-sitter-rust",
+@@ -4380,6 +4381,16 @@ dependencies = [
+  "tree-sitter-language",
+ ]
+ 
++[[package]]
++name = "tree-sitter-php"
++version = "0.23.11"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "f066e94e9272cfe4f1dcb07a1c50c66097eca648f2d7233d299c8ae9ed8c130c"
++dependencies = [
++ "cc",
++ "tree-sitter-language",
++]
++
+ [[package]]
+ name = "tree-sitter-python"
+ version = "0.23.6"
+diff --git a/Cargo.toml b/Cargo.toml
+index 4b4b1fe..dc06ddf 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -46,6 +46,7 @@ tree-sitter-java = "0.23"
+ tree-sitter-zig = "1.1.2"
+ tree-sitter-c = "0.23"
+ tree-sitter-cpp = "0.23"
++tree-sitter-php = "0.23"
+ once_cell = "1.20"
+ arboard = { version = "3.4", features = ["wayland-data-control"] }
+ nucleo-matcher = "0.3"
+diff --git a/src/command/diff/context.rs b/src/command/diff/context.rs
+index 97e6627..5226082 100644
+--- a/src/command/diff/context.rs
++++ b/src/command/diff/context.rs
+@@ -118,6 +118,26 @@ const CSHARP_CONTEXT_QUERY: &str = r#"
+ (lock_statement) @context
+ "#;
+ 
++const PHP_CONTEXT_QUERY: &str = r#"
++(namespace_definition) @context
++(class_declaration) @context
++(interface_declaration) @context
++(trait_declaration) @context
++(enum_declaration) @context
++(function_definition) @context
++(method_declaration) @context
++(anonymous_function) @context
++(arrow_function) @context
++(for_statement) @context
++(foreach_statement) @context
++(while_statement) @context
++(do_statement) @context
++(if_statement) @context
++(switch_statement) @context
++(match_expression) @context
++(try_statement) @context
++"#;
++
+ pub struct LanguageContext {
+     pub language: Language,
+     query: Query,
+@@ -221,6 +241,18 @@ static LANGUAGE_CONTEXTS: Lazy<Vec<(&'static str, LanguageContext)>> = Lazy::new
+         ));
+     }
+ 
++    // PHP
++    let php_lang: Language = tree_sitter_php::LANGUAGE_PHP.into();
++    if let Ok(query) = Query::new(&php_lang, PHP_CONTEXT_QUERY) {
++        contexts.push((
++            "php",
++            LanguageContext {
++                language: php_lang,
++                query,
++            },
++        ));
++    }
++
+     contexts
+ });
+ 
+@@ -397,6 +429,28 @@ mod tests {
+         assert!(result[0].content.contains("impl Foo"));
+     }
+ 
++    #[test]
++    fn test_php_method_context() {
++        let config = ContextConfig::default();
++        let filename = "test.php";
++        let source = r#"<?php
++class Greeter {
++    public function greet($name) {
++        $greeting = "Hello";
++        $message = $greeting . ", " . $name;
++        return $message;
++    }
++}"#;
++        let tree_cache = get_tree_cache(filename, source);
++
++        let result = compute_context_lines(source, filename, &tree_cache, 5, &config, 4);
++        assert_eq!(result.len(), 2);
++        assert_eq!(result[0].content, "class Greeter {");
++        assert_eq!(result[0].line_number, 2);
++        assert_eq!(result[1].content, "    public function greet($name) {");
++        assert_eq!(result[1].line_number, 3);
++    }
++
+     #[test]
+     fn test_unsupported_language() {
+         let config = ContextConfig::default();
+diff --git a/src/command/diff/highlight/config.rs b/src/command/diff/highlight/config.rs
+index 0935431..fe1b402 100644
+--- a/src/command/diff/highlight/config.rs
++++ b/src/command/diff/highlight/config.rs
+@@ -9,6 +9,9 @@ const ELIXIR_HIGHLIGHTS: &str = tree_sitter_elixir::HIGHLIGHTS_QUERY;
+ // Java uses the bundled highlight queries from tree-sitter-java
+ const JAVA_HIGHLIGHTS: &str = tree_sitter_java::HIGHLIGHTS_QUERY;
+ 
++// PHP uses the bundled highlight queries from tree-sitter-php
++const PHP_HIGHLIGHTS: &str = tree_sitter_php::HIGHLIGHTS_QUERY;
++
+ pub const HIGHLIGHT_NAMES: &[&str] = &[
+     "attribute",
+     "comment",
+@@ -225,6 +228,14 @@ pub static CONFIGS: Lazy<Vec<(&'static str, LanguageConfig)>> = Lazy::new(|| {
+         &mut configs,
+     );
+ 
++    load_config(
++        tree_sitter_php::LANGUAGE_PHP.into(),
++        "php",
++        PHP_HIGHLIGHTS,
++        "php",
++        &mut configs,
++    );
++
+     load_config(
+         tree_sitter_zig::LANGUAGE.into(),
+         "zig",
+diff --git a/src/command/diff/highlight/mod.rs b/src/command/diff/highlight/mod.rs
+index 5d50b90..ab9e809 100644
+--- a/src/command/diff/highlight/mod.rs
++++ b/src/command/diff/highlight/mod.rs
+@@ -240,6 +240,7 @@ mod tests {
+         assert!(extensions.contains(&"exs"), "Elixir script config should be loaded");
+         assert!(extensions.contains(&"java"), "Java config should be loaded");
+         assert!(extensions.contains(&"zig"), "Zig config should be loaded");
++        assert!(extensions.contains(&"php"), "PHP config should be loaded");
+         assert!(extensions.contains(&"c"), "C config should be loaded");
+         assert!(extensions.contains(&"h"), "C header config should be loaded");
+         assert!(extensions.contains(&"cpp"), "C++ config should be loaded");
+@@ -328,6 +329,24 @@ public class Hello {
+         assert!(has_highlights, "Java code should have syntax highlights");
+     }
+ 
++    #[test]
++    fn test_php_highlighting() {
++        let code = r#"<?php
++
++namespace App;
++
++class Greeter {
++    public function greet(string $name): string {
++        return "Hello, " . $name;
++    }
++}
++"#;
++        let result = highlight_code(code, "test.php");
++        assert!(!result.is_empty(), "PHP highlighting should produce output");
++        let has_highlights = result.iter().any(|(_, h)| h.is_some());
++        assert!(has_highlights, "PHP code should have syntax highlights");
++    }
++
+     #[test]
+     fn test_zig_highlighting() {
+         let code = r#"const std = @import("std");
+-- 
+2.43.0
+
