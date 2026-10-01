@@ -1,5 +1,7 @@
 # Malicious-code audit — helm-unittest/helm-unittest @ 0d79286 (main, "Add opt-in parallel execution of test suites (#906)")
 
+Re-checked 2026-10-01: fresh clone still at 0d79286, audit applies unchanged.
+
 Tool: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/w6-helm-unittest-848` (547 text files), then manual review.
 
 | Hit | Reviewed | Verdict |

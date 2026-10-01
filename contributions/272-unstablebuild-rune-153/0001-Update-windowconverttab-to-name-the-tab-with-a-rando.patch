@@ -1,3 +1,25 @@
+From 3dfd2cc2e5daee4075f1756edf3468dc8476e720 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:18:12 +0000
+Subject: [PATCH] Update windowconverttab to name the tab with a random petname
+ by default
+
+The command failed when run without a name, even though the menu entry and the
+preset bindings open a prompt for it, so pressing enter on the prefilled prompt did
+nothing useful. The name is now optional and defaults to a two-word petname such as
+brave-otter, the same style Rune Agent uses for conversation IDs. A custom icon still
+needs an explicit name, which keeps the positional arguments unambiguous.
+
+Fixes #153
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ cmd/rune/docs/docs/learn/layout-management.md |  6 ++-
+ internal/ide/commands.go                      |  6 ++-
+ internal/ide/ex.go                            | 27 +++++++++++--
+ internal/ide/ex_test.go                       | 40 +++++++++++++++++++
+ 4 files changed, 73 insertions(+), 6 deletions(-)
+
 diff --git a/cmd/rune/docs/docs/learn/layout-management.md b/cmd/rune/docs/docs/learn/layout-management.md
 index a4c16ac..0178824 100644
 --- a/cmd/rune/docs/docs/learn/layout-management.md
@@ -98,10 +120,10 @@ index 9e70cb7..ec474c5 100644
  		runeArgs := []rune(args[1])
  		if len(runeArgs) > 0 {
 diff --git a/internal/ide/ex_test.go b/internal/ide/ex_test.go
-index 2e5d1af..44e3159 100644
+index 2e5d1af..725fa8a 100644
 --- a/internal/ide/ex_test.go
 +++ b/internal/ide/ex_test.go
-@@ -5257,6 +5257,61 @@ func TestIntegrationCompanionTerminal(t *testing.T) {
+@@ -5257,6 +5257,46 @@ func TestIntegrationCompanionTerminal(t *testing.T) {
  	handlertest.TestHandlerSequence(t, b, 20, 10, cases)
  }
  
@@ -118,7 +140,6 @@ index 2e5d1af..44e3159 100644
 +	}{
 +		{"no args", nil, "brave-otter", defaultConvertTabIcon},
 +		{"empty name", []string{""}, "brave-otter", defaultConvertTabIcon},
-+		{"empty name with icon", []string{"", "X"}, "brave-otter", 'X'},
 +		{"name only", []string{"build"}, "build", defaultConvertTabIcon},
 +		{"name and icon", []string{"build", "X"}, "build", 'X'},
 +	}
@@ -146,20 +167,9 @@ index 2e5d1af..44e3159 100644
 +	}
 +}
 +
-+func TestIntegrationConvertTabWithoutName(t *testing.T) {
-+	cases := []handlertest.SequenceTestCase{
-+		{":windowconverttab>", ``},
-+	}
-+	b := newExForTesting(t, texttest.NopEditor(),
-+		text.WithCommandKey(testCommandKey),
-+		text.WithCommandOverlayConfig(testCommandOverlayConfig()),
-+	)
-+	defer b.Close()
-+	b.tabNames = fixedNameGenerator("brave-otter")
-+
-+	handlertest.TestHandlerSequence(t, b, 20, 10, cases)
-+}
-+
  func TestTerminalWriteOpensSavePrompt(t *testing.T) {
  	b := newExForTesting(t, texttest.NopEditor())
  	defer b.Close()
+-- 
+2.43.0
+

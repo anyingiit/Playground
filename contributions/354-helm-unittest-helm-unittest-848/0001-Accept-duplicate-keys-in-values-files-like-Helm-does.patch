@@ -1,0 +1,210 @@
+From 786c1db2a26a3794dfb98af08bb74dab564fad70 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:36:19 +0000
+Subject: [PATCH] Accept duplicate keys in values files like Helm does
+
+Values files given via the test suite `values:` list or the `--values`
+flag were parsed with the strict yaml.v3 decoder, which rejects
+duplicated mapping keys. Helm itself accepts such files and lets the
+last occurrence win, so charts that render fine with Helm could not be
+tested.
+
+Parse values files into a yaml.v3 node tree, drop all but the last
+occurrence of every duplicated mapping key and decode the result.
+
+Resolves #848
+---
+ internal/common/utilities.go      | 50 +++++++++++++++++++++++++++++++
+ internal/common/utilities_test.go | 37 +++++++++++++++++++++++
+ pkg/unittest/test_job.go          |  2 +-
+ pkg/unittest/test_job_test.go     | 34 +++++++++++++++++++++
+ pkg/unittest/test_runner.go       |  2 +-
+ 5 files changed, 123 insertions(+), 2 deletions(-)
+
+diff --git a/internal/common/utilities.go b/internal/common/utilities.go
+index 7cc320f..355cc34 100644
+--- a/internal/common/utilities.go
++++ b/internal/common/utilities.go
+@@ -2,6 +2,7 @@ package common
+ 
+ import (
+ 	"bytes"
++	"slices"
+ 	"strings"
+ 	"testing"
+ 
+@@ -70,6 +71,55 @@ func YmlUnmarshal(in string, out any) error {
+ 	return yamlv3.Unmarshal([]byte(in), out)
+ }
+ 
++// YmlUnmarshalValues unmarshals a Helm values document. Unlike YmlUnmarshal it
++// accepts duplicate mapping keys, the last occurrence wins, which matches how
++// Helm itself parses values files.
++func YmlUnmarshalValues(in string, out any) error {
++	var node yamlv3.Node
++	if err := yamlv3.Unmarshal([]byte(in), &node); err != nil {
++		return err
++	}
++	if node.Kind == 0 {
++		// Empty document, nothing to decode.
++		return nil
++	}
++	removeDuplicateMappingKeys(&node, map[*yamlv3.Node]bool{})
++	return node.Decode(out)
++}
++
++// removeDuplicateMappingKeys removes all but the last occurrence of every
++// duplicated key in the mapping nodes of the tree.
++func removeDuplicateMappingKeys(node *yamlv3.Node, visited map[*yamlv3.Node]bool) {
++	if node == nil || visited[node] {
++		return
++	}
++	visited[node] = true
++
++	if node.Kind == yamlv3.MappingNode {
++		type mappingKey struct {
++			kind  yamlv3.Kind
++			value string
++		}
++		seen := map[mappingKey]bool{}
++		kept := make([]*yamlv3.Node, 0, len(node.Content))
++		for i := len(node.Content) - 2; i >= 0; i -= 2 {
++			key := mappingKey{node.Content[i].Kind, node.Content[i].Value}
++			if seen[key] {
++				continue
++			}
++			seen[key] = true
++			kept = append(kept, node.Content[i+1], node.Content[i])
++		}
++		slices.Reverse(kept)
++		node.Content = kept
++	}
++
++	for _, child := range node.Content {
++		removeDuplicateMappingKeys(child, visited)
++	}
++	removeDuplicateMappingKeys(node.Alias, visited)
++}
++
+ func YmlMarshall(in any) (string, error) {
+ 	out, err := yaml.Marshal(in)
+ 	if err != nil {
+diff --git a/internal/common/utilities_test.go b/internal/common/utilities_test.go
+index 9024ada..dda9239 100644
+--- a/internal/common/utilities_test.go
++++ b/internal/common/utilities_test.go
+@@ -310,3 +310,40 @@ func TestYmlMarshallTestHelper(t *testing.T) {
+ 	result := YmlMarshallTestHelper(input, t)
+ 	assert.Contains(t, result, "name: test")
+ }
++
++func TestYmlUnmarshalValuesWithDuplicateKeys(t *testing.T) {
++	input := `
++myMap:
++  some-key:
++    field: value-a
++  other: kept
++  some-key:
++    field: value-b
++top: first
++top: second
++list:
++  - name: a
++    name: b
++`
++	out := map[string]any{}
++	err := YmlUnmarshalValues(input, &out)
++	assert.NoError(t, err)
++	assert.Equal(t, map[string]any{
++		"myMap": map[string]any{
++			"some-key": map[string]any{"field": "value-b"},
++			"other":    "kept",
++		},
++		"top":  "second",
++		"list": []any{map[string]any{"name": "b"}},
++	}, out)
++}
++
++func TestYmlUnmarshalValuesEmptyAndInvalid(t *testing.T) {
++	out := map[string]any{}
++	assert.NoError(t, YmlUnmarshalValues("", &out))
++	assert.NoError(t, YmlUnmarshalValues("# only a comment\n", &out))
++	assert.Empty(t, out)
++
++	assert.Error(t, YmlUnmarshalValues("key: [unclosed", &out))
++	assert.Error(t, YmlUnmarshalValues("- not\n- a map\n", &out))
++}
+diff --git a/pkg/unittest/test_job.go b/pkg/unittest/test_job.go
+index 4394616..d0c8c67 100644
+--- a/pkg/unittest/test_job.go
++++ b/pkg/unittest/test_job.go
+@@ -362,7 +362,7 @@ func (t *TestJob) getUserValues() (string, error) {
+ 			return "", err
+ 		}
+ 
+-		if err := common.YmlUnmarshal(string(byteArray), &value); err != nil {
++		if err := common.YmlUnmarshalValues(string(byteArray), &value); err != nil {
+ 			return "", fmt.Errorf("failed to parse %s: %s", specifiedPath, err)
+ 		}
+ 
+diff --git a/pkg/unittest/test_job_test.go b/pkg/unittest/test_job_test.go
+index f360086..54c1280 100644
+--- a/pkg/unittest/test_job_test.go
++++ b/pkg/unittest/test_job_test.go
+@@ -400,6 +400,40 @@ asserts:
+ 	a.Equal(1, len(testResult.AssertsResult))
+ }
+ 
++func TestV4RunJobWithValuesFileContainingDuplicateKeys(t *testing.T) {
++	c, _ := v2loader.Load(testV4BasicChart)
++	manifest := `
++it: should accept duplicate keys like helm does
++values:
++  - %s
++asserts:
++  - equal:
++      path: metadata.name
++      value: RELEASE-NAME-mary-jane
++    documentIndex: 0
++    template: templates/deployment.yaml
++`
++	a := assert.New(t)
++
++	file := path.Join("_scratch", "testjob_test_TestRunJobWithValuesFileContainingDuplicateKeys.yaml")
++	a.Nil(writeToFile("nameOverride: john-doe\nnameOverride: mary-jane\n", file))
++	defer func() {
++		ferr := os.RemoveAll(file)
++		a.NoError(ferr)
++	}()
++
++	var tj TestJob
++	common.YmlUnmarshalTestHelper(fmt.Sprintf(manifest, file), &tj, t)
++	tj.WithConfig(*NewTestConfig(c, &snapshot.Cache{},
++		WithFailFast(true),
++	))
++	testResult := tj.RunV4(&results.TestJobResult{})
++
++	a.NoError(testResult.ExecError)
++	a.True(testResult.Passed)
++	a.Equal(1, len(testResult.AssertsResult))
++}
++
+ func TestV4RunJobWithReleaseSettings(t *testing.T) {
+ 	c, _ := v2loader.Load(testV4BasicChart)
+ 	manifest := `
+diff --git a/pkg/unittest/test_runner.go b/pkg/unittest/test_runner.go
+index 5707320..8db3399 100644
+--- a/pkg/unittest/test_runner.go
++++ b/pkg/unittest/test_runner.go
+@@ -216,7 +216,7 @@ func (tr *TestRunner) buildMergedValuesForChart(chart *v2chart.Chart, chartPath
+ 		}
+ 
+ 		value := make(map[string]any)
+-		if err := common.YmlUnmarshal(string(byteArray), &value); err != nil {
++		if err := common.YmlUnmarshalValues(string(byteArray), &value); err != nil {
+ 			return nil, fmt.Errorf("failed to parse values file %s: %w", valuesFile, err)
+ 		}
+ 
+-- 
+2.43.0
+

@@ -8,7 +8,10 @@ Tool: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/overcom
 | `overcommit.gemspec` | metadata + deps childprocess, iniparse, rexml; no extensions / install hooks (only a post_install message string) | benign |
 | `Rakefile` | only `require 'bundler/gem_tasks'` | benign |
 | `spec/spec_helper.rb` + `spec/support/*` | simplecov setup, requires all hook files, git/shell/output helpers (temp git repos); no network, no downloads | benign |
-| `.overcommit.yml` (used by lint CI `overcommit --run`) | built-in hooks only (BundleCheck, RuboCop, HardTabs, TrailingWhitespace, YamlSyntax, …); no custom hook scripts in repo (`.git-hooks` absent) | benign |
+| `.overcommit.yml` (used by lint CI `overcommit --run`) | built-in hooks only (BundleCheck, RuboCop, HardTabs, TrailingWhitespace, YamlSyntax, …) | benign |
+| `.git-hooks/pre_commit/master_hooks_match.rb` (repo-local hook, run by `overcommit --run` after `overcommit --sign pre-commit`) | re-checked 2026-10-01 on resume: only `FileUtils.compare_file` over `template-dir/hooks/*`; no shell, no network | benign |
 | `.github/workflows/*.yml` | tests: `bundle exec rspec` on Ruby 2.6–4.0; lint: `overcommit --sign` + `overcommit --run`; release: gem publish on tags (not run here) | benign |
 
 Verdict: **no malicious code found**; safe to `bundle install` (into vendor/ inside the clone) and run rspec/rubocop.
+
+Resume note (2026-10-01): re-cloned, HEAD still c06c0f5 — audit still applies; the one row above was corrected (`.git-hooks` does exist).

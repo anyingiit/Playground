@@ -1,0 +1,1 @@
+fix(python): raise errors from failing iterators instead of looping forever

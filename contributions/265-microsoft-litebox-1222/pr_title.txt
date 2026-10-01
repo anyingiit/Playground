@@ -1,0 +1,1 @@
+Return null instead of panicking for over-max-order allocations

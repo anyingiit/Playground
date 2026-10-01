@@ -1,4 +1,4 @@
-# Malicious-code audit — eugenioenko/ttt @ 5db5bcf
+# Malicious-code audit — eugenioenko/ttt @ 5db5bcf (HEAD unchanged on 2026-10-01 resume; still current)
 
 Command: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/ttt` (799 text files scanned), then manual review of everything that runs during build/test.
 

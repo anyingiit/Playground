@@ -1,0 +1,98 @@
+From 69ca063bd6e2cb5e7e12cab3b5777afc34ca2a97 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:26:43 +0000
+Subject: [PATCH] fix(python): raise errors from failing iterators instead of
+ looping forever
+
+DynamicObject::enumerate silently dropped errors returned by the Python
+iterator's __next__. An iterator that keeps raising never produces
+StopIteration, so rendering a for loop over it spun at 100% CPU.
+
+Stop at the first error and yield it as an invalid value so that the
+loop raises the original Python exception.
+
+Fixes #956
+---
+ CHANGELOG.md                     |  2 ++
+ minijinja-py/src/typeconv.rs     | 21 ++++++++++++++-------
+ minijinja-py/tests/test_basic.py | 22 ++++++++++++++++++++++
+ 3 files changed, 38 insertions(+), 7 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 344dc43..1cad95f 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,8 @@ All notable changes to MiniJinja are documented here.
+ 
+ ## Unreleased
+ 
++* Fixed an infinite loop in the Python bindings when iterating over an iterator whose `__next__` keeps raising. The exception is now raised from the loop instead of being silently skipped.  #956
++
+ ## 3.0.0-alpha.2
+ 
+ * Fixed large Python integers within MiniJinja's native integer range being silently rounded through `f64` conversion.  #944
+diff --git a/minijinja-py/src/typeconv.rs b/minijinja-py/src/typeconv.rs
+index 5f72372..91ef42c 100644
+--- a/minijinja-py/src/typeconv.rs
++++ b/minijinja-py/src/typeconv.rs
+@@ -161,13 +161,20 @@ impl Object for DynamicObject {
+             if inner.cast::<PySequence>().is_ok() {
+                 Enumerator::Seq(inner.len().unwrap_or(0))
+             } else if let Ok(iter) = inner.try_iter() {
+-                Enumerator::Values(
+-                    iter.filter_map(|x| match x {
+-                        Ok(x) => Some(to_minijinja_value(&x)),
+-                        Err(_) => None,
+-                    })
+-                    .collect(),
+-                )
++                // If `__next__` raises, emit the error as an invalid value and
++                // stop.  Skipping the error instead would loop forever on an
++                // iterator that keeps raising.
++                let mut values = Vec::new();
++                for item in iter {
++                    match item {
++                        Ok(x) => values.push(to_minijinja_value(&x)),
++                        Err(err) => {
++                            values.push(Value::from(to_minijinja_error(err)));
++                            break;
++                        }
++                    }
++                }
++                Enumerator::Values(values)
+             } else {
+                 Enumerator::NonEnumerable
+             }
+diff --git a/minijinja-py/tests/test_basic.py b/minijinja-py/tests/test_basic.py
+index 1fc6f73..053bd1d 100644
+--- a/minijinja-py/tests/test_basic.py
++++ b/minijinja-py/tests/test_basic.py
+@@ -596,3 +596,25 @@ def test_attribute_lookups():
+     env = Environment()
+     with pytest.raises(RuntimeError, match="boom"):
+         env.eval_expr("x.foo", x=X())
++
++
++def test_iteration_errors():
++    class Broken:
++        def __init__(self):
++            self.calls = 0
++
++        def __iter__(self):
++            return self
++
++        def __next__(self):
++            # bounded so that a regression fails instead of hanging forever
++            self.calls += 1
++            if self.calls > 100:
++                raise StopIteration()
++            raise ValueError("backend unavailable")
++
++    env = Environment()
++    items = Broken()
++    with pytest.raises(ValueError, match="backend unavailable"):
++        env.render_str("{% for x in items %}{{ x }}{% endfor %}done", items=items)
++    assert items.calls == 1
+-- 
+2.43.0
+

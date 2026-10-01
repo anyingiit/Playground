@@ -5,7 +5,7 @@ Command: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/rune
 | Hit | Reviewed | Verdict |
 |---|---|---|
 | `.pre-commit-config.yaml`, `internal/ide/idelsp/.pre-commit-config.yaml` | check-yaml, end-of-file-fixer, golangci-lint, gohawk (pinned to a commit), local `make generate` and license checks | benign; pre-commit is not installed or run here |
-| 18 committed `tree-sitter.so` files under `internal/ide/syntax/syntaxtest/*` and `internal/ide/idelsp/symbolresolve/go` | Test fixtures: tree-sitter grammars that the syntax tests dlopen. They are only staged by specific tests such as `stageTreeSitterGo` in `ide_test.go`. | benign: these are expected grammar fixtures. I did not run the tests that load them; my test runs were filtered with `-run` |
+| 18 committed `tree-sitter.so` files under `internal/ide/syntax/syntaxtest/*` and `internal/ide/idelsp/symbolresolve/go` | Test fixtures: tree-sitter grammars that the syntax tests dlopen. They are only staged by specific tests such as `stageTreeSitterGo` in `ide_test.go`. | benign: these are expected grammar fixtures, loaded only by the syntax tests. The final full `go test -race ./internal/ide/` run (top-level package only) was done after this review |
 | `internal/ide/idecmd/expander_test.go:399` "rm -rf / payload" | Name of a test case for string-expansion data. Nothing is executed. | benign |
 | `.github/workflows/e2e.yml:37` curl astral.sh/uv \| sh | CI-only uv installer from the official source | benign, not run |
 | `cmd/rune/docs/src/components/Install/index.tsx:7` install.sh | Install command shown on the docs website | benign |
@@ -17,4 +17,4 @@ Command: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/rune
 | `.github/workflows/lint.yml`, `test-linux.yml` | golangci-lint v2.14.0, gohawk, gofmt + license-header scan, `xvfb-run make test` | benign |
 | `internal/ide` package: `TestMain` / `init()` in the package being tested | none found | — |
 
-Conclusion: nothing malicious found. I ran only `go test` (targeted with `-run`), `go vet`, `gofmt`, and `golangci-lint` against `./internal/ide/`.
+Conclusion: nothing malicious found. Re-checked on 2026-10-01: a fresh clone is still at 587cdfd, so the audit was not redone. I ran only `go test -race` against `./internal/ide/` (first with `-run`, then the whole top-level package), `go vet`, `gofmt`, and `golangci-lint` v2.14.0 (the CI version, built locally) against `./internal/ide/`.

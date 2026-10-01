@@ -1,0 +1,82 @@
+From aa25fe100d7d8a80ccb6d17713cd53aef59331f2 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:25:35 +0000
+Subject: [PATCH] Prism: Do not scan code inside ERB comments
+
+The Prism ERB scanner parsed the body of `<%# ... %>` comments as Ruby,
+only turning `i18n-tasks-use` into a comment. Any commented-out code such
+as `<%# User.human_attribute_name(:foo) %>` or `<%# t("key") %>` was thus
+reported as a used key. Turn every line of an ERB comment into a Ruby
+comment so that only the `i18n-tasks-use` magic comments are picked up,
+matching the Parser-based scanner.
+
+Fixes #746
+---
+ CHANGES.md                                                 | 1 +
+ lib/i18n/tasks/scanners/erb_ast_scanner.rb                 | 5 ++++-
+ .../used_keys/app/views/application/comments.html.erb      | 7 +++++++
+ spec/used_keys_erb_prism_spec.rb                           | 5 +++++
+ 4 files changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGES.md b/CHANGES.md
+index 8745e78..71fe12a 100644
+--- a/CHANGES.md
++++ b/CHANGES.md
+@@ -9,6 +9,7 @@
+ - Prism/Rails: Fix crash when `human_attribute_name` is called with an interpolated string argument. Also fix `RailsModelMatcher` producing spurious keys for non-static attribute arguments. [#728](https://github.com/glebm/i18n-tasks/pull/728)
+ - Prism: Handles telling apart `scope` being falsey or not included in a translation call. [#731](https://github.com/glebm/i18n-tasks/pull/731)
+ - Unused keys are no longer reported as unused if their parent key is used.
++- Prism/ERB: Code inside ERB comments (`<%# ... %>`) is no longer reported as used keys; only `i18n-tasks-use` magic comments are read. [#746](https://github.com/glebm/i18n-tasks/issues/746)
+ 
+ ## v1.1.2
+ 
+diff --git a/lib/i18n/tasks/scanners/erb_ast_scanner.rb b/lib/i18n/tasks/scanners/erb_ast_scanner.rb
+index 1dfddaf..a08ebdf 100644
+--- a/lib/i18n/tasks/scanners/erb_ast_scanner.rb
++++ b/lib/i18n/tasks/scanners/erb_ast_scanner.rb
+@@ -121,7 +121,10 @@ module I18n::Tasks::Scanners
+     def process_comments(path, code, content, start)
+       return [] if code.strip.empty?
+ 
+-      parsed = Prism.parse(code.gsub("i18n-tasks-use ", "#i18n-tasks-use "))
++      # ERB comments are not executed, so only the `i18n-tasks-use` magic comments
++      # inside them are relevant. Turn every line into a Ruby comment so that
++      # commented-out code (e.g. `<%# t("key") %>`) is not reported as used.
++      parsed = Prism.parse(code.each_line.map { |line| "##{line.sub(/\A[ \t#]*/, "")}" }.join)
+       process_prism_results(path, parsed).map do |key, occurrence|
+         [
+           key,
+diff --git a/spec/fixtures/used_keys/app/views/application/comments.html.erb b/spec/fixtures/used_keys/app/views/application/comments.html.erb
+index 2db740f..5f3549a 100644
+--- a/spec/fixtures/used_keys/app/views/application/comments.html.erb
++++ b/spec/fixtures/used_keys/app/views/application/comments.html.erb
+@@ -49,3 +49,10 @@ bla
+ bla
+ -->
+ %>
++
++<%# Commented-out code must not be reported as used keys: %>
++<%# t('erb.commented_out.translate') %>
++<%# User.human_attribute_name(:commented_out_attribute) %>
++<%#
++t('erb.commented_out.multiline')
++%>
+diff --git a/spec/used_keys_erb_prism_spec.rb b/spec/used_keys_erb_prism_spec.rb
+index 1a65807..e095c92 100644
+--- a/spec/used_keys_erb_prism_spec.rb
++++ b/spec/used_keys_erb_prism_spec.rb
+@@ -318,6 +318,11 @@ RSpec.describe "UsedKeysErbPrism" do
+         expect(used_keys.size).to eq(1)
+         leaves = used_keys.leaves.to_a
+         expect(leaves.size).to eq(8)
++        expect(leaves.map { |leaf| leaf.full_key(root: false) }).not_to include(
++          "erb.commented_out.translate",
++          "erb.commented_out.multiline",
++          "activerecord.attributes.user.commented_out_attribute"
++        )
+ 
+         expect_node_key_data(
+           leaves[0],
+-- 
+2.43.0
+

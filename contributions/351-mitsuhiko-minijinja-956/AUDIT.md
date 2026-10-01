@@ -1,4 +1,4 @@
-# Malicious-code audit — mitsuhiko/minijinja @ 4affe79 (minijinja-2) / 5978498 (main), 2026-10-01
+# Malicious-code audit — mitsuhiko/minijinja @ 5978498 (main), 2026-10-01 (re-verified HEAD unchanged at implementation time)
 
 Tool: `python3 /home/user/Playground/tools/audit_repo.py /home/user/work/w6-minijinja-956` (372 text files), then manual review.
 

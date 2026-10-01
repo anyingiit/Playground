@@ -1,3 +1,31 @@
+From 632dc3b368cbd1660e1ae2e4205e6c8763dbf88a Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:22:24 +0000
+Subject: [PATCH] feat(editor): flag read-only files and confirm before saving
+ them
+
+Saving writes a temp file and renames it over the target, which succeeds
+for a chmod 444 file whenever its directory is writable, so read-only
+files were silently overwritten.
+
+Record whether the file on disk has no write bits when it is loaded or
+saved, show "(readonly)" on its tab, and ask "Cancel / Overwrite" before
+File > Save writes it. LSP rename's save-on-rename skips such files and
+leaves them dirty instead of overwriting them without asking.
+
+Closes #277
+---
+ internal/app/app_lsp.go         |  2 +-
+ internal/app/commands_editor.go | 17 +++++++
+ internal/core/buffer/buffer.go  |  3 ++
+ internal/core/buffer/io.go      |  1 +
+ internal/core/buffer/io_test.go | 31 +++++++++++++
+ internal/ui/editor_group.go     |  1 +
+ internal/ui/tabbar_widget.go    |  4 ++
+ tests/e2e/readonly_file_test.go | 82 +++++++++++++++++++++++++++++++++
+ 8 files changed, 140 insertions(+), 1 deletion(-)
+ create mode 100644 tests/e2e/readonly_file_test.go
+
 diff --git a/internal/app/app_lsp.go b/internal/app/app_lsp.go
 index a817c3f..0693b4f 100644
 --- a/internal/app/app_lsp.go
@@ -229,3 +257,6 @@ index 0000000..8243c5b
 +		t.Errorf("expected the file to stay read-only, got mode %o", info.Mode().Perm())
 +	}
 +}
+-- 
+2.43.0
+

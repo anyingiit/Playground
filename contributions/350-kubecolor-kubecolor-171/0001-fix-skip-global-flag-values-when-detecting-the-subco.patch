@@ -1,0 +1,121 @@
+From a88b4eb4a276a2f5367d39eb9cca1aae53bf8e59 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:30:38 +0000
+Subject: [PATCH] fix: skip global flag values when detecting the subcommand
+
+Values of global flags placed before the subcommand, such as "config"
+in "kubecolor -n config get pod", were mistaken for the subcommand,
+causing the wrong printer to be used.
+
+Fixes #171
+---
+ kubectl/subcommand.go      | 57 ++++++++++++++++++++++++++++++++++++++
+ kubectl/subcommand_test.go | 13 +++++++++
+ 2 files changed, 70 insertions(+)
+
+diff --git a/kubectl/subcommand.go b/kubectl/subcommand.go
+index 7b84d57..c6c5319 100644
+--- a/kubectl/subcommand.go
++++ b/kubectl/subcommand.go
+@@ -231,17 +231,74 @@ func parseArgFlag(args []string) (flag, value string) {
+ 	return arg, ""
+ }
+ 
++// globalFlagsWithValue contains kubectl's global flags (see "kubectl options")
++// that take a value.
++var globalFlagsWithValue = map[string]struct{}{
++	"--as":                    {},
++	"--as-group":              {},
++	"--as-uid":                {},
++	"--cache-dir":             {},
++	"--certificate-authority": {},
++	"--client-certificate":    {},
++	"--client-key":            {},
++	"--cluster":               {},
++	"--context":               {},
++	"--kubeconfig":            {},
++	"--kuberc":                {},
++	"--log-backtrace-at":      {},
++	"--log-dir":               {},
++	"--log-file":              {},
++	"--log-file-max-size":     {},
++	"--log-flush-frequency":   {},
++	"--namespace":             {},
++	"-n":                      {},
++	"--password":              {},
++	"--profile":               {},
++	"--profile-output":        {},
++	"--request-timeout":       {},
++	"--server":                {},
++	"-s":                      {},
++	"--stderrthreshold":       {},
++	"--tls-server-name":       {},
++	"--token":                 {},
++	"--user":                  {},
++	"--username":              {},
++	"--v":                     {},
++	"-v":                      {},
++	"--vmodule":               {},
++}
++
++// isGlobalFlagWithSeparateValue reports whether arg is a global flag whose
++// value is passed as the next argument, e.g "-n" in "-n my-namespace", but
++// not "-n=my-namespace" or "-nmy-namespace".
++func isGlobalFlagWithSeparateValue(arg string) bool {
++	_, ok := globalFlagsWithValue[arg]
++	return ok
++}
++
+ func InspectSubcommandInfo(args []string, pluginHandler PluginHandler) *SubcommandInfo {
+ 	ret := &SubcommandInfo{}
+ 
+ 	CollectCommandlineOptions(args, ret)
+ 
++	skipNext := false
+ 	for i, arg := range args {
+ 		// Stop parsing args after "--", such as in "kubectl exec my-pod -- bash"
+ 		if arg == "--" {
+ 			break
+ 		}
+ 
++		// Skip the value of a global flag, such as "config" in
++		// "kubectl -n config get pods", so it is not mistaken for the subcommand
++		if skipNext {
++			skipNext = false
++			continue
++		}
++		if isGlobalFlagWithSeparateValue(arg) {
++			skipNext = true
++			continue
++		}
++
+ 		cmd, ok := InspectSubcommand(args[i:], pluginHandler)
+ 		if !ok {
+ 			continue
+diff --git a/kubectl/subcommand_test.go b/kubectl/subcommand_test.go
+index 41ef71e..c713813 100644
+--- a/kubectl/subcommand_test.go
++++ b/kubectl/subcommand_test.go
+@@ -94,6 +94,19 @@ func TestInspectSubcommandInfo(t *testing.T) {
+ 
+ 		{"delete --interactive", &SubcommandInfo{Subcommand: Delete, Interactive: true}},
+ 		{"delete -i", &SubcommandInfo{Subcommand: Delete, Interactive: true}},
++
++		// global flags with values before the subcommand must not have their
++		// value mistaken for the subcommand
++		{"-n config get pod", &SubcommandInfo{Subcommand: Get}},
++		{"--namespace config get pod", &SubcommandInfo{Subcommand: Get}},
++		{"--namespace=config get pod", &SubcommandInfo{Subcommand: Get}},
++		{"-nconfig get pod", &SubcommandInfo{Subcommand: Get}},
++		{"--context logs get pod", &SubcommandInfo{Subcommand: Get}},
++		{"--kubeconfig apply describe pod", &SubcommandInfo{Subcommand: Describe}},
++		{"-s top --user exec get pod -o wide", &SubcommandInfo{Subcommand: Get, Output: OutputWide}},
++		{"-v 6 --insecure-skip-tls-verify get pod", &SubcommandInfo{Subcommand: Get}},
++		{"-n get", &SubcommandInfo{Subcommand: Unknown, Help: true}},
++		{"--context testplugin get pod", &SubcommandInfo{Subcommand: Get}},
+ 	}
+ 
+ 	pluginHandler := TestPluginHandler{LookupMap: map[string]string{
+-- 
+2.43.0
+

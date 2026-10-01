@@ -1,0 +1,1 @@
+feat(editor): flag read-only files and confirm before saving them

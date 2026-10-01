@@ -1,0 +1,1 @@
+Allow URL-only lines to exceed TextWidth body limit

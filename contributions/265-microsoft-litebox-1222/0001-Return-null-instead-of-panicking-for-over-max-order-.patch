@@ -1,5 +1,32 @@
+From 269eb90fe8bb71c4dd8a06a1fb702d30e403d9d2 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:19:21 +0000
+Subject: [PATCH] Return null instead of panicking for over-max-order
+ allocations
+
+`SafeZoneAllocator`'s rescue callback called `unimplemented!()` when a
+request was larger than the buddy allocator's maximum block size
+(`1 << (ORDER - 1)`). That violates the `GlobalAlloc::alloc` contract
+and turns fallible APIs such as `Vec::try_reserve` into aborts.
+
+Return from the rescue callback without growing the heap instead: the
+retry in `LockedHeapWithRescue::alloc` then fails and null is returned.
+No memory is requested from the `MemoryProvider` for such requests,
+since it could never satisfy them.
+
+Add unit tests for over-max-order requests, allocations that fit, and an
+exhausted memory provider, plus an integration test that installs the
+allocator as the global allocator and checks `Vec::try_reserve_exact`.
+
+Fixes #1222
+---
+ litebox/src/mm/allocator.rs          | 110 ++++++++++++++++++++++++++-
+ litebox/tests/safe_zone_allocator.rs |  49 ++++++++++++
+ 2 files changed, 157 insertions(+), 2 deletions(-)
+ create mode 100644 litebox/tests/safe_zone_allocator.rs
+
 diff --git a/litebox/src/mm/allocator.rs b/litebox/src/mm/allocator.rs
-index 64c84b1..bcb08e5 100644
+index 64c84b1..5b7d569 100644
 --- a/litebox/src/mm/allocator.rs
 +++ b/litebox/src/mm/allocator.rs
 @@ -37,7 +37,8 @@ pub trait MemoryProvider {
@@ -25,7 +52,7 @@ index 64c84b1..bcb08e5 100644
                  }
                  let Ok(layout) = Layout::from_size_align(page_aligned_size, page_aligned_size)
                  else {
-@@ -238,3 +243,101 @@ unsafe impl<const ORDER: usize, M: MemoryProvider> GlobalAlloc
+@@ -238,3 +243,104 @@ unsafe impl<const ORDER: usize, M: MemoryProvider> GlobalAlloc
          }
      }
  }
@@ -106,7 +133,10 @@ index 64c84b1..bcb08e5 100644
 +            let layout = Layout::from_size_align(size, 8).unwrap();
 +            // SAFETY: `layout` has a non-zero size.
 +            let ptr = unsafe { ALLOCATOR.alloc(layout) };
-+            assert!(!ptr.is_null(), "allocation of {size:#x} bytes should succeed");
++            assert!(
++                !ptr.is_null(),
++                "allocation of {size:#x} bytes should succeed"
++            );
 +            // SAFETY: `ptr` points to `size` freshly allocated bytes.
 +            unsafe { ptr.write_bytes(0xa5, size) };
 +            // SAFETY: `ptr` was allocated above by `ALLOCATOR` with `layout`.
@@ -182,3 +212,6 @@ index 0000000..fe857b2
 +    v.resize(1 << (ORDER - 1), 0xa5);
 +    assert!(v.iter().all(|&b| b == 0xa5));
 +}
+-- 
+2.43.0
+

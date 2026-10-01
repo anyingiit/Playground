@@ -1,0 +1,100 @@
+From 3c0f0f016363aef5b700b91f3bce6c9f5bd120eb Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 16:24:10 +0000
+Subject: [PATCH] Allow URL-only lines to exceed TextWidth body limit
+
+A URL cannot be wrapped without breaking it, so a commit message body
+line that consists only of a URL (optionally written as a Markdown-style
+link reference such as `[1]: https://...`) no longer triggers the
+`max_body_width` warning. Lines that mix a URL with other text are still
+checked as before.
+
+Closes #822
+---
+ lib/overcommit/hook/commit_msg/text_width.rb  | 17 +++++++---
+ .../hook/commit_msg/text_width_spec.rb        | 31 +++++++++++++++++++
+ 2 files changed, 44 insertions(+), 4 deletions(-)
+
+diff --git a/lib/overcommit/hook/commit_msg/text_width.rb b/lib/overcommit/hook/commit_msg/text_width.rb
+index 52de3bd..5d91284 100644
+--- a/lib/overcommit/hook/commit_msg/text_width.rb
++++ b/lib/overcommit/hook/commit_msg/text_width.rb
+@@ -4,6 +4,11 @@ module Overcommit::Hook::CommitMsg
+   # Ensures the number of columns the subject and commit message lines occupy is
+   # under the preferred limits.
+   class TextWidth < Base
++    # A line consisting only of a URL (optionally as a Markdown-style link
++    # reference such as `[1]: https://...`) cannot be wrapped without breaking
++    # the link, so it is exempt from the body width limit.
++    URL_ONLY_LINE = %r{\A(\[[^\]]+\]:\s*)?[a-z][a-z0-9+.-]*://\S+\z}i.freeze
++
+     def run
+       return :pass if empty_message?
+ 
+@@ -42,13 +47,17 @@ module Overcommit::Hook::CommitMsg
+       max_body_width = config['max_body_width']
+ 
+       lines[2..].each_with_index do |line, index|
+-        if line.chomp.size > max_body_width
+-          @errors << "Line #{index + 3} of commit message has > " \
+-                    "#{max_body_width} characters"
+-        end
++        next if line.chomp.size <= max_body_width || url_only_line?(line)
++
++        @errors << "Line #{index + 3} of commit message has > " \
++                  "#{max_body_width} characters"
+       end
+     end
+ 
++    def url_only_line?(line)
++      URL_ONLY_LINE.match?(line.strip)
++    end
++
+     def special_prefix_length(subject)
+       subject.match(/^(fixup|squash)! /) { |match| match[0].length } || 0
+     end
+diff --git a/spec/overcommit/hook/commit_msg/text_width_spec.rb b/spec/overcommit/hook/commit_msg/text_width_spec.rb
+index 8829668..62fd166 100644
+--- a/spec/overcommit/hook/commit_msg/text_width_spec.rb
++++ b/spec/overcommit/hook/commit_msg/text_width_spec.rb
+@@ -73,6 +73,37 @@ describe Overcommit::Hook::CommitMsg::TextWidth do
+     it { should warn('Line 3 of commit message has > 72 characters') }
+   end
+ 
++  context 'when a line longer than 72 characters contains only a URL' do
++    let(:commit_msg) { <<-MSG }
++      Some summary
++
++      See:
++      https://example.com/some/very/long/path/that/cannot/be/wrapped/without/breaking/it
++    MSG
++
++    it { should pass }
++  end
++
++  context 'when a line longer than 72 characters is a link reference' do
++    let(:commit_msg) { <<-MSG }
++      Some summary
++
++      [1]: https://example.com/some/very/long/path/that/cannot/be/wrapped/without/breaking
++    MSG
++
++    it { should pass }
++  end
++
++  context 'when a line longer than 72 characters contains a URL and other text' do
++    let(:commit_msg) { <<-MSG }
++      Some summary
++
++      See https://example.com/some/very/long/path/that/cannot/be/wrapped for details
++    MSG
++
++    it { should warn('Line 3 of commit message has > 72 characters') }
++  end
++
+   context 'when all lines in the message are fewer than 72 characters' do
+     let(:commit_msg) { <<-MSG }
+       Some summary
+-- 
+2.43.0
+
