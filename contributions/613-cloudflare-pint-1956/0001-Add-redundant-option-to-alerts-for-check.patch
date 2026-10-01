@@ -1,0 +1,350 @@
+From eb3fef5af7a212ca2877cde4866d1ff7ade06b48 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 17:42:12 +0000
+Subject: [PATCH] Add redundant option to alerts/for check
+
+Allow disabling reports about for and keep_firing_for fields set to
+the default value via:
+
+  check "alerts/for" {
+    redundant = false
+  }
+
+Invalid values are still reported.
+
+Fixes #1956.
+---
+ .../0278_alerts_for_redundant_disabled.txt    | 33 ++++++++++
+ docs/changelog.md                             |  8 +++
+ docs/checks/alerts/for.md                     | 22 ++++++-
+ internal/checks/alerts_for.go                 | 32 ++++++++--
+ internal/checks/alerts_for_test.go            | 44 +++++++++++++
+ internal/checks/alerts_for_test.snap          | 62 +++++++++++++++++++
+ internal/config/check.go                      |  2 +
+ 7 files changed, 197 insertions(+), 6 deletions(-)
+ create mode 100644 cmd/pint/tests/0278_alerts_for_redundant_disabled.txt
+
+diff --git a/cmd/pint/tests/0278_alerts_for_redundant_disabled.txt b/cmd/pint/tests/0278_alerts_for_redundant_disabled.txt
+new file mode 100644
+index 0000000..da379a2
+--- /dev/null
++++ b/cmd/pint/tests/0278_alerts_for_redundant_disabled.txt
+@@ -0,0 +1,33 @@
++! exec pint --no-color lint --min-severity=info rules
++! stdout .
++cmp stderr stderr.txt
++
++-- stderr.txt --
++level=INFO msg="Loading configuration file" path=.pint.hcl
++level=INFO msg="Finding all rules to check" paths=["rules"]
++level=INFO msg="Checking Prometheus rules" entries=3 workers=10 online=true
++Bug: invalid duration (alerts/for)
++  ---> rules/0001.yml:12 -> `invalid-for`
++12 |     for: -5m
++              ^^^ not a valid duration string: "-5m"
++
++level=INFO msg="Problems found" Bug=1
++level=ERROR msg="Execution completed with error(s)" err="found 1 problem(s) with severity Bug or higher"
++-- rules/0001.yml --
++groups:
++- name: foo
++  rules:
++  - alert: default-for
++    expr: up == 0
++    for: 0m
++  - alert: default-keep-firing-for
++    expr: up == 0
++    keep_firing_for: 0s
++  - alert: invalid-for
++    expr: up == 0
++    for: -5m
++
++-- .pint.hcl --
++check "alerts/for" {
++  redundant = false
++}
+diff --git a/docs/changelog.md b/docs/changelog.md
+index 6b09a0e..151dc2b 100644
+--- a/docs/changelog.md
++++ b/docs/changelog.md
+@@ -1,5 +1,13 @@
+ # Changelog
+ 
++## v0.89.0
++
++### Added
++
++- [alerts/for](checks/alerts/for.md) check now supports `redundant` option
++  that can be used to disable reports about `for` and `keep_firing_for` fields
++  set to the default value - [#1956](https://github.com/cloudflare/pint/issues/1956).
++
+ ## v0.88.0
+ 
+ ### Added
+diff --git a/docs/checks/alerts/for.md b/docs/checks/alerts/for.md
+index 2ccd771..29c93f3 100644
+--- a/docs/checks/alerts/for.md
++++ b/docs/checks/alerts/for.md
+@@ -11,7 +11,27 @@ value or if it passes default value that can be removed to simplify rule.
+ 
+ ## Configuration
+ 
+-This check doesn't have any configuration options.
++This check supports setting extra configuration option to fine tune its behaviour.
++
++Syntax:
++
++```js
++check "alerts/for" {
++  redundant = true|false
++}
++```
++
++- `redundant` - enable or disable reports about `for` or `keep_firing_for`
++  fields that are set to the default value (`0`) and can be removed.
++  This is enabled by default. Invalid values are always reported.
++
++Example:
++
++```js
++check "alerts/for" {
++  redundant = false
++}
++```
+ 
+ ## How to enable it
+ 
+diff --git a/internal/checks/alerts_for.go b/internal/checks/alerts_for.go
+index 6ddfe47..5430814 100644
+--- a/internal/checks/alerts_for.go
++++ b/internal/checks/alerts_for.go
+@@ -18,6 +18,19 @@ func NewAlertsForCheck() AlertsForChecksFor {
+ 	return AlertsForChecksFor{}
+ }
+ 
++type AlertsForSettings struct {
++	Redundant        *bool `hcl:"redundant,optional" json:"redundant,omitzero"`
++	redundantEnabled bool
++}
++
++func (c *AlertsForSettings) Validate() error {
++	c.redundantEnabled = true
++	if c.Redundant != nil {
++		c.redundantEnabled = *c.Redundant
++	}
++	return nil
++}
++
+ type AlertsForChecksFor struct{}
+ 
+ func (c AlertsForChecksFor) Meta() CheckMeta {
+@@ -41,22 +54,31 @@ func (c AlertsForChecksFor) Reporter() string {
+ 	return AlertForCheckName
+ }
+ 
+-func (c AlertsForChecksFor) Check(_ context.Context, entry *discovery.Entry, _ []*discovery.Entry) (problems []Problem) {
++func (c AlertsForChecksFor) Check(ctx context.Context, entry *discovery.Entry, _ []*discovery.Entry) (problems []Problem) {
+ 	if entry.Rule.AlertingRule == nil {
+ 		return problems
+ 	}
+ 
++	var settings *AlertsForSettings
++	if s := ctx.Value(SettingsKey(c.Reporter())); s != nil {
++		settings = s.(*AlertsForSettings)
++	}
++	if settings == nil {
++		settings = &AlertsForSettings{}
++		_ = settings.Validate()
++	}
++
+ 	if entry.Rule.AlertingRule.For != nil {
+-		problems = append(problems, c.checkField("for", entry.Rule.AlertingRule.For)...)
++		problems = append(problems, c.checkField(settings, "for", entry.Rule.AlertingRule.For)...)
+ 	}
+ 	if entry.Rule.AlertingRule.KeepFiringFor != nil {
+-		problems = append(problems, c.checkField("keep_firing_for", entry.Rule.AlertingRule.KeepFiringFor)...)
++		problems = append(problems, c.checkField(settings, "keep_firing_for", entry.Rule.AlertingRule.KeepFiringFor)...)
+ 	}
+ 
+ 	return problems
+ }
+ 
+-func (c AlertsForChecksFor) checkField(name string, value *parser.YamlDuration) (problems []Problem) {
++func (c AlertsForChecksFor) checkField(settings *AlertsForSettings, name string, value *parser.YamlDuration) (problems []Problem) {
+ 	if value.ParseError != nil {
+ 		problems = append(problems, Problem{
+ 			Anchor:   AnchorAfter,
+@@ -79,7 +101,7 @@ func (c AlertsForChecksFor) checkField(name string, value *parser.YamlDuration)
+ 		return problems
+ 	}
+ 
+-	if value.Value == 0 {
++	if settings.redundantEnabled && value.Value == 0 {
+ 		problems = append(problems, Problem{
+ 			Anchor:   AnchorAfter,
+ 			Lines:    value.Pos.Lines(),
+diff --git a/internal/checks/alerts_for_test.go b/internal/checks/alerts_for_test.go
+index 33ade1f..fefaca3 100644
+--- a/internal/checks/alerts_for_test.go
++++ b/internal/checks/alerts_for_test.go
+@@ -1,6 +1,7 @@
+ package checks_test
+ 
+ import (
++	"context"
+ 	"testing"
+ 
+ 	"github.com/cloudflare/pint/internal/checks"
+@@ -11,6 +12,19 @@ func newAlertsForCheck(_ *promapi.FailoverGroup) checks.RuleChecker {
+ 	return checks.NewAlertsForCheck()
+ }
+ 
++func alertsForSettings(t *testing.T, redundant bool) func(context.Context, string) context.Context {
++	return func(ctx context.Context, _ string) context.Context {
++		s := checks.AlertsForSettings{
++			Redundant: &redundant,
++		}
++		if err := s.Validate(); err != nil {
++			t.Error(err)
++			t.FailNow()
++		}
++		return context.WithValue(ctx, checks.SettingsKey(checks.AlertForCheckName), &s)
++	}
++}
++
+ func TestAlertsForCheck(t *testing.T) {
+ 	testCases := []checkTest{
+ 		{
+@@ -79,6 +93,36 @@ func TestAlertsForCheck(t *testing.T) {
+ 			checker:     newAlertsForCheck,
+ 			prometheus:  noProm,
+ 		},
++		{
++			description: "default for value / redundant enabled",
++			content:     "- alert: foo\n  expr: foo\n  for: 0m\n",
++			checker:     newAlertsForCheck,
++			ctx:         alertsForSettings(t, true),
++			prometheus:  noProm,
++			problems:    true,
++		},
++		{
++			description: "default for value / redundant disabled",
++			content:     "- alert: foo\n  expr: foo\n  for: 0m\n",
++			checker:     newAlertsForCheck,
++			ctx:         alertsForSettings(t, false),
++			prometheus:  noProm,
++		},
++		{
++			description: "default keep_firing_for value / redundant disabled",
++			content:     "- alert: foo\n  expr: foo\n  keep_firing_for: 0s\n",
++			checker:     newAlertsForCheck,
++			ctx:         alertsForSettings(t, false),
++			prometheus:  noProm,
++		},
++		{
++			description: "invalid for value / redundant disabled",
++			content:     "- alert: foo\n  expr: foo\n  for: -5m\n",
++			checker:     newAlertsForCheck,
++			ctx:         alertsForSettings(t, false),
++			prometheus:  noProm,
++			problems:    true,
++		},
+ 	}
+ 	runTests(t, testCases)
+ }
+diff --git a/internal/checks/alerts_for_test.snap b/internal/checks/alerts_for_test.snap
+index 9639a6a..187beb7 100644
+--- a/internal/checks/alerts_for_test.snap
++++ b/internal/checks/alerts_for_test.snap
+@@ -51,6 +51,42 @@
+ 
+ ---
+ 
++[TestAlertsForCheck/default_for_value_/_redundant_disabled - 1]
++[]
++
++---
++
++[TestAlertsForCheck/default_for_value_/_redundant_enabled - 1]
++- description: default for value / redundant enabled
++  content: |
++    - alert: foo
++      expr: foo
++      for: 0m
++  output: |
++    3 |   for: 0m
++               ^^ `0m` is the default value of `for`, this line is unnecessary.
++  problem:
++    reporter: alerts/for
++    summary: redundant field with default value
++    details: ""
++    diagnostics:
++        - message: '`0m` is the default value of `for`, this line is unnecessary.'
++          firstcolumn: 1
++          lastcolumn: 2
++          kind: 0
++    lines:
++        first: 3
++        last: 3
++    severity: 0
++    anchor: 0
++
++---
++
++[TestAlertsForCheck/default_keep_firing_for_value_/_redundant_disabled - 1]
++[]
++
++---
++
+ [TestAlertsForCheck/ignores_recording_rules - 1]
+ []
+ 
+@@ -87,6 +123,32 @@
+ 
+ ---
+ 
++[TestAlertsForCheck/invalid_for_value_/_redundant_disabled - 1]
++- description: invalid for value / redundant disabled
++  content: |
++    - alert: foo
++      expr: foo
++      for: -5m
++  output: |
++    3 |   for: -5m
++               ^^^ not a valid duration string: "-5m"
++  problem:
++    reporter: alerts/for
++    summary: invalid duration
++    details: Supported time durations are documented [here](https://prometheus.io/docs/prometheus/latest/querying/basics/#time-durations).
++    diagnostics:
++        - message: 'not a valid duration string: "-5m"'
++          firstcolumn: 1
++          lastcolumn: 3
++          kind: 0
++    lines:
++        first: 3
++        last: 3
++    severity: 2
++    anchor: 0
++
++---
++
+ [TestAlertsForCheck/invalid_keep_firing_for_value - 1]
+ - description: invalid keep_firing_for value
+   content: |
+diff --git a/internal/config/check.go b/internal/config/check.go
+index 5b69087..bfa0ed3 100644
+--- a/internal/config/check.go
++++ b/internal/config/check.go
+@@ -26,6 +26,8 @@ func (c Check) MarshalJSONTo(enc *jsontext.Encoder) error {
+ 
+ func (c Check) Decode() (s CheckSettings, err error) {
+ 	switch c.Name {
++	case checks.AlertForCheckName:
++		s = &checks.AlertsForSettings{}
+ 	case checks.SeriesCheckName:
+ 		s = &checks.PromqlSeriesSettings{}
+ 	case checks.RegexpCheckName:
+-- 
+2.43.0
+
