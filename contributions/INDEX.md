@@ -1,7 +1,7 @@
 # Contributions index
 
 Target: **60 = 12 高活跃高Star + 12 新锐 + 36 自由**.
-Ready: **171** (高星 46 · 新锐 46 · 自由 79).
+Ready: **170** (高星 45 · 新锐 46 · 自由 79).
 Each folder: `README.md` (analysis, verification, submit steps, PR text, **需要提交者注意**), `0001-*.patch`, `AUDIT.md`.
 Rules: [`docs/CONTRIBUTION_BRIEF.md`](../docs/CONTRIBUTION_BRIEF.md). Tools: [`tools/`](../tools/).
 
@@ -20,12 +20,10 @@ Rules: [`docs/CONTRIBUTION_BRIEF.md`](../docs/CONTRIBUTION_BRIEF.md). Tools: [`t
 | 11 | 新锐 | [thebanri/limoni#59](https://github.com/thebanri/limoni/issues/59) | ✅ |
 | 12 | 新锐 | [openeverest/provider-cassandra#23](https://github.com/openeverest/provider-cassandra/issues/23) | ✅ |
 | 1200 | 高星 | [The-PR-Agent/pr-agent#3794](https://github.com/The-PR-Agent/pr-agent/issues/3794) | ✅ |
-| 1201 | 高星 | [MODSetter/SurfSense#2141](https://github.com/MODSetter/SurfSense/issues/2141) | ✅ |
 | 1202 | 新锐 | [cuga-project/cuga-agent#822](https://github.com/cuga-project/cuga-agent/issues/822) | ✅ |
 | 1203 | 高星 | [webdriverio/webdriverio#15851](https://github.com/webdriverio/webdriverio/issues/15851) | ✅ |
 | 1204 | 新锐 | [Observal/Axl#425](https://github.com/Observal/Axl/issues/425) | ✅ |
 | 1205 | 自由 | [Arize-ai/openinference#3784](https://github.com/Arize-ai/openinference/issues/3784) | ✅ |
-| 1206 | 自由 | [truera/trulens#2892](https://github.com/truera/trulens/issues/2892) | 🚧 |
 | 1250 | 高星 | [jj-vcs/jj#7816](https://github.com/jj-vcs/jj/issues/7816) | ✅ |
 | 1252 | 自由 | [Harry-kp/vortix#379](https://github.com/Harry-kp/vortix/issues/379) | ✅ |
 | 1253 | 高星 | [direnv/direnv#1588](https://github.com/direnv/direnv/issues/1588) | ✅ |
@@ -36,12 +34,8 @@ Rules: [`docs/CONTRIBUTION_BRIEF.md`](../docs/CONTRIBUTION_BRIEF.md). Tools: [`t
 | 13 | 自由 | [fadyehabamer/qr-zero#4](https://github.com/fadyehabamer/qr-zero/issues/4) | ✅ |
 | 1300 | 自由 | [quickjs-ng/quickjs#1764](https://github.com/quickjs-ng/quickjs/issues/1764) | ✅ |
 | 1301 | 自由 | [hanami/hanami#1284](https://github.com/hanami/hanami/issues/1284) | ✅ |
-| 1302 | 高星 | [lysine-dev/okio#1874](https://github.com/lysine-dev/okio/issues/1874) | 🚧 |
 | 1303 | 自由 | [ruby-grape/grape#2487](https://github.com/ruby-grape/grape/issues/2487) | ✅ |
-| 1304 | 高星 | [jbeder/yaml-cpp#1502](https://github.com/jbeder/yaml-cpp/issues/1502) | 🚧 |
-| 1305 | 自由 | [dry-rb/dry-schema#489](https://github.com/dry-rb/dry-schema/issues/489) | 🚧 |
 | 1306 | 自由 | [square/kotlinpoet#1762](https://github.com/square/kotlinpoet/issues/1762) | ✅ |
-| 1307 | 自由 | [zeux/pugixml#378](https://github.com/zeux/pugixml/issues/378) | 🚧 |
 | 14 | 自由 | [Mozart2234/herdr-agent-pulse#1](https://github.com/Mozart2234/herdr-agent-pulse/issues/1) | ✅ |
 | 15 | 自由 | [ezedike-evan/corridor-in-a-box#239](https://github.com/ezedike-evan/corridor-in-a-box/issues/239) | ✅ |
 | 16 | 自由 | [cubrid-lab/pycubrid#371](https://github.com/cubrid-lab/pycubrid/issues/371) | ✅ |
