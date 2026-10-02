@@ -1,0 +1,110 @@
+From 2887bed47cb2bcba559ac262a83c5035ec3aebe6 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:23:32 +0000
+Subject: [PATCH] chore(ffi): drop unused create_client binding and test GVL
+ release
+
+create_client_from_uri already releases the GVL (blocking: true was added
+in #316), but nothing guarded that behaviour, and the byte-based
+create_client binding was never called anywhere.
+
+- Remove the dead Valkey::Bindings.create_client attach_function; clients
+  are only created through create_client_from_uri.
+- Add a server-free unit test that connects to a local listener which
+  never answers and asserts an unrelated Ruby thread keeps running while
+  Valkey.new waits for connect_timeout. The test fails if blocking: true
+  is removed from create_client_from_uri.
+
+Closes #309
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ CHANGELOG.md                     |  1 +
+ lib/valkey/bindings.rb           |  9 ++-----
+ test/unit/connection_gvl_test.rb | 42 ++++++++++++++++++++++++++++++++
+ 3 files changed, 45 insertions(+), 7 deletions(-)
+ create mode 100644 test/unit/connection_gvl_test.rb
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index f4d268b..3462426 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -15,6 +15,7 @@
+ * fix(ruby): `pipelined` and `multi` no longer discard successful replies when a queued command fails at runtime. The block form of `multi` now accepts an `exception:` kwarg (default `true`, matching `pipelined`), so `multi(exception: false) { ... }` returns an Array with `Valkey::CommandError` embedded at the position of any queued command that fails at runtime (e.g. `INCR` on a non-integer), instead of raising and discarding every other command's reply. This matches the server's "no rollback on a runtime error" semantics — other queued commands still commit and their replies stay reachable even though the default is still to raise and discard them. This kwarg only affects the block form; the imperative `multi` (no block) / `#exec` pair has no equivalent control. A genuine queue-time abort (nothing ran) now raises the new `Valkey::ExecAbortError` (a `CommandError` subclass) instead of a plain `CommandError`, so callers can tell the two apart from a mid-EXEC runtime error. Also fixed `incrbyfloat` and `geodist` returning a `String` instead of a `Float` when called inside `multi`/`exec`'s imperative (non-block) form, and a latent bug where a runtime error embedded in that form's `EXEC` reply could be silently coerced to `true` by boolean-typed commands' reconversion ([#260](https://github.com/valkey-io/valkey-glide-ruby/issues/260))
+ * Ruby: Fix `blpop`, `brpop`, `blmove`, `rpoplpush` and `brpoplpush`, all of which were non-functional. `blpop`/`brpop` called a non-existent `send_blocking_command` helper, `blmove` leaked the command name into argv, and `rpoplpush`/`brpoplpush` dispatched `RequestType::RPOPLPUSH`/`BRPOPLPUSH`, for which glide-core has no command mapping. Since Valkey defines `RPOPLPUSH src dst` as exactly `LMOVE src dst RIGHT LEFT` (and `BRPOPLPUSH src dst timeout` as `BLMOVE src dst RIGHT LEFT timeout`), `rpoplpush`/`brpoplpush` are now fixed-argument facades over `lmove`/`blmove`. Both remain deprecated as of Redis 6.2; prefer `lmove`/`blmove` in new code. The unusable `RequestType::RPOPLPUSH`/`BRPOPLPUSH` constants were removed.
+ * fix(ruby): release the GVL while a client connects. `create_client` and `create_client_from_uri` were declared without `blocking: true`, so client creation held the GVL for the whole call and stalled every other Ruby thread until it returned; this affects all clients, not only Pub/Sub ones ([#316](https://github.com/valkey-io/valkey-glide-ruby/pull/316))
++* chore(ruby): remove the unused `Valkey::Bindings.create_client` FFI binding (clients are created only through `create_client_from_uri`) and add a server-free regression test asserting that `Valkey.new` releases the GVL while connecting ([#309](https://github.com/valkey-io/valkey-glide-ruby/issues/309))
+ 
+ ### Changes
+ 
+diff --git a/lib/valkey/bindings.rb b/lib/valkey/bindings.rb
+index 6d83714..7a20f80 100644
+--- a/lib/valkey/bindings.rb
++++ b/lib/valkey/bindings.rb
+@@ -235,13 +235,8 @@ class Valkey
+       :pointer, :long   # pattern + length
+     ], :void
+ 
+-    attach_function :create_client, [
+-      :pointer,        # *const u8 (connection_request_bytes)
+-      :ulong,          # usize (connection_request_len)
+-      ClientType.by_ref, # *const ClientType
+-      :pubsub_callback # callback
+-    ], :pointer, blocking: true # *const ConnectionResponse
+-
++    # blocking: true releases the GVL while glide-core connects (and retries),
++    # so other Ruby threads keep running during `Valkey.new` (issue #309).
+     attach_function :create_client_from_uri, [
+       :string,         # *const c_char (uri_str)
+       :string,         # *const c_char (extra_options_json)
+diff --git a/test/unit/connection_gvl_test.rb b/test/unit/connection_gvl_test.rb
+new file mode 100644
+index 0000000..6111b3e
+--- /dev/null
++++ b/test/unit/connection_gvl_test.rb
+@@ -0,0 +1,42 @@
++# frozen_string_literal: true
++
++require "test_helper"
++require "socket"
++
++# Regression test for issue #309: `Valkey.new` must release the GVL while the
++# native `create_client_from_uri` call waits on the network, so unrelated Ruby
++# threads keep running. Runs without a Valkey server: a local TCP listener
++# completes the TCP handshake but never answers, so the native connect blocks
++# until `connect_timeout` expires.
++class TestConnectionGvlUnit < Minitest::Test
++  def test_client_creation_releases_gvl_while_connecting
++    server = TCPServer.new("127.0.0.1", 0)
++    port = server.addr[1]
++    ticks = 0
++    running = true
++    ticker = Thread.new do
++      while running
++        ticks += 1
++        sleep 0.005
++      end
++    end
++    sleep 0.05 # let the ticker start
++
++    ticks_before = ticks
++    started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
++    assert_raises(Valkey::CannotConnectError) do
++      Valkey.new(host: "127.0.0.1", port: port, connect_timeout: 0.5, timeout: 0.5)
++    end
++    elapsed = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started
++    ticks_during = ticks - ticks_before
++
++    assert_operator elapsed, :>=, 0.2, "native connect returned too fast (#{elapsed}s) to observe GVL behaviour"
++    assert_operator ticks_during, :>=, 10,
++                    "only #{ticks_during} ticker iterations ran during a #{elapsed.round(2)}s connect; " \
++                    "create_client_from_uri appears to hold the GVL"
++  ensure
++    running = false
++    ticker&.join
++    server&.close
++  end
++end
+-- 
+2.43.0
+

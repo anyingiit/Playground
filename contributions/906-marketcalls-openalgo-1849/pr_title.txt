@@ -1,0 +1,1 @@
+fix(frontend): keep the API key out of persisted localStorage

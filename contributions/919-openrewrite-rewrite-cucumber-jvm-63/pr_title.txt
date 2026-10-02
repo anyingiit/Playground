@@ -1,0 +1,1 @@
+Add a recipe replacing the modules removed in Cucumber-JVM 8.0.0

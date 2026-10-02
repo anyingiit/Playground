@@ -1,0 +1,524 @@
+From cfcf373062542f2bf0cb90f271dfffd1df82b79c Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:05:08 +0000
+Subject: [PATCH] fix(es): Require full-width trace and span IDs when reading
+ from Elasticsearch
+
+dbmodel.TraceID.ToOTEL and dbmodel.SpanID.ToOTEL used to left-pad shorter
+hex strings with zeros. Every ES/OS writer goes through pdata and stores
+32-char trace IDs and 16-char span IDs, so the padding only served legacy
+short-form data. Make both conversions strict about width and drop the
+unused 16-character core fixtures.
+
+Part of #9717 (M4).
+---
+ .../tracestore/core/dbmodel/ids_test.go       | 41 +++++----
+ .../tracestore/core/dbmodel/model.go          | 35 +++-----
+ .../tracestore/core/fixtures/domain_01.json   | 89 ------------------
+ .../tracestore/core/fixtures/es_01.json       | 90 -------------------
+ .../tracestore/core/writer_test.go            |  4 +-
+ .../tracestore/from_dbmodel_test.go           | 66 ++++++++++----
+ .../elasticsearch/tracestore/reader_test.go   |  4 +-
+ .../tracestore/spansearch_test.go             |  2 +-
+ 8 files changed, 87 insertions(+), 244 deletions(-)
+ delete mode 100644 internal/storage/v2/elasticsearch/tracestore/core/fixtures/domain_01.json
+ delete mode 100644 internal/storage/v2/elasticsearch/tracestore/core/fixtures/es_01.json
+
+diff --git a/internal/storage/v2/elasticsearch/tracestore/core/dbmodel/ids_test.go b/internal/storage/v2/elasticsearch/tracestore/core/dbmodel/ids_test.go
+index dfadf83..d918380 100644
+--- a/internal/storage/v2/elasticsearch/tracestore/core/dbmodel/ids_test.go
++++ b/internal/storage/v2/elasticsearch/tracestore/core/dbmodel/ids_test.go
+@@ -29,18 +29,20 @@ func TestTraceID_ToOTEL(t *testing.T) {
+ 			),
+ 		},
+ 		{
+-			name:  "64-bit trace ID (16 hex chars) right-aligned",
+-			input: "090a0b0c0d0e0f10",
+-			expected: pcommon.TraceID(
+-				[16]byte{
+-					0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+-					0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+-				},
+-			),
++			name:     "64-bit trace ID (16 hex chars) is rejected",
++			input:    "090a0b0c0d0e0f10",
++			expected: pcommon.TraceID{},
++			errMsg:   "trace ID from DB must be 32 hex chars, got 16",
++		},
++		{
++			name:     "empty trace ID is rejected",
++			input:    "",
++			expected: pcommon.TraceID{},
++			errMsg:   "trace ID from DB must be 32 hex chars, got 0",
+ 		},
+ 		{
+ 			name:     "invalid hex string",
+-			input:    "xyz",
++			input:    "0102030405060708090a0b0c0d0e0fzz",
+ 			expected: pcommon.TraceID{},
+ 			errMsg:   "encoding/hex: invalid byte",
+ 		},
+@@ -48,7 +50,7 @@ func TestTraceID_ToOTEL(t *testing.T) {
+ 			name:     "trace ID too long",
+ 			input:    "0102030405060708090a0b0c0d0e0f1011",
+ 			expected: pcommon.TraceID{},
+-			errMsg:   "trace ID from DB is too long",
++			errMsg:   "trace ID from DB must be 32 hex chars, got 34",
+ 		},
+ 	}
+ 
+@@ -81,15 +83,20 @@ func TestSpanID_ToOTEL(t *testing.T) {
+ 			),
+ 		},
+ 		{
+-			name:  "shorter span ID right-aligned",
+-			input: "05060708",
+-			expected: pcommon.SpanID(
+-				[8]byte{0x00, 0x00, 0x00, 0x00, 0x05, 0x06, 0x07, 0x08},
+-			),
++			name:     "shorter span ID is rejected",
++			input:    "05060708",
++			expected: pcommon.SpanID{},
++			errMsg:   "span ID from DB must be 16 hex chars, got 8",
++		},
++		{
++			name:     "empty span ID is rejected",
++			input:    "",
++			expected: pcommon.SpanID{},
++			errMsg:   "span ID from DB must be 16 hex chars, got 0",
+ 		},
+ 		{
+ 			name:     "invalid hex string",
+-			input:    "xyz",
++			input:    "01020304050607zz",
+ 			expected: pcommon.SpanID{},
+ 			errMsg:   "encoding/hex: invalid byte",
+ 		},
+@@ -97,7 +104,7 @@ func TestSpanID_ToOTEL(t *testing.T) {
+ 			name:     "span ID too long",
+ 			input:    "010203040506070809",
+ 			expected: pcommon.SpanID{},
+-			errMsg:   "span ID from DB is too long",
++			errMsg:   "span ID from DB must be 16 hex chars, got 18",
+ 		},
+ 	}
+ 
+diff --git a/internal/storage/v2/elasticsearch/tracestore/core/dbmodel/model.go b/internal/storage/v2/elasticsearch/tracestore/core/dbmodel/model.go
+index 88bde1d..ac1f796 100644
+--- a/internal/storage/v2/elasticsearch/tracestore/core/dbmodel/model.go
++++ b/internal/storage/v2/elasticsearch/tracestore/core/dbmodel/model.go
+@@ -7,7 +7,6 @@ package dbmodel
+ import (
+ 	"encoding/hex"
+ 	"fmt"
+-	"strings"
+ 	"time"
+ 
+ 	"go.opentelemetry.io/collector/pdata/pcommon"
+@@ -25,41 +24,27 @@ type TraceID string
+ // SpanID is the id of a span
+ type SpanID string
+ 
+-// ToOTEL decodes the hex trace ID into its pdata form, left-padding a shorter
+-// (e.g. 64-bit) id with zeros.
++// ToOTEL decodes the 32-character hex trace ID into its pdata form.
+ func (t TraceID) ToOTEL() (pcommon.TraceID, error) {
+-	var traceID [16]byte
+-	traceIDHex := string(t)
+-	if len(traceIDHex) > 32 {
+-		return pcommon.TraceID{}, fmt.Errorf("trace ID from DB is too long: %d chars", len(traceIDHex))
++	var traceID pcommon.TraceID
++	if len(t) != 2*len(traceID) {
++		return pcommon.TraceID{}, fmt.Errorf("trace ID from DB must be %d hex chars, got %d", 2*len(traceID), len(t))
+ 	}
+-	if len(traceIDHex) < 32 {
+-		traceIDHex = strings.Repeat("0", 32-len(traceIDHex)) + traceIDHex
+-	}
+-	traceBytes, err := hex.DecodeString(traceIDHex)
+-	if err != nil {
++	if _, err := hex.Decode(traceID[:], []byte(t)); err != nil {
+ 		return pcommon.TraceID{}, err
+ 	}
+-	copy(traceID[:], traceBytes)
+ 	return traceID, nil
+ }
+ 
+-// ToOTEL decodes the hex span ID into its pdata form, left-padding a shorter id
+-// with zeros.
++// ToOTEL decodes the 16-character hex span ID into its pdata form.
+ func (s SpanID) ToOTEL() (pcommon.SpanID, error) {
+-	var spanID [8]byte
+-	spanIDHex := string(s)
+-	if len(spanIDHex) > 16 {
+-		return pcommon.SpanID{}, fmt.Errorf("span ID from DB is too long: %d chars", len(spanIDHex))
+-	}
+-	if len(spanIDHex) < 16 {
+-		spanIDHex = strings.Repeat("0", 16-len(spanIDHex)) + spanIDHex
++	var spanID pcommon.SpanID
++	if len(s) != 2*len(spanID) {
++		return pcommon.SpanID{}, fmt.Errorf("span ID from DB must be %d hex chars, got %d", 2*len(spanID), len(s))
+ 	}
+-	spanIDBytes, err := hex.DecodeString(spanIDHex)
+-	if err != nil {
++	if _, err := hex.Decode(spanID[:], []byte(s)); err != nil {
+ 		return pcommon.SpanID{}, err
+ 	}
+-	copy(spanID[:], spanIDBytes)
+ 	return spanID, nil
+ }
+ 
+diff --git a/internal/storage/v2/elasticsearch/tracestore/core/fixtures/domain_01.json b/internal/storage/v2/elasticsearch/tracestore/core/fixtures/domain_01.json
+deleted file mode 100644
+index 420d4e2..0000000
+--- a/internal/storage/v2/elasticsearch/tracestore/core/fixtures/domain_01.json
++++ /dev/null
+@@ -1,89 +0,0 @@
+-{
+-  "traceId": "AAAAAAAAAAAAAAAAAAAAAQ==",
+-  "spanId": "AAAAAAAAAAI=",
+-  "operationName": "test-general-conversion",
+-  "references": [
+-    {
+-      "refType": "CHILD_OF",
+-      "traceId": "AAAAAAAAAAAAAAAAAAAAAQ==",
+-      "spanId": "AAAAAAAAAAM="
+-    },
+-    {
+-      "refType": "FOLLOWS_FROM",
+-      "traceId": "AAAAAAAAAAAAAAAAAAAAAQ==",
+-      "spanId": "AAAAAAAAAAQ="
+-    },
+-    {
+-      "refType": "CHILD_OF",
+-      "traceId": "AAAAAAAAAAAAAAAAAAAA/w==",
+-      "spanId": "AAAAAAAAAP8="
+-    }
+-  ],
+-  "flags": 1,
+-  "startTime": "2017-01-26T16:46:31.639875-05:00",
+-  "duration": "5000ns",
+-  "tags": [
+-    {
+-      "key": "peer.service",
+-      "vType": "STRING",
+-      "vStr": "service-y"
+-    },
+-    {
+-      "key": "peer.ipv4",
+-      "vType": "INT64",
+-      "vInt64": 23456
+-    },
+-    {
+-      "key": "error",
+-      "vType": "BOOL",
+-      "vBool": true
+-    },
+-    {
+-      "key": "temperature",
+-      "vType": "FLOAT64",
+-      "vFloat64": 72.5
+-    },
+-    {
+-      "key": "blob",
+-      "vType": "BINARY",
+-      "vBinary": "AAAwOQ=="
+-    }
+-  ],
+-  "logs": [
+-    {
+-      "timestamp": "2017-01-26T16:46:31.639875-05:00",
+-      "fields": [
+-        {
+-          "key": "event",
+-          "vType": "INT64",
+-          "vInt64": 123415
+-        }
+-      ]
+-    },
+-    {
+-      "timestamp": "2017-01-26T16:46:31.639875-05:00",
+-      "fields": [
+-        {
+-          "key": "x",
+-          "vType": "STRING",
+-          "vStr": "y"
+-        }
+-      ]
+-    }
+-  ],
+-  "process": {
+-    "serviceName": "service-x",
+-    "tags": [
+-      {
+-        "key": "peer.ipv4",
+-        "vType": "INT64",
+-        "vInt64": 23456
+-      },
+-      {
+-        "key": "error",
+-        "vType": "BOOL",
+-        "vBool": true
+-      }
+-    ]
+-  }
+-}
+diff --git a/internal/storage/v2/elasticsearch/tracestore/core/fixtures/es_01.json b/internal/storage/v2/elasticsearch/tracestore/core/fixtures/es_01.json
+deleted file mode 100644
+index 9a5fac6..0000000
+--- a/internal/storage/v2/elasticsearch/tracestore/core/fixtures/es_01.json
++++ /dev/null
+@@ -1,90 +0,0 @@
+-{
+-  "traceID": "0000000000000001",
+-  "spanID": "0000000000000002",
+-  "flags": 1,
+-  "operationName": "test-general-conversion",
+-  "references": [
+-    {
+-      "refType": "CHILD_OF",
+-      "traceID": "0000000000000001",
+-      "spanID": "0000000000000003"
+-    },
+-    {
+-      "refType": "FOLLOWS_FROM",
+-      "traceID": "0000000000000001",
+-      "spanID": "0000000000000004"
+-    },
+-    {
+-      "refType": "CHILD_OF",
+-      "traceID": "00000000000000ff",
+-      "spanID": "00000000000000ff"
+-    }
+-  ],
+-  "startTime": 1485467191639875,
+-  "startTimeMillis": 1485467191639,
+-  "duration": 5,
+-  "tags": [
+-    {
+-      "key": "peer.service",
+-      "type": "string",
+-      "value": "service-y"
+-    },
+-    {
+-      "key": "peer.ipv4",
+-      "type": "int64",
+-      "value": 23456
+-    },
+-    {
+-      "key": "error",
+-      "type": "bool",
+-      "value": true
+-    },
+-    {
+-      "key": "temperature",
+-      "type": "float64",
+-      "value": 72.5
+-    },
+-    {
+-      "key": "blob",
+-      "type": "binary",
+-      "value": "00003039"
+-    }
+-  ],
+-  "logs": [
+-    {
+-      "timestamp": 1485467191639875,
+-      "fields": [
+-        {
+-          "key": "event",
+-          "type": "int64",
+-          "value": 123415
+-        }
+-      ]
+-    },
+-    {
+-      "timestamp": 1485467191639875,
+-      "fields": [
+-        {
+-          "key": "x",
+-          "type": "string",
+-          "value": "y"
+-        }
+-      ]
+-    }
+-  ],
+-  "process": {
+-    "serviceName": "service-x",
+-    "tags": [
+-      {
+-        "key": "peer.ipv4",
+-        "type": "int64",
+-        "value": 23456
+-      },
+-      {
+-        "key": "error",
+-        "type": "bool",
+-        "value": true
+-      }
+-    ]
+-  }
+-}
+diff --git a/internal/storage/v2/elasticsearch/tracestore/core/writer_test.go b/internal/storage/v2/elasticsearch/tracestore/core/writer_test.go
+index 98cb78d..bfd2d43 100644
+--- a/internal/storage/v2/elasticsearch/tracestore/core/writer_test.go
++++ b/internal/storage/v2/elasticsearch/tracestore/core/writer_test.go
+@@ -306,8 +306,8 @@ func rejecting(transient bool, extraIDs []string, positions ...int) func([]escli
+ }
+ 
+ func TestSpanWriter_RejectedSpansError(t *testing.T) {
+-	spanA := dbmodel.Span{TraceID: "1", SpanID: "a", OperationName: "op", Process: dbmodel.Process{ServiceName: "svc"}}
+-	spanB := dbmodel.Span{TraceID: "2", SpanID: "b", OperationName: "op", Process: dbmodel.Process{ServiceName: "svc"}}
++	spanA := dbmodel.Span{TraceID: "00000000000000000000000000000001", SpanID: "000000000000000a", OperationName: "op", Process: dbmodel.Process{ServiceName: "svc"}}
++	spanB := dbmodel.Span{TraceID: "00000000000000000000000000000002", SpanID: "000000000000000b", OperationName: "op", Process: dbmodel.Process{ServiceName: "svc"}}
+ 	// Items: [service doc for svc/op, span A, span B]; the service doc is deduped.
+ 
+ 	t.Run("rejected span documents are attributed to their spans", func(t *testing.T) {
+diff --git a/internal/storage/v2/elasticsearch/tracestore/from_dbmodel_test.go b/internal/storage/v2/elasticsearch/tracestore/from_dbmodel_test.go
+index 096fd3b..7d15264 100644
+--- a/internal/storage/v2/elasticsearch/tracestore/from_dbmodel_test.go
++++ b/internal/storage/v2/elasticsearch/tracestore/from_dbmodel_test.go
+@@ -301,6 +301,10 @@ func TestSetAttributesFromDbTags(t *testing.T) {
+ }
+ 
+ func TestFromDBModelErrors(t *testing.T) {
++	const (
++		validTraceID = dbmodel.TraceID("0123456789abcdef0123456789abcdef")
++		validSpanID  = dbmodel.SpanID("0123456789abcdef")
++	)
+ 	tests := []struct {
+ 		name    string
+ 		err     string
+@@ -308,35 +312,56 @@ func TestFromDBModelErrors(t *testing.T) {
+ 	}{
+ 		{
+ 			name:    "wrong trace-id",
+-			dbSpans: []dbmodel.Span{{TraceID: dbmodel.TraceID("trace-id")}},
+-			err:     "encoding/hex: invalid byte: U+0074 't'",
++			dbSpans: []dbmodel.Span{{TraceID: dbmodel.TraceID("trace-id"), SpanID: validSpanID}},
++			err:     "trace ID from DB must be 32 hex chars, got 8",
++		},
++		{
++			name:    "short 64-bit trace-id",
++			dbSpans: []dbmodel.Span{{TraceID: dbmodel.TraceID("0123456789abcdef"), SpanID: validSpanID}},
++			err:     "trace ID from DB must be 32 hex chars, got 16",
++		},
++		{
++			name:    "non-hex trace-id",
++			dbSpans: []dbmodel.Span{{TraceID: dbmodel.TraceID("zz23456789abcdef0123456789abcdef"), SpanID: validSpanID}},
++			err:     "encoding/hex: invalid byte: U+007A 'z'",
+ 		},
+ 		{
+ 			name:    "wrong span-id",
+-			dbSpans: []dbmodel.Span{{SpanID: dbmodel.SpanID("span-id")}},
+-			err:     "encoding/hex: invalid byte: U+0073 's'",
++			dbSpans: []dbmodel.Span{{TraceID: validTraceID, SpanID: dbmodel.SpanID("span-id")}},
++			err:     "span ID from DB must be 16 hex chars, got 7",
++		},
++		{
++			name:    "non-hex span-id",
++			dbSpans: []dbmodel.Span{{TraceID: validTraceID, SpanID: dbmodel.SpanID("zz23456789abcdef")}},
++			err:     "encoding/hex: invalid byte: U+007A 'z'",
+ 		},
+ 		{
+ 			name:    "wrong parent span-id",
+-			dbSpans: []dbmodel.Span{{ParentSpanID: dbmodel.SpanID("parent-span-id")}},
+-			err:     "encoding/hex: invalid byte: U+0070 'p'",
++			dbSpans: []dbmodel.Span{{TraceID: validTraceID, SpanID: validSpanID, ParentSpanID: dbmodel.SpanID("parent-span-id")}},
++			err:     "span ID from DB must be 16 hex chars, got 14",
+ 		},
+ 		{
+-			name:    "wrong-ref-trace-id",
+-			dbSpans: []dbmodel.Span{{References: []dbmodel.Reference{{TraceID: dbmodel.TraceID("ref-trace-id")}}}},
+-			err:     "encoding/hex: invalid byte: U+0072 'r'",
++			name: "wrong-ref-trace-id",
++			dbSpans: []dbmodel.Span{{
++				TraceID: validTraceID, SpanID: validSpanID,
++				References: []dbmodel.Reference{{TraceID: dbmodel.TraceID("ref-trace-id"), SpanID: validSpanID}},
++			}},
++			err: "trace ID from DB must be 32 hex chars, got 12",
+ 		},
+ 		{
+-			name:    "wrong-ref-span-id",
+-			dbSpans: []dbmodel.Span{{References: []dbmodel.Reference{{SpanID: dbmodel.SpanID("ref-span-id")}}}},
+-			err:     "encoding/hex: invalid byte: U+0072 'r'",
++			name: "wrong-ref-span-id",
++			dbSpans: []dbmodel.Span{{
++				TraceID: validTraceID, SpanID: validSpanID,
++				References: []dbmodel.Reference{{TraceID: validTraceID, SpanID: dbmodel.SpanID("ref-span-id"), RefType: dbmodel.FollowsFrom}},
++			}},
++			err: "span ID from DB must be 16 hex chars, got 11",
+ 		},
+ 		{
+-			name: "wrong parent span-id with valid trace-id",
++			name: "non-hex parent span-id with valid trace-id",
+ 			dbSpans: []dbmodel.Span{{
+-				TraceID:      dbmodel.TraceID("0123456789abcdef0123456789abcdef"),
+-				SpanID:       dbmodel.SpanID("0123456789abcdef"),
+-				ParentSpanID: dbmodel.SpanID("invalid-par"),
++				TraceID:      validTraceID,
++				SpanID:       validSpanID,
++				ParentSpanID: dbmodel.SpanID("invalid-parent!!"),
+ 			}},
+ 			err: "encoding/hex: invalid byte: U+0069 'i'",
+ 		},
+@@ -352,7 +377,11 @@ func TestFromDBModelErrors(t *testing.T) {
+ 
+ func TestSetParentId(t *testing.T) {
+ 	parentSpanId := [8]byte{0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8}
+-	trace, err := FromDBModel([]dbmodel.Span{{ParentSpanID: getDbSpanIdFromByteArray(parentSpanId)}})
++	trace, err := FromDBModel([]dbmodel.Span{{
++		TraceID:      getDbTraceIdFromByteArray([16]byte{0x01}),
++		SpanID:       getDbSpanIdFromByteArray([8]byte{0x02}),
++		ParentSpanID: getDbSpanIdFromByteArray(parentSpanId),
++	}})
+ 	require.NoError(t, err)
+ 	assert.Equal(t, pcommon.SpanID(parentSpanId), trace.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).ParentSpanID())
+ }
+@@ -360,7 +389,8 @@ func TestSetParentId(t *testing.T) {
+ func TestParentIdWhenRefTraceIdIsDifferent(t *testing.T) {
+ 	traceId := getDbTraceIdFromByteArray([16]byte{0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF, 0x80})
+ 	refTraceId := getDbTraceIdFromByteArray([16]byte{0xF1, 0xF2, 0xF3, 0xF4, 0xF5, 0xF6, 0xF7, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF, 0x81})
+-	trace, err := FromDBModel([]dbmodel.Span{{TraceID: traceId, References: []dbmodel.Reference{{TraceID: refTraceId}}}})
++	spanId := getDbSpanIdFromByteArray([8]byte{0x01})
++	trace, err := FromDBModel([]dbmodel.Span{{TraceID: traceId, SpanID: spanId, References: []dbmodel.Reference{{TraceID: refTraceId, SpanID: spanId}}}})
+ 	require.NoError(t, err)
+ 	assert.True(t, trace.ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).ParentSpanID().IsEmpty())
+ }
+diff --git a/internal/storage/v2/elasticsearch/tracestore/reader_test.go b/internal/storage/v2/elasticsearch/tracestore/reader_test.go
+index 94b5bdc..39779d3 100644
+--- a/internal/storage/v2/elasticsearch/tracestore/reader_test.go
++++ b/internal/storage/v2/elasticsearch/tracestore/reader_test.go
+@@ -134,7 +134,7 @@ func testTraceReaderGetTracesAndFindTracesErrors(t *testing.T, fxnName string, a
+ 				}
+ 				m.On(fxnName, mock.Anything, mock.Anything).Return(dbTraces, nil)
+ 			},
+-			expectedErr: "encoding/hex: invalid byte: U+0077 'w'",
++			expectedErr: "trace ID from DB must be 32 hex chars, got 14",
+ 		},
+ 	}
+ 	for _, tt := range tests {
+@@ -223,7 +223,7 @@ func TestTraceReader_FindTraceIDs_Error(t *testing.T) {
+ 		{
+ 			name:                   "wrong trace id sent from core reader",
+ 			traceIdsFromCoreReader: []dbmodel.TraceID{"wrong-id"},
+-			expectedErr:            "encoding/hex: invalid byte: U+0077 'w'",
++			expectedErr:            "trace ID from DB must be 32 hex chars, got 8",
+ 		},
+ 	}
+ 	for _, test := range tests {
+diff --git a/internal/storage/v2/elasticsearch/tracestore/spansearch_test.go b/internal/storage/v2/elasticsearch/tracestore/spansearch_test.go
+index 9c9975d..c8b722f 100644
+--- a/internal/storage/v2/elasticsearch/tracestore/spansearch_test.go
++++ b/internal/storage/v2/elasticsearch/tracestore/spansearch_test.go
+@@ -121,7 +121,7 @@ func TestTraceReader_FindSpans_Errors(t *testing.T) {
+ 			if tc.core != nil {
+ 				coreReader.On("FindSpans", mock.Anything, mock.Anything).Return(dbmodel.SpanPage{}, tc.core)
+ 			} else {
+-				coreReader.On("FindSpans", mock.Anything, mock.Anything).Return(dbmodel.SpanPage{Spans: []dbmodel.Span{{TraceID: "not hex"}}}, nil)
++				coreReader.On("FindSpans", mock.Anything, mock.Anything).Return(dbmodel.SpanPage{Spans: []dbmodel.Span{{TraceID: "not-hex-not-hex-not-hex-not-hex-", SpanID: "0123456789abcdef"}}}, nil)
+ 			}
+ 			query := spanQuery()
+ 			tc.query(&query)
+-- 
+2.43.0
+

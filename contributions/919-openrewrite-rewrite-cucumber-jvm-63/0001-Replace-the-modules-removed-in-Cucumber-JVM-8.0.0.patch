@@ -1,0 +1,240 @@
+From 58ccb243022041e3a4912a5b9eb8f80682615086 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:32:56 +0000
+Subject: [PATCH] Replace the modules removed in Cucumber-JVM 8.0.0
+
+Cucumber-JVM 8.0.0 removed cucumber-openejb and cucumber-cdi2 in favor of
+cucumber-jakarta-openejb and cucumber-jakarta-cdi, and removed
+cucumber-deltaspike without a replacement. Swap the dependencies, point a
+cucumber.object-factory property at the replacement object factory, and
+flag cucumber-deltaspike.
+
+Part of #63
+---
+ .../resources/META-INF/rewrite/cucumber.yml   |  35 ++++
+ .../resources/META-INF/rewrite/recipes.csv    |   1 +
+ .../ReplaceRemovedCucumber8ModulesTest.java   | 157 ++++++++++++++++++
+ 3 files changed, 193 insertions(+)
+ create mode 100644 src/test/java/org/openrewrite/cucumber/jvm/ReplaceRemovedCucumber8ModulesTest.java
+
+diff --git a/src/main/resources/META-INF/rewrite/cucumber.yml b/src/main/resources/META-INF/rewrite/cucumber.yml
+index 8281537..6948e4e 100755
+--- a/src/main/resources/META-INF/rewrite/cucumber.yml
++++ b/src/main/resources/META-INF/rewrite/cucumber.yml
+@@ -516,3 +516,38 @@ recipeList:
+       version: 1.9.x
+       onlyIfUsing: org.junit.platform.suite.api.*
+       acceptTransitive: true
++---
++type: specs.openrewrite.org/v1beta/recipe
++name: org.openrewrite.cucumber.jvm.ReplaceRemovedCucumber8Modules
++displayName: Replace modules removed in Cucumber-JVM 8.0.0
++description: >-
++  Cucumber-JVM 8.0.0 removed the `javax` based `cucumber-openejb` and `cucumber-cdi2` modules, in favor of the
++  `cucumber-jakarta-openejb` and `cucumber-jakarta-cdi` modules that have been published alongside them since 7.x.
++  Swaps the dependencies, keeping their version so they stay aligned with the other Cucumber modules, and points a
++  `cucumber.object-factory` property at the replacement object factory. `cucumber-deltaspike` was removed without a
++  replacement, so it is only flagged.
++tags:
++  - testing
++  - cucumber
++recipeList:
++  - org.openrewrite.java.dependencies.ChangeDependency:
++      oldGroupId: io.cucumber
++      oldArtifactId: cucumber-openejb
++      newArtifactId: cucumber-jakarta-openejb
++  - org.openrewrite.java.dependencies.ChangeDependency:
++      oldGroupId: io.cucumber
++      oldArtifactId: cucumber-cdi2
++      newArtifactId: cucumber-jakarta-cdi
++  - org.openrewrite.properties.ChangePropertyValue:
++      propertyKey: cucumber.object-factory
++      oldValue: io.cucumber.openejb.OpenEJBObjectFactory
++      newValue: io.cucumber.jakarta.openejb.OpenEJBObjectFactory
++      relaxedBinding: false
++  - org.openrewrite.properties.ChangePropertyValue:
++      propertyKey: cucumber.object-factory
++      oldValue: io.cucumber.cdi2.Cdi2Factory
++      newValue: io.cucumber.jakarta.cdi.CdiJakartaFactory
++      relaxedBinding: false
++  - org.openrewrite.java.dependencies.DependencyInsight:
++      groupIdPattern: io.cucumber
++      artifactIdPattern: cucumber-deltaspike
+diff --git a/src/main/resources/META-INF/rewrite/recipes.csv b/src/main/resources/META-INF/rewrite/recipes.csv
+index a4dee4d..70f4bf0 100644
+--- a/src/main/resources/META-INF/rewrite/recipes.csv
++++ b/src/main/resources/META-INF/rewrite/recipes.csv
+@@ -19,6 +19,7 @@ maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.M
+ maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.MigrateScenarioWriteAndEmbed,Migrate `Scenario.write` and `Scenario.embed`,"Cucumber-JVM 6.0.0 removed `Scenario.write(String)` and `Scenario.embed(byte[], String)` along with `Scenario.embed(byte[], String, String)`, in favor of `Scenario.log(String)` and `Scenario.attach(byte[], String, String)`. The two argument `embed` emitted an attachment without a name, which `attach` expresses as a `null` name.",7,Cucumber-JVM,Cucumber,Recipes for upgrading [Cucumber-JVM](https://github.com/cucumber/cucumber-jvm/).,Recipes for upgrading [Cucumber](https://cucumber.io/).
+ maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.RegexToCucumberExpression,Replace `cucumber-java` step definition regexes with Cucumber expressions,Strip regex prefix and suffix from step annotation expressions arguments where possible.,1,Cucumber-JVM,Cucumber,Recipes for upgrading [Cucumber-JVM](https://github.com/cucumber/cucumber-jvm/).,Recipes for upgrading [Cucumber](https://cucumber.io/).
+ maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.RemoveCucumberJava8Dependency,Remove `cucumber-java8` once nothing is left needing it,"Removes the `cucumber-java8` dependency where every `LambdaGlue` call migrates to `cucumber-java`, and retains it wherever one is left behind. Read from the glue as it stands before the migration, as what the migration leaves behind only becomes visible to a scanning recipe in the cycle after, which a build tool run never reaches. Glue left anywhere retains the dependency everywhere, an unused dependency being the one outcome here that still compiles.",1,Cucumber-JVM,Cucumber,Recipes for upgrading [Cucumber-JVM](https://github.com/cucumber/cucumber-jvm/).,Recipes for upgrading [Cucumber](https://cucumber.io/).
++maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.ReplaceRemovedCucumber8Modules,Replace modules removed in Cucumber-JVM 8.0.0,"Cucumber-JVM 8.0.0 removed the `javax` based `cucumber-openejb` and `cucumber-cdi2` modules, in favor of the `cucumber-jakarta-openejb` and `cucumber-jakarta-cdi` modules that have been published alongside them since 7.x. Swaps the dependencies, keeping their version so they stay aligned with the other Cucumber modules, and points a `cucumber.object-factory` property at the replacement object factory. `cucumber-deltaspike` was removed without a replacement, so it is only flagged.",6,Cucumber-JVM,Cucumber,Recipes for upgrading [Cucumber-JVM](https://github.com/cucumber/cucumber-jvm/).,Recipes for upgrading [Cucumber](https://cucumber.io/).
+ maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.TypeRegistryConfigurerToAnnotations,Replace `TypeRegistryConfigurer` with cucumber-java annotations,"Cucumber-JVM 7.0.0 removed `TypeRegistryConfigurer`; replace implementations with `@ParameterType`, `@DataTableType`, `@DocStringType` and `@Default*Transformer` annotated glue methods. Classes whose `configureTypeRegistry` method cannot be converted in full are left untouched, with a `TODO` comment added above the registration that could not be converted.",1,Cucumber-JVM,Cucumber,Recipes for upgrading [Cucumber-JVM](https://github.com/cucumber/cucumber-jvm/).,Recipes for upgrading [Cucumber](https://cucumber.io/).
+ maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.UpgradeCucumber2x,Upgrade to Cucumber-JVM 2.x,Upgrade to Cucumber-JVM 2.x from any previous version.,23,Cucumber-JVM,Cucumber,Recipes for upgrading [Cucumber-JVM](https://github.com/cucumber/cucumber-jvm/).,Recipes for upgrading [Cucumber](https://cucumber.io/).
+ maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.UpgradeCucumber5x,Upgrade to Cucumber-JVM 5.x,Upgrade to Cucumber-JVM 5.x from any previous version.,63,Cucumber-JVM,Cucumber,Recipes for upgrading [Cucumber-JVM](https://github.com/cucumber/cucumber-jvm/).,Recipes for upgrading [Cucumber](https://cucumber.io/).
+diff --git a/src/test/java/org/openrewrite/cucumber/jvm/ReplaceRemovedCucumber8ModulesTest.java b/src/test/java/org/openrewrite/cucumber/jvm/ReplaceRemovedCucumber8ModulesTest.java
+new file mode 100644
+index 0000000..3228dbf
+--- /dev/null
++++ b/src/test/java/org/openrewrite/cucumber/jvm/ReplaceRemovedCucumber8ModulesTest.java
+@@ -0,0 +1,157 @@
++/*
++ * Copyright 2026 the original author or authors.
++ * <p>
++ * Licensed under the Moderne Source Available License (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ * <p>
++ * https://docs.moderne.io/licensing/moderne-source-available-license
++ * <p>
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.openrewrite.cucumber.jvm;
++
++import org.junit.jupiter.api.Test;
++import org.openrewrite.DocumentExample;
++import org.openrewrite.Issue;
++import org.openrewrite.test.RecipeSpec;
++import org.openrewrite.test.RewriteTest;
++
++import static org.openrewrite.maven.Assertions.pomXml;
++import static org.openrewrite.properties.Assertions.properties;
++
++@Issue("https://github.com/openrewrite/rewrite-cucumber-jvm/issues/63")
++class ReplaceRemovedCucumber8ModulesTest implements RewriteTest {
++
++    @Override
++    public void defaults(RecipeSpec spec) {
++        spec.recipeFromResources("org.openrewrite.cucumber.jvm.ReplaceRemovedCucumber8Modules");
++    }
++
++    @DocumentExample
++    @Test
++    void replaceJavaxModulesWithJakartaModules() {
++        rewriteRun(
++          pomXml(
++            """
++              <project>
++                  <groupId>com.example</groupId>
++                  <artifactId>app</artifactId>
++                  <version>1.0.0</version>
++                  <dependencies>
++                      <dependency>
++                          <groupId>io.cucumber</groupId>
++                          <artifactId>cucumber-cdi2</artifactId>
++                          <version>7.34.3</version>
++                          <scope>test</scope>
++                      </dependency>
++                      <dependency>
++                          <groupId>io.cucumber</groupId>
++                          <artifactId>cucumber-openejb</artifactId>
++                          <version>7.34.3</version>
++                          <scope>test</scope>
++                      </dependency>
++                  </dependencies>
++              </project>
++              """,
++            """
++              <project>
++                  <groupId>com.example</groupId>
++                  <artifactId>app</artifactId>
++                  <version>1.0.0</version>
++                  <dependencies>
++                      <dependency>
++                          <groupId>io.cucumber</groupId>
++                          <artifactId>cucumber-jakarta-cdi</artifactId>
++                          <version>7.34.3</version>
++                          <scope>test</scope>
++                      </dependency>
++                      <dependency>
++                          <groupId>io.cucumber</groupId>
++                          <artifactId>cucumber-jakarta-openejb</artifactId>
++                          <version>7.34.3</version>
++                          <scope>test</scope>
++                      </dependency>
++                  </dependencies>
++              </project>
++              """
++          ));
++    }
++
++    @Test
++    void pointObjectFactoryPropertyAtJakartaFactory() {
++        rewriteRun(
++          properties(
++            """
++              cucumber.object-factory=io.cucumber.cdi2.Cdi2Factory
++              """,
++            """
++              cucumber.object-factory=io.cucumber.jakarta.cdi.CdiJakartaFactory
++              """,
++            spec -> spec.path("src/test/resources/cucumber.properties")
++          ),
++          properties(
++            """
++              cucumber.object-factory=io.cucumber.openejb.OpenEJBObjectFactory
++              """,
++            """
++              cucumber.object-factory=io.cucumber.jakarta.openejb.OpenEJBObjectFactory
++              """,
++            spec -> spec.path("src/test/resources/junit-platform.properties")
++          )
++        );
++    }
++
++    @Test
++    void retainOtherObjectFactory() {
++        rewriteRun(
++          properties(
++            """
++              cucumber.object-factory=io.cucumber.spring.SpringFactory
++              """,
++            spec -> spec.path("src/test/resources/cucumber.properties")
++          )
++        );
++    }
++
++    @Test
++    void flagDeltaspikeAsItHasNoReplacement() {
++        rewriteRun(
++          pomXml(
++            """
++              <project>
++                  <groupId>com.example</groupId>
++                  <artifactId>app</artifactId>
++                  <version>1.0.0</version>
++                  <dependencies>
++                      <dependency>
++                          <groupId>io.cucumber</groupId>
++                          <artifactId>cucumber-deltaspike</artifactId>
++                          <version>7.34.3</version>
++                          <scope>test</scope>
++                      </dependency>
++                  </dependencies>
++              </project>
++              """,
++            """
++              <project>
++                  <groupId>com.example</groupId>
++                  <artifactId>app</artifactId>
++                  <version>1.0.0</version>
++                  <dependencies>
++                      <!--~~(io.cucumber:cucumber-deltaspike:7.34.3)~~>--><dependency>
++                          <groupId>io.cucumber</groupId>
++                          <artifactId>cucumber-deltaspike</artifactId>
++                          <version>7.34.3</version>
++                          <scope>test</scope>
++                      </dependency>
++                  </dependencies>
++              </project>
++              """
++          ));
++    }
++}
+-- 
+2.43.0
+

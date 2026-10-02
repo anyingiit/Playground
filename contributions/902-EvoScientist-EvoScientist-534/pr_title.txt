@@ -1,0 +1,1 @@
+fix(langgraph_dev): stop the server when startup is interrupted (#534)

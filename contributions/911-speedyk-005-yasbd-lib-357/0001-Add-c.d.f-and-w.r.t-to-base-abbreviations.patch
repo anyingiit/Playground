@@ -1,0 +1,82 @@
+From fbe020447ced12096875735236e16c619695aad7 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 22:56:43 +0000
+Subject: [PATCH] Add c.d.f and w.r.t to base abbreviations
+
+Add `c.d.f` to the base REFERENCE_ABBRVS and `w.r.t` to the base
+INLINE_ONLY_ABBRVS so text such as "the c.d.f. F." or
+"discussed w.r.t. V-TSMixer." is no longer split at the abbreviation.
+
+Fixes #357
+---
+ CHANGELOG.md                    | 1 +
+ CONTRIBUTORS.md                 | 1 +
+ src/yasbd/rules/base.py         | 4 ++--
+ tests/test_boundary_detector.py | 5 +++++
+ 4 files changed, 9 insertions(+), 2 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 2766be1..69b799c 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ ### Fixed
+ 
+ - **Backtick-delimited quote sentence boundaries** ([#348](https://github.com/speedyk-005/yasbd-lib/pull/348)): Detect sentence boundaries after single/double backtick-delimited and doubled-apostrophe quoted text while preserving ordinary contractions.
++- **Missing `c.d.f.` and `w.r.t.` base abbreviations** ([#NNN](https://github.com/speedyk-005/yasbd-lib/pull/NNN)): Add `c.d.f` to the base reference abbreviations and `w.r.t` to the base inline-only abbreviations so they no longer cause false sentence splits.
+ 
+ ...
+ 
+diff --git a/CONTRIBUTORS.md b/CONTRIBUTORS.md
+index 13fcff5..fdc0c6a 100644
+--- a/CONTRIBUTORS.md
++++ b/CONTRIBUTORS.md
+@@ -5,6 +5,7 @@ A massive thank you to the open source community helping make `yasbd` more accur
+ | Name | Role |
+ |------|------|
+ | **[@1cbyc](https://github.com/1cbyc)** | Coordinate direction abbreviation fix |
++| **[@anyingiit](https://github.com/anyingiit)** | `c.d.f.` and `w.r.t.` base abbreviations |
+ | **[@AshSgDe29071999](https://github.com/AshSgDe29071999)** | Combined same-module imports in `__init__.py`; named cleaning-pipeline helpers for testability |
+ | **[@be-student](https://github.com/be-student)** | Burmese double-comma boundaries; shared numeric-context tel/fax and Portuguese aprox abbreviation fixes |
+ | **[@blackmore-technology-group](https://github.com/blackmore-technology-group)** | Backtick and doubled-apostrophe sentence-boundary detection |
+diff --git a/src/yasbd/rules/base.py b/src/yasbd/rules/base.py
+index 54a0055..5c1cb9e 100644
+--- a/src/yasbd/rules/base.py
++++ b/src/yasbd/rules/base.py
+@@ -92,7 +92,7 @@ class Rules:
+         "no", "nos", "n°", "n.º", "qv", "reg", "regs",
+ 
+         # Scientific / Technical
+-        "approx", "deg", "diam", "eq", "eqn", "eqs",
++        "approx", "c.d.f", "deg", "diam", "eq", "eqn", "eqs",
+         "est", "ex", "exs", "lat", "long", "max", "min",
+ 
+         # Commerce / Measurements
+@@ -121,7 +121,7 @@ class Rules:
+     INLINE_ONLY_ABBRVS = {
+         # Bridge/connectors
+         "a.k.a", "ca", "cf", "e.g", "eg", "i.c", "i.e", "i.q",
+-        "ibid", "ie", "sc", "v", "viz", "vs",
++        "ibid", "ie", "sc", "v", "viz", "vs", "w.r.t",
+ 
+         # Notes & postscript markers
+         "n.b", "p.s", "p.p.s", "sci", "scill", "s.vloc",
+diff --git a/tests/test_boundary_detector.py b/tests/test_boundary_detector.py
+index 8abb13d..0b2db06 100644
+--- a/tests/test_boundary_detector.py
++++ b/tests/test_boundary_detector.py
+@@ -233,6 +233,11 @@ def test_rule_cache_lru(en_detector):
+         # markdown headers with trailing numbers stay whole (fix for #305)
+         "### 1. The Regex Breakdown\n|### 2. Metric Interpretation",
+         "        ### 1. The Regex Breakdown\n|        ### 2. Metric Interpretation",
++
++        # Common abbreviations c.d.f. and w.r.t. (fix for #357)
++        "The model estimates the c.d.f. F.| The results are discussed w.r.t. V-TSMixer.",
++        "The c.d.f. F is continuous.| It is also monotone.",
++        "Accuracy is reported w.r.t. BLEU and chrF.| See the appendix.",
+     ],
+ )
+ def test_universal_regression(en_detector, marked_text):
+-- 
+2.43.0
+

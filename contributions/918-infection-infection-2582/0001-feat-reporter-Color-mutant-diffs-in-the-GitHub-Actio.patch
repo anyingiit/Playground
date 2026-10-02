@@ -1,0 +1,240 @@
+From e214f17f9bd40236be5e6a46b054b38dc9990ef4 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:45:00 +0000
+Subject: [PATCH] feat(reporter): Color mutant diffs in the GitHub Actions log
+ reporter
+
+GitHub Actions logs render ANSI colors, so the text log written to php://stdout
+on GitHub Actions now prints removed diff lines in red and added lines in green,
+like the CLI does with --show-mutations.
+
+Closes #2582
+---
+ src/Reporter/BaseTextFileReporter.php         |  7 +-
+ .../GitHubActionsLogTextFileReporter.php      | 34 ++++++++++
+ .../GitHubActionsLogTextFileReporterTest.php  | 66 +++++++++----------
+ 3 files changed, 73 insertions(+), 34 deletions(-)
+
+diff --git a/src/Reporter/BaseTextFileReporter.php b/src/Reporter/BaseTextFileReporter.php
+index b57c79b..ce8f7a3 100644
+--- a/src/Reporter/BaseTextFileReporter.php
++++ b/src/Reporter/BaseTextFileReporter.php
+@@ -166,7 +166,7 @@ abstract readonly class BaseTextFileReporter implements LineMutationTestingResul
+ 
+             $lines[] = self::getMutatorLine($index, $executionResult);
+             $lines[] = '';
+-            $lines[] = Str::cleanForDisplay($executionResult->getMutantDiff());
++            $lines[] = $this->formatDiff(Str::cleanForDisplay($executionResult->getMutantDiff()));
+ 
+             if ($this->debugMode) {
+                 $lines[] = '';
+@@ -189,6 +189,11 @@ abstract readonly class BaseTextFileReporter implements LineMutationTestingResul
+ 
+     abstract protected function getHeadlineLines(string $headlinePrefix): string;
+ 
++    protected function formatDiff(string $diff): string
++    {
++        return $diff;
++    }
++
+     private static function getMutatorLine(int $index, MutantExecutionResult $mutantProcess): string
+     {
+         return sprintf(
+diff --git a/src/Reporter/GitHubActionsLogTextFileReporter.php b/src/Reporter/GitHubActionsLogTextFileReporter.php
+index 0653014..5118958 100644
+--- a/src/Reporter/GitHubActionsLogTextFileReporter.php
++++ b/src/Reporter/GitHubActionsLogTextFileReporter.php
+@@ -35,21 +35,33 @@ declare(strict_types=1);
+ 
+ namespace Infection\Reporter;
+ 
++use function array_map;
++use function explode;
++use function implode;
+ use Infection\Mutant\MutantExecutionResult;
+ use Override;
+ use const PHP_EOL;
+ use function sprintf;
++use function str_starts_with;
+ use function trim;
+ 
+ /**
+  * Uses the GitHub Actions line grouping feature to make the output more digestable and collapsable.
+  *
++ * Diff lines are colored with ANSI escape sequences, which the GitHub Actions log viewer renders.
++ *
+  * @see https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#grouping-log-lines
+  *
+  * @internal
+  */
+ final readonly class GitHubActionsLogTextFileReporter extends BaseTextFileReporter
+ {
++    private const string REMOVED_LINE_COLOR = "\033[31m";
++
++    private const string ADDED_LINE_COLOR = "\033[32m";
++
++    private const string RESET_COLOR = "\033[0m";
++
+     protected function getHeadlineLines(string $headlinePrefix): string
+     {
+         return '';
+@@ -72,4 +84,26 @@ final readonly class GitHubActionsLogTextFileReporter extends BaseTextFileReport
+ 
+         return sprintf('::group::%s mutants' . PHP_EOL . '%s' . PHP_EOL . '::endgroup::' . PHP_EOL, $headlinePrefix, $results);
+     }
++
++    #[Override]
++    protected function formatDiff(string $diff): string
++    {
++        return implode(
++            "\n",
++            array_map(
++                static function (string $line): string {
++                    if (str_starts_with($line, '-')) {
++                        return self::REMOVED_LINE_COLOR . $line . self::RESET_COLOR;
++                    }
++
++                    if (str_starts_with($line, '+')) {
++                        return self::ADDED_LINE_COLOR . $line . self::RESET_COLOR;
++                    }
++
++                    return $line;
++                },
++                explode("\n", $diff),
++            ),
++        );
++    }
+ }
+diff --git a/tests/phpunit/Reporter/GitHubActionsLogTextFileReporterTest.php b/tests/phpunit/Reporter/GitHubActionsLogTextFileReporterTest.php
+index f99000d..3900497 100644
+--- a/tests/phpunit/Reporter/GitHubActionsLogTextFileReporterTest.php
++++ b/tests/phpunit/Reporter/GitHubActionsLogTextFileReporterTest.php
+@@ -200,92 +200,92 @@ final class GitHubActionsLogTextFileReporterTest extends TestCase
+             false,
+             false,
+             false,
+-            <<<'TXT'
++            <<<TXT
+                 Note: Pass `--log-verbosity=all` to log information about killed and errored mutants.
+                 Note: Pass `--debug` to log test-framework output.
+ 
+                 ::group::Escaped mutants
+                 1) foo/bar:9    [M] PregQuote [ID] a1b2c3
+ 
+-                --- Original
+-                +++ New
++                \e[31m--- Original\e[0m
++                \e[32m+++ New\e[0m
+                 @@ @@
+ 
+-                - echo 'original';
+-                + echo 'escaped#1';
++                \e[31m- echo 'original';\e[0m
++                \e[32m+ echo 'escaped#1';\e[0m
+ 
+ 
+                 2) foo/bar:10    [M] For_ [ID] a1b2c3
+ 
+-                --- Original
+-                +++ New
++                \e[31m--- Original\e[0m
++                \e[32m+++ New\e[0m
+                 @@ @@
+ 
+-                - echo 'original';
+-                + echo 'escaped#0';
++                \e[31m- echo 'original';\e[0m
++                \e[32m+ echo 'escaped#0';\e[0m
+                 ::endgroup::
+ 
+                 ::group::Timed Out mutants
+                 1) foo/bar:9    [M] PregQuote [ID] a1b2c3
+ 
+-                --- Original
+-                +++ New
++                \e[31m--- Original\e[0m
++                \e[32m+++ New\e[0m
+                 @@ @@
+ 
+-                - echo 'original';
+-                + echo 'timedOut#1';
++                \e[31m- echo 'original';\e[0m
++                \e[32m+ echo 'timedOut#1';\e[0m
+ 
+ 
+                 2) foo/bar:10    [M] For_ [ID] a1b2c3
+ 
+-                --- Original
+-                +++ New
++                \e[31m--- Original\e[0m
++                \e[32m+++ New\e[0m
+                 @@ @@
+ 
+-                - echo 'original';
+-                + echo 'timedOut#0';
++                \e[31m- echo 'original';\e[0m
++                \e[32m+ echo 'timedOut#0';\e[0m
+                 ::endgroup::
+ 
+                 ::group::Skipped mutants
+                 1) foo/bar:10    [M] For_ [ID] a1b2c3
+ 
+-                --- Original
+-                +++ New
++                \e[31m--- Original\e[0m
++                \e[32m+++ New\e[0m
+                 @@ @@
+ 
+-                - echo 'original';
+-                + echo 'skipped#0';
++                \e[31m- echo 'original';\e[0m
++                \e[32m+ echo 'skipped#0';\e[0m
+ 
+ 
+                 2) foo/bar:10    [M] PregQuote [ID] a1b2c3
+ 
+-                --- Original
+-                +++ New
++                \e[31m--- Original\e[0m
++                \e[32m+++ New\e[0m
+                 @@ @@
+ 
+-                - echo 'original';
+-                + echo 'skipped#1';
++                \e[31m- echo 'original';\e[0m
++                \e[32m+ echo 'skipped#1';\e[0m
+                 ::endgroup::
+ 
+                 ::group::Not Covered mutants
+                 1) foo/bar:9    [M] PregQuote [ID] a1b2c3
+ 
+-                --- Original
+-                +++ New
++                \e[31m--- Original\e[0m
++                \e[32m+++ New\e[0m
+                 @@ @@
+ 
+-                - echo 'original';
+-                + echo 'notCovered#1';
++                \e[31m- echo 'original';\e[0m
++                \e[32m+ echo 'notCovered#1';\e[0m
+ 
+ 
+                 2) foo/bar:10    [M] For_ [ID] a1b2c3
+ 
+-                --- Original
+-                +++ New
++                \e[31m--- Original\e[0m
++                \e[32m+++ New\e[0m
+                 @@ @@
+ 
+-                - echo 'original';
+-                + echo 'notCovered#0';
++                \e[31m- echo 'original';\e[0m
++                \e[32m+ echo 'notCovered#0';\e[0m
+                 ::endgroup::
+ 
+ 
+-- 
+2.43.0
+

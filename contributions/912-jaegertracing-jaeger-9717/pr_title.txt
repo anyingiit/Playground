@@ -1,0 +1,1 @@
+fix(es): Require full-width trace and span IDs when reading from Elasticsearch

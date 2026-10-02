@@ -1,0 +1,109 @@
+From 3dcb8e6e19b79e4461304602f7d80bca67fd8ad8 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 22:53:28 +0000
+Subject: [PATCH] Support the print-color-adjust property
+
+Validate the economy and exact keywords and inherit the value. WeasyPrint
+never adjusts colors or drops backgrounds, so both values render colors
+and backgrounds exactly as specified.
+
+Fix #453.
+---
+ docs/api_reference.rst                  | 17 +++++++++++++++++
+ tests/css/test_validation.py            | 12 ++++++++++++
+ weasyprint/css/properties.py            |  2 ++
+ weasyprint/css/validation/properties.py |  7 +++++++
+ 4 files changed, 38 insertions(+)
+
+diff --git a/docs/api_reference.rst b/docs/api_reference.rst
+index 89364ea..416243d 100644
+--- a/docs/api_reference.rst
++++ b/docs/api_reference.rst
+@@ -557,6 +557,23 @@ WeasyPrint does **not** support the ``color-mix()`` and ``contrast-color()`` pro
+ .. _CSS Color Module Level 4: https://www.w3.org/TR/css-color-4/
+ .. _CSS Color Module Level 5: https://www.w3.org/TR/css-color-5/
+ 
++CSS Color Adjustment Module Level 1
+++++++++++++++++++++++++++++++++++++
++
++The `CSS Color Adjustment Module Level 1`_ is a candidate recommendation
++introducing "a model and controls over automatic color adjustment by the user
++agent to handle user preferences and device output optimizations".
++
++WeasyPrint supports the ``color-scheme`` property, used by the ``light-dark()``
++function.
++
++WeasyPrint supports the ``print-color-adjust`` property. As WeasyPrint never
++adjusts colors or removes backgrounds to save ink, ``economy`` and ``exact``
++currently give the same output: colors and backgrounds are always rendered as
++specified.
++
++.. _CSS Color Adjustment Module Level 1: https://www.w3.org/TR/css-color-adjust-1/
++
+ CSS Transforms Module Level 1
+ +++++++++++++++++++++++++++++
+ 
+diff --git a/tests/css/test_validation.py b/tests/css/test_validation.py
+index 01843e9..e22bef5 100644
+--- a/tests/css/test_validation.py
++++ b/tests/css/test_validation.py
+@@ -1352,6 +1352,18 @@ def test_color_scheme_invalid(rule):
+     assert_invalid(f'color-scheme: {rule}')
+ 
+ 
++@assert_no_logs
++@pytest.mark.parametrize('rule', ['economy', 'exact'])
++def test_print_color_adjust(rule):
++    assert get_value(f'print-color-adjust: {rule}') == rule
++
++
++@assert_no_logs
++@pytest.mark.parametrize('rule', ['auto', 'none', 'exact economy', '1px'])
++def test_print_color_adjust_invalid(rule):
++    assert_invalid(f'print-color-adjust: {rule}')
++
++
+ @assert_no_logs
+ @pytest.mark.parametrize(('rule', 'value'), [
+     ('none', ()),
+diff --git a/weasyprint/css/properties.py b/weasyprint/css/properties.py
+index b8ed511..c9037a6 100644
+--- a/weasyprint/css/properties.py
++++ b/weasyprint/css/properties.py
+@@ -92,6 +92,7 @@ INITIAL_VALUES = {
+ 
+     # Color Adjustment 1 (CRD): https://www.w3.org/TR/css-color-adjust-1
+     'color_scheme': 'normal',
++    'print_color_adjust': 'economy',
+ 
+     # Color 3 (REC): https://www.w3.org/TR/css-color-3/
+     'opacity': 1,
+@@ -344,6 +345,7 @@ INHERITED = {
+     'list_style_type',
+     'orphans',
+     'overflow_wrap',
++    'print_color_adjust',
+     'quotes',
+     'tab_size',
+     'text_align_all',
+diff --git a/weasyprint/css/validation/properties.py b/weasyprint/css/validation/properties.py
+index 26b7e1f..5070099 100644
+--- a/weasyprint/css/validation/properties.py
++++ b/weasyprint/css/validation/properties.py
+@@ -2132,6 +2132,13 @@ def appearance(token):
+         return keyword
+ 
+ 
++@property()
++@single_keyword
++def print_color_adjust(keyword):
++    """``print-color-adjust`` property validation."""
++    return keyword in ('economy', 'exact')
++
++
+ @property()
+ def color_scheme(tokens):
+     """``color-scheme`` property validation."""
+-- 
+2.43.0
+

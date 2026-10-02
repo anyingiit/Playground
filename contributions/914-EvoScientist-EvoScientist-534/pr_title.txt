@@ -1,1 +1,0 @@
-Stop half-started langgraph dev when startup is interrupted (#534)

@@ -1,0 +1,940 @@
+From 75b6ac9fb6c81dfefdb8899aa9f66528a5710a49 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:09:25 +0000
+Subject: [PATCH] feat(slack-bot): allow choosing the Claude Agent harness for
+ Slack
+
+Closes #2044
+---
+ CHANGELOG.md                                  |   8 ++
+ docs/CLAUDE_AGENT.md                          |   4 +-
+ docs/integrations/SLACK.md                    |  12 ++
+ .../src/db/integration-settings.test.ts       |  34 ++++++
+ .../src/db/integration-settings.ts            |  14 +++
+ .../docs/content/docs/integrations/slack.mdx  |   4 +
+ .../content/docs/models/agent-harnesses.mdx   |   3 +-
+ packages/shared/src/types/integrations.ts     |   6 +
+ .../slack-bot/src/events/message-handler.ts   |  11 ++
+ packages/slack-bot/src/harness.ts             |  32 ++++++
+ packages/slack-bot/src/index.test.ts          |  61 ++++++++++
+ .../src/sessions/control-plane-client.test.ts |  18 +++
+ .../src/sessions/control-plane-client.ts      |   5 +
+ .../src/sessions/session-launcher.test.ts     | 105 ++++++++++++++++++
+ .../src/sessions/session-launcher.ts          |  24 +++-
+ .../src/sessions/thread-session-store.ts      |   2 +
+ packages/slack-bot/src/slack-settings.test.ts |  25 +++++
+ packages/slack-bot/src/slack-settings.ts      |   8 ++
+ packages/slack-bot/src/types.ts               |   6 +
+ .../slack-integration-settings.test.tsx       |  64 +++++++++++
+ .../slack-integration-settings.tsx            |  71 +++++++++++-
+ 21 files changed, 509 insertions(+), 8 deletions(-)
+ create mode 100644 packages/slack-bot/src/harness.ts
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 088a21d..c08417b 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,14 @@ New features, integrations, and notable improvements to Open-Inspect — newest
+ 
+ ## Unreleased
+ 
++### Added
++
++Slack can start sessions on the Claude Agent harness. Administrators choose the harness under
++Settings › Integrations › Slack; unconfigured workspaces keep using OpenCode, and the choice applies
++to new sessions only. With Claude Agent selected, the default model list offers Anthropic models
++only, and a non-Anthropic model from App Home, a `!model` flag, or the deployment default gets an
++error reply in the thread instead of a session.
++
+ ### Changed
+ 
+ Team-owned session actions now require current owning-team membership in every `TEAMS_ENFORCEMENT`
+diff --git a/docs/CLAUDE_AGENT.md b/docs/CLAUDE_AGENT.md
+index f4e4bb3..6c52453 100644
+--- a/docs/CLAUDE_AGENT.md
++++ b/docs/CLAUDE_AGENT.md
+@@ -18,7 +18,9 @@ sign in inside a sandbox.
+ 
+ Every session runs on exactly one harness, chosen when the session is created and fixed for its
+ lifetime (like the base branch). Child sessions inherit their parent's harness. Automations carry a
+-harness for the sessions they create. Bots and integrations create OpenCode sessions.
++harness for the sessions they create. Slack sessions use the harness chosen under **Settings →
++Integrations → Slack** (OpenCode unless changed); other bots and integrations create OpenCode
++sessions.
+ 
+ | Harness          | Models                | Anthropic authentication                   | Notes                                 |
+ | ---------------- | --------------------- | ------------------------------------------ | ------------------------------------- |
+diff --git a/docs/integrations/SLACK.md b/docs/integrations/SLACK.md
+index 936b1ba..994f2c7 100644
+--- a/docs/integrations/SLACK.md
++++ b/docs/integrations/SLACK.md
+@@ -203,6 +203,18 @@ conventions. They apply to new sessions only (thread follow-ups continue with th
+ context), are limited to 10,000 characters, and mirror the Linear integration's **Issue Session
+ Instructions**.
+ 
++### Agent harness
++
++New Slack sessions run on **OpenCode** unless an administrator chooses **Claude Agent** under
++**Settings → Integrations → Slack → Agent harness**. The choice applies to sessions started after it
++is saved; running sessions keep the harness they were created on. Claude Agent runs Anthropic models
++only, so with it selected the default model list offers Anthropic models alone, and saving a
++non-Anthropic default model is rejected. Every other model source (the deployment's `DEFAULT_MODEL`,
++a user's App Home model, a `!model` flag on the first request or on a follow-up) is checked when it
++is used: Slack replies with an error naming the model instead of starting the session or sending the
++follow-up. Claude Agent sessions can use a connected Claude account; see
++[Claude Agent](../CLAUDE_AGENT.md).
++
+ ---
+ 
+ ## Threaded Conversations
+diff --git a/packages/control-plane/src/db/integration-settings.test.ts b/packages/control-plane/src/db/integration-settings.test.ts
+index e8c4437..5027cae 100644
+--- a/packages/control-plane/src/db/integration-settings.test.ts
++++ b/packages/control-plane/src/db/integration-settings.test.ts
+@@ -1252,6 +1252,40 @@ describe("IntegrationSettingsStore", () => {
+       expect(result?.defaults?.model).toBe("anthropic/claude-sonnet-4-6");
+     });
+ 
++    it("round-trips a global slack harness with a compatible default model", async () => {
++      await store.setGlobal("slack", {
++        defaults: { harness: "claude", model: "anthropic/claude-sonnet-4-6" },
++      });
++
++      const result = await store.getGlobal("slack");
++      expect(result?.defaults?.harness).toBe("claude");
++      expect(result?.defaults?.model).toBe("anthropic/claude-sonnet-4-6");
++    });
++
++    it("rejects a slack default model the configured harness cannot run", async () => {
++      await expect(
++        store.setGlobal("slack", {
++          defaults: { harness: "claude", model: "openai/gpt-5.4" },
++        })
++      ).rejects.toThrow('Model "openai/gpt-5.4" cannot run on the Claude Agent harness.');
++    });
++
++    it("rejects an unknown slack harness", async () => {
++      await expect(
++        store.setGlobal("slack", {
++          defaults: { harness: "codex" as never },
++        })
++      ).rejects.toThrow(IntegrationSettingsValidationError);
++    });
++
++    it("rejects a slack harness at per-repo level (global-only field)", async () => {
++      await expect(
++        store.setRepoSettings("slack", "acme/widgets", {
++          harness: "claude",
++        } as unknown as { agentNotificationsEnabled?: boolean })
++      ).rejects.toThrow(IntegrationSettingsValidationError);
++    });
++
+     it("rejects invalid slack default models", async () => {
+       await expect(
+         store.setGlobal("slack", {
+diff --git a/packages/control-plane/src/db/integration-settings.ts b/packages/control-plane/src/db/integration-settings.ts
+index 0217902..b39a6ba 100644
+--- a/packages/control-plane/src/db/integration-settings.ts
++++ b/packages/control-plane/src/db/integration-settings.ts
+@@ -24,6 +24,7 @@ import {
+   type SlackMentionsPolicy,
+   type SlackRoutingRule,
+ } from "@open-inspect/shared/types/integrations";
++import { checkHarnessCompatibility, isValidHarness } from "@open-inspect/shared/harnesses";
+ import { isValidModel, isValidReasoningEffort } from "@open-inspect/shared/models";
+ import { normalizeSandboxSettings } from "../sandbox/settings";
+ import type { SqlDatabase } from "./sql-database";
+@@ -586,6 +587,7 @@ export class IntegrationSettingsStore {
+         ? new Set([
+             "agentNotificationsEnabled",
+             "model",
++            "harness",
+             "mentionsPolicy",
+             "routingRules",
+             "sessionInstructions",
+@@ -607,6 +609,18 @@ export class IntegrationSettingsStore {
+ 
+     this.validateModelAndEffort(settings);
+ 
++    if (settings.harness !== undefined) {
++      if (!isValidHarness(settings.harness)) {
++        throw new IntegrationSettingsValidationError(`Invalid harness: ${settings.harness}`);
++      }
++      // The same save-time rule as automations: a default model the harness
++      // cannot run would fail every Slack session created with it.
++      if (settings.model !== undefined) {
++        const incompatibility = checkHarnessCompatibility(settings.harness, settings.model);
++        if (incompatibility) throw new IntegrationSettingsValidationError(incompatibility.message);
++      }
++    }
++
+     if (
+       settings.mentionsPolicy !== undefined &&
+       !SLACK_MENTIONS_POLICIES.includes(settings.mentionsPolicy)
+diff --git a/packages/docs/content/docs/integrations/slack.mdx b/packages/docs/content/docs/integrations/slack.mdx
+index 6c826c5..b5ebb34 100644
+--- a/packages/docs/content/docs/integrations/slack.mdx
++++ b/packages/docs/content/docs/integrations/slack.mdx
+@@ -211,6 +211,10 @@ Map keywords to repositories or environments under **Routing rules** so common r
+ 
+ Set workspace-wide instructions under **Session Instructions**. They are appended to the first prompt of every new Slack-started session as an `## Additional Instructions` section, for standing guidance such as coding standards, preferred tools, or PR conventions. They apply to new sessions only, and are limited to 10,000 characters. Linear has the equivalent **Issue Session Instructions**.
+ 
++### Agent harness
++
++New Slack sessions run on OpenCode unless you choose **Claude Agent** under **Agent harness**. The choice applies to sessions started after you save it; running sessions keep their harness. Claude Agent runs Anthropic models only: the default model list then offers Anthropic models alone, and a user's App Home model or a `!model` flag that names another family gets an error reply instead of a session or follow-up. See [Agent harnesses](/models/agent-harnesses).
++
+ ### Agent notifications
+ 
+ Interactive sessions always get their thread replies. Agent notifications are separate: with them enabled, the agent can post an extra message to a channel when you explicitly ask:
+diff --git a/packages/docs/content/docs/models/agent-harnesses.mdx b/packages/docs/content/docs/models/agent-harnesses.mdx
+index 2b371b4..0503c76 100644
+--- a/packages/docs/content/docs/models/agent-harnesses.mdx
++++ b/packages/docs/content/docs/models/agent-harnesses.mdx
+@@ -21,7 +21,8 @@ The agent harness is the coding agent that runs inside the sandbox. Every sessio
+ 
+ - Child sessions inherit their parent's harness.
+ - An automation carries a harness for the sessions it creates.
+-- Sessions started by Slack, GitHub, and Linear run on OpenCode.
++- Sessions started by Slack run on the harness chosen in the [Slack settings](/integrations/slack#agent-harness), OpenCode unless changed.
++- Sessions started by GitHub and Linear run on OpenCode.
+ - OpenCode is the default harness.
+ 
+ Both harnesses emit the same session events (tokens, tool calls, steps, warnings), so the session page, timeline, and diff work the same way on either one.
+diff --git a/packages/shared/src/types/integrations.ts b/packages/shared/src/types/integrations.ts
+index 42c32e9..8e4434e 100644
+--- a/packages/shared/src/types/integrations.ts
++++ b/packages/shared/src/types/integrations.ts
+@@ -1,5 +1,6 @@
+ // Integration settings types
+ 
++import { harnessIdSchema } from "../harnesses";
+ import { escapeRegExp } from "../regex";
+ import { z } from "zod";
+ import { teamSettingsSchema } from "./teams";
+@@ -445,6 +446,11 @@ export type SlackRepoSettings = z.infer<typeof slackRepoSettingsSchema>;
+ /** Global Slack defaults: per-repo fields plus workspace-wide policy controls. */
+ export const slackGlobalSettingsSchema = slackRepoSettingsSchema.extend({
+   model: z.string().optional(),
++  /**
++   * Agent harness for new Slack-created sessions. Omission means the built-in
++   * harness (OpenCode); changing it affects new sessions only.
++   */
++  harness: harnessIdSchema.optional(),
+   mentionsPolicy: z.enum(["allow", "escape", "strip"]).optional(),
+   /** Workspace-wide keyword→repository routing rules (global-only, like mentionsPolicy). */
+   routingRules: z.array(slackRoutingRuleSchema.strict()).optional(),
+diff --git a/packages/slack-bot/src/events/message-handler.ts b/packages/slack-bot/src/events/message-handler.ts
+index 3b76195..bf614ab 100644
+--- a/packages/slack-bot/src/events/message-handler.ts
++++ b/packages/slack-bot/src/events/message-handler.ts
+@@ -16,6 +16,7 @@ import {
+ import { createClassifier } from "../classifier";
+ import { loadTargetCatalog } from "../classifier/catalog";
+ import { stripMentions } from "../dm-utils";
++import { slackHarnessModelError } from "../harness";
+ import {
+   collectForwardedMessages,
+   FORWARD_ONLY_PROMPT_TEXT,
+@@ -167,6 +168,16 @@ async function handleIncomingMessage(params: IncomingMessageParams): Promise<voi
+           });
+           return;
+         }
++        // The harness is fixed at create; a one-turn override it cannot run
++        // would only be rejected by the control plane after the fact.
++        const harnessError = slackHarnessModelError(
++          existingSession.harness,
++          resolvedTurn.turnPlan.effective.model
++        );
++        if (harnessError) {
++          await postMessage(env.SLACK_BOT_TOKEN, channel, harnessError, { thread_ts: threadTs });
++          return;
++        }
+         turnPlan = resolvedTurn.turnPlan;
+       }
+       if (hasInlineOverrides) {
+diff --git a/packages/slack-bot/src/harness.ts b/packages/slack-bot/src/harness.ts
+new file mode 100644
+index 0000000..844a237
+--- /dev/null
++++ b/packages/slack-bot/src/harness.ts
+@@ -0,0 +1,32 @@
++import {
++  checkHarnessCompatibility,
++  getHarnessCapabilities,
++  getHarnessLabel,
++  getValidHarnessOrDefault,
++  type HarnessId,
++} from "@open-inspect/shared/harnesses";
++
++/**
++ * The shared harness rule, phrased for a Slack reply. Returns null when the
++ * harness can run the model. An unset harness is the control plane's default
++ * (OpenCode), which runs every model, so unconfigured workspaces never see it.
++ */
++export function slackHarnessModelError(
++  harness: HarnessId | undefined,
++  model: string
++): string | null {
++  const resolvedHarness = getValidHarnessOrDefault(harness);
++  const incompatibility = checkHarnessCompatibility(resolvedHarness, model);
++  if (!incompatibility) return null;
++  const families = getHarnessCapabilities(resolvedHarness).modelFamilies;
++  const supported =
++    families === "any" ? "" : ` It runs ${families.map(capitalize).join(", ")} models only.`;
++  return (
++    `${incompatibility.message} This session runs on ${getHarnessLabel(resolvedHarness)}.` +
++    `${supported} Choose a supported model with \`!model\` or in the App Home tab.`
++  );
++}
++
++function capitalize(value: string): string {
++  return value.charAt(0).toUpperCase() + value.slice(1);
++}
+diff --git a/packages/slack-bot/src/index.test.ts b/packages/slack-bot/src/index.test.ts
+index f97eda4..166632c 100644
+--- a/packages/slack-bot/src/index.test.ts
++++ b/packages/slack-bot/src/index.test.ts
+@@ -1078,6 +1078,67 @@ describe("POST /events", () => {
+     slackFetch.mockRestore();
+   });
+ 
++  it("rejects a follow-up model override the thread's harness cannot run", async () => {
++    const slackFetch = mockSlackFetch();
++    const env = makeSessionEnv();
++    const sessionFetch = env.CONTROL_PLANE.fetch.getMockImplementation()!;
++    env.CONTROL_PLANE.fetch.mockImplementation(
++      async (input: RequestInfo | URL, init?: RequestInit) => {
++        const url = typeof input === "string" ? input : input.toString();
++        if (url.includes("/model-preferences")) {
++          return new Response(
++            JSON.stringify({ enabledModels: ["anthropic/claude-haiku-4-5", "openai/gpt-5.4"] }),
++            { status: 200, headers: { "Content-Type": "application/json" } }
++          );
++        }
++        return sessionFetch(input, init);
++      }
++    );
++    const kv = env.SLACK_KV as unknown as {
++      put: (key: string, value: string) => Promise<void>;
++    };
++    await kv.put(
++      "thread:C123:111.222",
++      JSON.stringify({
++        sessionId: "session-1",
++        repoId: "acme/app",
++        repoFullName: "acme/app",
++        model: "anthropic/claude-haiku-4-5",
++        harness: "claude",
++        createdAt: Date.now(),
++      })
++    );
++    const ctx = makeCtx();
++
++    const response = await app.fetch(
++      slackEventRequest({
++        type: "app_mention",
++        text: "<@B123> !model openai/gpt-5.4 add coverage",
++        user: "U123",
++        channel: "C123",
++        ts: "333.444",
++        thread_ts: "111.222",
++      }),
++      env,
++      ctx
++    );
++
++    expect(response.status).toBe(200);
++    await flushWaitUntil(ctx);
++
++    expect(promptFetchBodies(env.CONTROL_PLANE.fetch)).toEqual([]);
++    expect(slackApiBodies(slackFetch, "chat.postMessage")).toEqual([
++      expect.objectContaining({
++        thread_ts: "111.222",
++        text: expect.stringContaining(
++          'Model "openai/gpt-5.4" cannot run on the Claude Agent harness.'
++        ),
++      }),
++    ]);
++
++    slackFetch.mockRestore();
++  });
++
+   it("uses an enabled fallback model for a reasoning-only existing-thread override", async () => {
+     const slackFetch = mockSlackFetch();
+     const env = makeSessionEnv();
+diff --git a/packages/slack-bot/src/sessions/control-plane-client.test.ts b/packages/slack-bot/src/sessions/control-plane-client.test.ts
+index 34d076a..9412773 100644
+--- a/packages/slack-bot/src/sessions/control-plane-client.test.ts
++++ b/packages/slack-bot/src/sessions/control-plane-client.test.ts
+@@ -158,6 +158,24 @@ describe("control plane client request payloads", () => {
+     });
+   });
+ 
++  it("sends the configured harness so the control plane creates that session type", async () => {
++    const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
++      okJson({ sessionId: "session-1", status: "created" })
++    );
++
++    await createSession(makeEnv(fetch), {
++      target: environmentTarget,
++      model: "anthropic/claude-sonnet-4-6",
++      harness: "claude",
++    });
++
++    expect(parseRequestBody(fetch)).toEqual({
++      environmentId: "env-1",
++      model: "anthropic/claude-sonnet-4-6",
++      harness: "claude",
++    });
++  });
++
+   it("creates environment sessions without repository or branch fields", async () => {
+     const fetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+       okJson({ sessionId: "session-1", status: "created" })
+diff --git a/packages/slack-bot/src/sessions/control-plane-client.ts b/packages/slack-bot/src/sessions/control-plane-client.ts
+index e7745fa..8642f6f 100644
+--- a/packages/slack-bot/src/sessions/control-plane-client.ts
++++ b/packages/slack-bot/src/sessions/control-plane-client.ts
+@@ -4,6 +4,7 @@ import {
+   type CreateSessionResponse,
+   type SendPromptResponse,
+ } from "@open-inspect/shared/types/session-api";
++import type { HarnessId } from "@open-inspect/shared/harnesses";
+ import type { SessionAttachmentReference } from "@open-inspect/shared/types/session-attachments";
+ import { signedControlPlaneFetch, type ControlPlaneEnv } from "../internal-auth";
+ import { createLogger } from "../logger";
+@@ -17,6 +18,8 @@ interface CreateSessionOptions {
+   target: SlackSessionTarget;
+   model: string;
+   reasoningEffort?: string;
++  /** Omitted when unconfigured, so the control plane applies its default harness. */
++  harness?: HarnessId;
+   branch?: string;
+   traceId?: string;
+   slackUserId?: string;
+@@ -36,6 +39,7 @@ export async function createSession(
+     target,
+     model,
+     reasoningEffort,
++    harness,
+     branch,
+     traceId,
+     slackUserId,
+@@ -57,6 +61,7 @@ export async function createSession(
+       ...buildSessionTargetRequestFields(target, branch),
+       model,
+       reasoningEffort,
++      ...(harness ? { harness } : {}),
+       actorDisplayName,
+       actorEmail,
+     });
+diff --git a/packages/slack-bot/src/sessions/session-launcher.test.ts b/packages/slack-bot/src/sessions/session-launcher.test.ts
+index a81a7f6..ea77eeb 100644
+--- a/packages/slack-bot/src/sessions/session-launcher.test.ts
++++ b/packages/slack-bot/src/sessions/session-launcher.test.ts
+@@ -208,6 +208,111 @@ describe("startSessionAndSendPrompt", () => {
+     });
+   });
+ 
++  it("creates the session on the harness chosen in Slack settings", async () => {
++    const env = makeEnv();
++    vi.mocked(getSlackSettings).mockResolvedValue({
++      defaultModel: "anthropic/claude-sonnet-4-6",
++      harness: "claude",
++    });
++    vi.mocked(getResolvedUserPreferences).mockResolvedValue({
++      model: "anthropic/claude-sonnet-4-6",
++      reasoningEffort: "high",
++      branch: undefined,
++    });
++
++    await expect(
++      startSessionAndSendPrompt(env, {
++        target: repositoryTarget,
++        channel: "C123",
++        threadTs: "111.222",
++        messageText: "Fix the failing deploy",
++        actor,
++        messageTs: "111.223",
++      })
++    ).resolves.toEqual(expect.objectContaining({ sessionId: "session-1" }));
++
++    expect(createSession).toHaveBeenCalledWith(
++      env,
++      expect.objectContaining({ model: "anthropic/claude-sonnet-4-6", harness: "claude" })
++    );
++    // Follow-ups validate their one-turn overrides against the thread's harness.
++    expect(storeThreadSession).toHaveBeenCalledWith(
++      env,
++      "C123",
++      "111.222",
++      expect.objectContaining({ sessionId: "session-1", harness: "claude" })
++    );
++  });
++
++  it("leaves the harness to the control plane default when Slack settings omit it", async () => {
++    const env = makeEnv();
++
++    await startSessionAndSendPrompt(env, {
++      target: repositoryTarget,
++      channel: "C123",
++      threadTs: "111.222",
++      messageText: "Fix the failing deploy",
++      actor,
++    });
++
++    const [, options] = vi.mocked(createSession).mock.calls[0]!;
++    expect(options.harness).toBeUndefined();
++    expect(options.model).toBe("openai/gpt-5.4");
++    const [, , , stored] = vi.mocked(storeThreadSession).mock.calls[0]!;
++    expect(stored).not.toHaveProperty("harness");
++  });
++
++  it("rejects a model the configured harness cannot run before creating a session", async () => {
++    const env = makeEnv();
++    vi.mocked(getSlackSettings).mockResolvedValue({ harness: "claude" });
++
++    await expect(
++      startSessionAndSendPrompt(env, {
++        target: repositoryTarget,
++        channel: "C123",
++        threadTs: "111.222",
++        messageText: "Fix the failing deploy",
++        actor,
++      })
++    ).resolves.toBeNull();
++
++    expect(createSession).not.toHaveBeenCalled();
++    expect(deliverPrompt).not.toHaveBeenCalled();
++    expect(postMessage).toHaveBeenCalledWith(
++      "xoxb-test",
++      "C123",
++      'Model "openai/gpt-5.4" cannot run on the Claude Agent harness. This session runs on Claude Agent. It runs Anthropic models only. Choose a supported model with `!model` or in the App Home tab.',
++      { thread_ts: "111.222" }
++    );
++  });
++
++  it("rejects a first-prompt override the configured harness cannot run", async () => {
++    const env = makeEnv();
++    vi.mocked(getSlackSettings).mockResolvedValue({ harness: "claude" });
++
++    await expect(
++      startSessionAndSendPrompt(env, {
++        target: repositoryTarget,
++        channel: "C123",
++        threadTs: "111.222",
++        messageText: "Fix the failing deploy",
++        actor,
++        launchPlan: {
++          sessionDefaults: { model: "anthropic/claude-sonnet-4-6" },
++          promptOverrides: { model: "openai/gpt-5.4" },
++        },
++      })
++    ).resolves.toBeNull();
++
++    expect(createSession).not.toHaveBeenCalled();
++    expect(postMessage).toHaveBeenCalledWith(
++      "xoxb-test",
++      "C123",
++      expect.stringContaining('Model "openai/gpt-5.4" cannot run on the Claude Agent harness.'),
++      { thread_ts: "111.222" }
++    );
++  });
++
+   it("adopts combined model and reasoning flags as the new session's defaults", async () => {
+     const env = makeEnv();
+ 
+diff --git a/packages/slack-bot/src/sessions/session-launcher.ts b/packages/slack-bot/src/sessions/session-launcher.ts
+index dd5e301..14083bb 100644
+--- a/packages/slack-bot/src/sessions/session-launcher.ts
++++ b/packages/slack-bot/src/sessions/session-launcher.ts
+@@ -15,6 +15,7 @@ import type { SlackActorIdentity } from "../user-identity";
+ import { getResolvedUserPreferences, type ResolvedUserPreferences } from "../user-preferences";
+ import { createSession } from "./control-plane-client";
+ import { getSlackSettings, type SlackSettings } from "../slack-settings";
++import { slackHarnessModelError } from "../harness";
+ import { deliverPrompt } from "./prompt-delivery";
+ import { buildThreadSession, storeThreadSession } from "./thread-session-store";
+ import {
+@@ -184,6 +185,18 @@ export async function startSessionAndSendPrompt(
+     await postMessage(env.SLACK_BOT_TOKEN, channel, firstPrompt.error, { thread_ts: threadTs });
+     return null;
+   }
++  // Every model entry point (DEFAULT_MODEL, the workspace default, App Home,
++  // inline flags) has resolved by now, so the harness rule is applied to what
++  // will actually run, before the session exists. The control plane enforces
++  // the same rule; checking here turns its bare 400 into an actionable reply.
++  const harness = slackConfig.harness;
++  const harnessError =
++    slackHarnessModelError(harness, model) ??
++    slackHarnessModelError(harness, firstPrompt.turnPlan.effective.model);
++  if (harnessError) {
++    await postMessage(env.SLACK_BOT_TOKEN, channel, harnessError, { thread_ts: threadTs });
++    return null;
++  }
+   const preferenceRepo = branchPreferenceRepo(target);
+   let branch: string | undefined;
+   if (preferenceRepo) {
+@@ -195,6 +208,7 @@ export async function startSessionAndSendPrompt(
+     target,
+     model,
+     reasoningEffort,
++    harness,
+     branch,
+     traceId,
+     slackUserId: actor.userId,
+@@ -253,11 +267,19 @@ export async function startSessionAndSendPrompt(
+     }
+     return null;
+   }
++  const threadSession = buildThreadSession(
++    session.sessionId,
++    target,
++    model,
++    reasoningEffort,
++    messageTs
++  );
++  // Follow-ups check their one-turn model overrides against this harness.
+   await storeThreadSession(
+     env,
+     channel,
+     threadTs,
+-    buildThreadSession(session.sessionId, target, model, reasoningEffort, messageTs)
++    harness ? { ...threadSession, harness } : threadSession
+   );
+   return { sessionId: session.sessionId, sessionDefaults, differsFromUserDefaults };
+ }
+diff --git a/packages/slack-bot/src/sessions/thread-session-store.ts b/packages/slack-bot/src/sessions/thread-session-store.ts
+index f4f8d64..81bff3b 100644
+--- a/packages/slack-bot/src/sessions/thread-session-store.ts
++++ b/packages/slack-bot/src/sessions/thread-session-store.ts
+@@ -1,4 +1,5 @@
+ import { createKvCacheStore } from "@open-inspect/shared/cache-store";
++import { harnessIdSchema } from "@open-inspect/shared/harnesses";
+ import { compareSlackTimestamps } from "@open-inspect/shared/slack";
+ import { z } from "zod";
+ import { createLogger } from "../logger";
+@@ -13,6 +14,7 @@ const threadSessionSchema: z.ZodType<ThreadSession> = z.object({
+   repoFullName: z.string().min(1),
+   model: z.string().min(1),
+   reasoningEffort: z.string().min(1).optional(),
++  harness: harnessIdSchema.optional(),
+   createdAt: z.number().finite().nonnegative(),
+   lastPromptTs: z.string().min(1).optional(),
+ });
+diff --git a/packages/slack-bot/src/slack-settings.test.ts b/packages/slack-bot/src/slack-settings.test.ts
+index 9fe8755..c4338f2 100644
+--- a/packages/slack-bot/src/slack-settings.test.ts
++++ b/packages/slack-bot/src/slack-settings.test.ts
+@@ -29,6 +29,31 @@ describe("getSlackSettings", () => {
+     expect(fetch).toHaveBeenCalledTimes(1);
+   });
+ 
++  it("returns the configured harness", async () => {
++    const fetch = vi
++      .fn()
++      .mockResolvedValue(
++        settingsResponse({ harness: "claude", model: "anthropic/claude-sonnet-4-6" })
++      );
++
++    await expect(getSlackSettings(makeEnv(fetch))).resolves.toEqual({
++      defaultModel: "anthropic/claude-sonnet-4-6",
++      harness: "claude",
++    });
++  });
++
++  it("drops an unknown harness so sessions keep the default", async () => {
++    const fetch = vi
++      .fn()
++      .mockResolvedValue(
++        settingsResponse({ harness: "codex", model: "anthropic/claude-sonnet-4-6" })
++      );
++
++    const config = await getSlackSettings(makeEnv(fetch));
++    expect(config.harness).toBeUndefined();
++    expect(config.defaultModel).toBe("anthropic/claude-sonnet-4-6");
++  });
++
+   it("drops an invalid default model", async () => {
+     const fetch = vi.fn().mockResolvedValue(settingsResponse({ model: "not-a-model" }));
+ 
+diff --git a/packages/slack-bot/src/slack-settings.ts b/packages/slack-bot/src/slack-settings.ts
+index e33f206..5fa588b 100644
+--- a/packages/slack-bot/src/slack-settings.ts
++++ b/packages/slack-bot/src/slack-settings.ts
+@@ -1,4 +1,5 @@
+ import type { SlackGlobalConfig } from "@open-inspect/shared/types/integrations";
++import { harnessIdSchema, type HarnessId } from "@open-inspect/shared/harnesses";
+ import { isValidModel } from "@open-inspect/shared/models";
+ import { z } from "zod";
+ import { signedControlPlaneFetch } from "./internal-auth";
+@@ -10,6 +11,9 @@ const slackSettingsResponseSchema = z.object({
+       defaults: z
+         .object({
+           model: z.string().optional(),
++          // An unknown harness falls back to the default rather than
++          // discarding the rest of the settings.
++          harness: harnessIdSchema.optional().catch(undefined),
+           sessionInstructions: z.string().optional(),
+         })
+         .optional(),
+@@ -19,6 +23,8 @@ const slackSettingsResponseSchema = z.object({
+ 
+ export interface SlackSettings {
+   defaultModel?: string;
++  /** Harness for new Slack sessions; undefined means the control plane's default (OpenCode). */
++  harness?: HarnessId;
+   sessionInstructions?: string;
+ }
+ 
+@@ -37,8 +43,10 @@ export async function getSlackSettings(env: Env, traceId?: string): Promise<Slac
+     const data = parsed.data;
+     const model = data.settings?.defaults?.model;
+     const instructions = data.settings?.defaults?.sessionInstructions;
++    const harness = data.settings?.defaults?.harness;
+     return {
+       defaultModel: model && isValidModel(model) ? model : undefined,
++      harness,
+       sessionInstructions:
+         typeof instructions === "string" && instructions.trim() ? instructions : undefined,
+     };
+diff --git a/packages/slack-bot/src/types.ts b/packages/slack-bot/src/types.ts
+index 44b28b5..ade0c1d 100644
+--- a/packages/slack-bot/src/types.ts
++++ b/packages/slack-bot/src/types.ts
+@@ -2,6 +2,7 @@
+  * Type definitions for the Slack bot.
+  */
+ 
++import type { HarnessId } from "@open-inspect/shared/harnesses";
+ import type { ConfidenceLevel } from "@open-inspect/shared/types/repository-catalog";
+ import type { ControlPlaneFetcher } from "@open-inspect/shared/service-auth";
+ import type { SlackCompletionJob } from "./completion/job";
+@@ -104,6 +105,11 @@ export interface ThreadSession {
+   repoFullName: string;
+   model: string;
+   reasoningEffort?: string;
++  /**
++   * Harness the session was created on. Absent for OpenCode sessions created
++   * before Slack could choose one, or while the workspace leaves it unset.
++   */
++  harness?: HarnessId;
+   /** Unix timestamp of when the session was created. Used for debugging and observability. */
+   createdAt: number;
+   /**
+diff --git a/packages/web/src/components/settings/integrations/slack-integration-settings.test.tsx b/packages/web/src/components/settings/integrations/slack-integration-settings.test.tsx
+index 0056d88..b6b8f1a 100644
+--- a/packages/web/src/components/settings/integrations/slack-integration-settings.test.tsx
++++ b/packages/web/src/components/settings/integrations/slack-integration-settings.test.tsx
+@@ -243,6 +243,70 @@ describe("SlackIntegrationSettings", () => {
+     expect(body.settings.defaults?.model).toBe("openai/gpt-5.4");
+   });
+ 
++  it("saving Claude Agent as the harness sends it with an Anthropic default model", async () => {
++    const user = userEvent.setup();
++    setupSWR({ global: null });
++    fetchMock.mockResolvedValue(okJson({}));
++
++    render(<SlackIntegrationSettings />);
++
++    await user.click(screen.getByRole("combobox", { name: "Agent harness" }));
++    await user.click(await screen.findByRole("option", { name: "Claude Agent" }));
++    const modelSection = screen.getByText("Default model").closest("div")!;
++    await user.click(within(modelSection).getByRole("combobox"));
++    const listbox = await screen.findByRole("listbox");
++    // Claude Agent runs Anthropic models only, so other families are not offered.
++    expect(within(listbox).queryByRole("option", { name: "GPT 5.4" })).not.toBeInTheDocument();
++    await user.click(within(listbox).getByRole("option", { name: "Claude Sonnet 4.6" }));
++    await user.click(screen.getByRole("button", { name: /^save$/i }));
++
++    const [, init] = fetchMock.mock.calls[0];
++    const body = JSON.parse(init.body as string) as { settings: SlackGlobalConfig };
++    expect(body.settings.defaults).toMatchObject({
++      harness: "claude",
++      model: "anthropic/claude-sonnet-4-6",
++    });
++  });
++
++  it("switching to Claude Agent clears a default model it cannot run", async () => {
++    const user = userEvent.setup();
++    setupSWR({ global: { defaults: { model: "openai/gpt-5.4", mentionsPolicy: "allow" } } });
++    fetchMock.mockResolvedValue(okJson({}));
++
++    render(<SlackIntegrationSettings />);
++
++    await user.click(screen.getByRole("combobox", { name: "Agent harness" }));
++    await user.click(await screen.findByRole("option", { name: "Claude Agent" }));
++    await user.click(screen.getByRole("button", { name: /^save$/i }));
++
++    const [, init] = fetchMock.mock.calls[0];
++    const body = JSON.parse(init.body as string) as { settings: SlackGlobalConfig };
++    expect(body.settings.defaults).toEqual({
++      agentNotificationsEnabled: false,
++      harness: "claude",
++      mentionsPolicy: "allow",
++    });
++  });
++
++  it("switching back to OpenCode omits the harness so the default applies", async () => {
++    const user = userEvent.setup();
++    setupSWR({ global: { defaults: { harness: "claude", mentionsPolicy: "allow" } } });
++    fetchMock.mockResolvedValue(okJson({}));
++
++    render(<SlackIntegrationSettings />);
++
++    expect(screen.getByRole("combobox", { name: "Agent harness" })).toHaveTextContent(
++      "Claude Agent"
++    );
++    await user.click(screen.getByRole("combobox", { name: "Agent harness" }));
++    await user.click(await screen.findByRole("option", { name: "OpenCode" }));
++    await user.click(screen.getByRole("button", { name: /^save$/i }));
++
++    const [, init] = fetchMock.mock.calls[0];
++    const body = JSON.parse(init.body as string) as { settings: SlackGlobalConfig };
++    expect(body.settings.defaults).not.toHaveProperty("harness");
++  });
++
+   it("clearing the selected default model omits model while preserving other defaults", async () => {
+     const user = userEvent.setup();
+     setupSWR({
+diff --git a/packages/web/src/components/settings/integrations/slack-integration-settings.tsx b/packages/web/src/components/settings/integrations/slack-integration-settings.tsx
+index 51db925..2c6d3b6 100644
+--- a/packages/web/src/components/settings/integrations/slack-integration-settings.tsx
++++ b/packages/web/src/components/settings/integrations/slack-integration-settings.tsx
+@@ -23,6 +23,15 @@ import {
+   type SlackRoutingRule,
+ } from "@open-inspect/shared/types/integrations";
+ import { MODEL_OPTIONS } from "@open-inspect/shared/models";
++import {
++  DEFAULT_HARNESS,
++  HARNESS_IDS,
++  getHarnessLabel,
++  getValidHarnessOrDefault,
++  harnessSupportsModel,
++  isValidHarness,
++  type HarnessId,
++} from "@open-inspect/shared/harnesses";
+ import { browserApiFetch } from "@/lib/browser-api-fetch";
+ import { useEnabledModels } from "@/hooks/use-enabled-models";
+ import { ENVIRONMENTS_KEY } from "@/hooks/use-environments";
+@@ -193,6 +202,9 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
+     settings?.defaults?.agentNotificationsEnabled ?? false
+   );
+   const [model, setModel] = useState(settings?.defaults?.model ?? "");
++  const [harness, setHarness] = useState<HarnessId>(
++    getValidHarnessOrDefault(settings?.defaults?.harness)
++  );
+   const [mentionsPolicy, setMentionsPolicy] = useState<SlackMentionsPolicy>(
+     settings?.defaults?.mentionsPolicy ?? DEFAULT_MENTIONS_POLICY
+   );
+@@ -207,6 +219,7 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
+     if (settings === undefined || dirty || saving) return;
+     setAgentNotificationsEnabled(settings?.defaults?.agentNotificationsEnabled ?? false);
+     setModel(settings?.defaults?.model ?? "");
++    setHarness(getValidHarnessOrDefault(settings?.defaults?.harness));
+     setMentionsPolicy(settings?.defaults?.mentionsPolicy ?? DEFAULT_MENTIONS_POLICY);
+     setSessionInstructions(settings?.defaults?.sessionInstructions ?? "");
+   }, [settings, dirty, saving]);
+@@ -216,6 +229,15 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
+     ? MODEL_OPTIONS.flatMap((group) => group.models).find((option) => option.id === model)?.name
+     : undefined;
+ 
++  // The model list offers only what the selected harness can run, like the
++  // automation form; the control plane rejects an incompatible pair on save.
++  const harnessModelOptions = enabledModelOptions
++    .map((group) => ({
++      ...group,
++      models: group.models.filter((option) => harnessSupportsModel(harness, option.id)),
++    }))
++    .filter((group) => group.models.length > 0);
++
+   const isConfigured = settings !== null && settings !== undefined;
+ 
+   const handleConfirmReset = async () => {
+@@ -241,6 +263,7 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
+         mutate(GLOBAL_SETTINGS_KEY, { settings: resetBody });
+         setAgentNotificationsEnabled(false);
+         setModel("");
++        setHarness(DEFAULT_HARNESS);
+         setMentionsPolicy(DEFAULT_MENTIONS_POLICY);
+         setSessionInstructions("");
+         setDirty(false);
+@@ -262,6 +285,9 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
+       defaults: mergedGlobalDefaults(settings, {
+         agentNotificationsEnabled,
+         model: model || undefined,
++        // Unset is the built-in harness, so the stored blob stays unchanged
++        // for workspaces that never choose another one.
++        harness: harness === DEFAULT_HARNESS ? undefined : harness,
+         mentionsPolicy,
+         sessionInstructions: sessionInstructions || undefined,
+       }),
+@@ -316,6 +342,41 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
+         />
+       </label>
+ 
++      <div className="mb-4">
++        <p className="text-sm font-medium text-foreground mb-2">Agent harness</p>
++        <p className="text-xs text-muted-foreground mb-2">
++          Harness that runs new Slack-created sessions. Changing it does not affect sessions that
++          are already running.
++        </p>
++        <Select
++          value={harness}
++          onValueChange={(value) => {
++            if (!isValidHarness(value)) return;
++            setHarness(value);
++            if (model && !harnessSupportsModel(value, model)) setModel("");
++            setDirty(true);
++          }}
++        >
++          <SelectTrigger className="w-full sm:w-96" aria-label="Agent harness">
++            <SelectValue />
++          </SelectTrigger>
++          <SelectContent>
++            {HARNESS_IDS.map((option) => (
++              <SelectItem key={option} value={option}>
++                {getHarnessLabel(option)}
++              </SelectItem>
++            ))}
++          </SelectContent>
++        </Select>
++        {harness !== DEFAULT_HARNESS && (
++          <p className="text-xs text-muted-foreground mt-2">
++            {getHarnessLabel(harness)} runs Anthropic models only. Slack replies with an error
++            instead of starting a session when a user&apos;s App Home model or a <code>!model</code>{" "}
++            flag names a model it cannot run.
++          </p>
++        )}
++      </div>
++
+       <div className="mb-4">
+         <p className="text-sm font-medium text-foreground mb-2">Default model</p>
+         <p className="text-xs text-muted-foreground mb-2">
+@@ -333,7 +394,7 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
+             <SelectValue placeholder="Use system default" />
+           </SelectTrigger>
+           <SelectContent>
+-            {enabledModelOptions.map((group) =>
++            {harnessModelOptions.map((group) =>
+               group.models.map((option) => (
+                 <SelectItem key={option.id} value={option.id}>
+                   {option.name}
+@@ -430,10 +491,10 @@ function GlobalSettingsSection({ settings }: { settings: SlackGlobalConfig | nul
+           <AlertDialogHeader>
+             <AlertDialogTitle>Reset to defaults</AlertDialogTitle>
+             <AlertDialogDescription>
+-              Reset Slack defaults? The master switch will turn off, the default model will use the
+-              system default, mentions policy will return to <strong>allow</strong>, and session
+-              instructions will be cleared. Per-repository overrides and routing rules are not
+-              affected.
++              Reset Slack defaults? The master switch will turn off, new sessions will run on{" "}
++              {getHarnessLabel(DEFAULT_HARNESS)}, the default model will use the system default,
++              mentions policy will return to <strong>allow</strong>, and session instructions will
++              be cleared. Per-repository overrides and routing rules are not affected.
+             </AlertDialogDescription>
+           </AlertDialogHeader>
+           <AlertDialogFooter>
+-- 
+2.43.0
+
