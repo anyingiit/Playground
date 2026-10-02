@@ -1,0 +1,2146 @@
+From 906677f8f353d2c20a33a90f92bdbf517de6e7fc Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:58:53 +0000
+Subject: [PATCH] Inline AnyCol, AnyColumnReference, AnyColumnGroupAccessor,
+ StringCol and ColumnGroupReference type aliases in public API
+
+Follow-up to #1863. Replaces the aliases with their expanded types in public
+declarations of `core` and `dataframe-arrow` so code completion shows the real
+types. Internal usages and the alias declarations themselves are left intact.
+
+Closes #1866
+---
+ .../kotlinx/dataframe/ColumnsContainer.kt     | 12 +--
+ .../kotlinx/dataframe/ColumnsScope.kt         |  2 +-
+ .../jetbrains/kotlinx/dataframe/DataColumn.kt | 16 ++--
+ .../jetbrains/kotlinx/dataframe/DataFrame.kt  |  3 +-
+ .../jetbrains/kotlinx/dataframe/DataRow.kt    |  2 +-
+ .../dataframe/api/DataColumnArithmetics.kt    |  2 +-
+ .../kotlinx/dataframe/api/DataColumnType.kt   | 27 ++++---
+ .../kotlinx/dataframe/api/DataFrameGet.kt     | 17 +++--
+ .../kotlinx/dataframe/api/DataRowApi.kt       |  5 +-
+ .../jetbrains/kotlinx/dataframe/api/Nulls.kt  |  7 +-
+ .../jetbrains/kotlinx/dataframe/api/add.kt    | 16 ++--
+ .../jetbrains/kotlinx/dataframe/api/addId.kt  |  4 +-
+ .../jetbrains/kotlinx/dataframe/api/all.kt    | 50 ++++++-------
+ .../jetbrains/kotlinx/dataframe/api/cast.kt   |  3 +-
+ .../jetbrains/kotlinx/dataframe/api/col.kt    | 14 ++--
+ .../kotlinx/dataframe/api/colGroup.kt         | 18 ++---
+ .../kotlinx/dataframe/api/columnRange.kt      | 11 ++-
+ .../kotlinx/dataframe/api/constructors.kt     | 73 ++++++++++---------
+ .../kotlinx/dataframe/api/convert.kt          |  7 +-
+ .../kotlinx/dataframe/api/countDistinct.kt    |  4 +-
+ .../kotlinx/dataframe/api/distinct.kt         |  6 +-
+ .../kotlinx/dataframe/api/frameCol.kt         | 19 ++---
+ .../jetbrains/kotlinx/dataframe/api/group.kt  | 11 ++-
+ .../kotlinx/dataframe/api/groupBy.kt          |  6 +-
+ .../kotlinx/dataframe/api/inferType.kt        |  3 +-
+ .../jetbrains/kotlinx/dataframe/api/insert.kt |  3 +-
+ .../jetbrains/kotlinx/dataframe/api/length.kt |  2 +-
+ .../kotlinx/dataframe/api/lowercase.kt        |  3 +-
+ .../jetbrains/kotlinx/dataframe/api/move.kt   | 24 +++---
+ .../jetbrains/kotlinx/dataframe/api/pivot.kt  | 20 ++---
+ .../jetbrains/kotlinx/dataframe/api/remove.kt |  5 +-
+ .../kotlinx/dataframe/api/reorder.kt          |  4 +-
+ .../kotlinx/dataframe/api/replace.kt          |  5 +-
+ .../jetbrains/kotlinx/dataframe/api/select.kt |  3 +-
+ .../kotlinx/dataframe/api/typeConversions.kt  |  8 +-
+ .../jetbrains/kotlinx/dataframe/api/unfold.kt |  7 +-
+ .../kotlinx/dataframe/api/ungroup.kt          |  4 +-
+ .../kotlinx/dataframe/api/uppercase.kt        |  3 +-
+ .../kotlinx/dataframe/api/valueCol.kt         | 13 ++--
+ .../kotlinx/dataframe/api/valueCounts.kt      |  4 +-
+ .../jetbrains/kotlinx/dataframe/api/values.kt | 14 ++--
+ .../kotlinx/dataframe/columns/BaseColumn.kt   |  4 +-
+ .../kotlinx/dataframe/columns/ColumnGroup.kt  |  3 +-
+ ...lumnTypeMismatchesColumnValuesException.kt |  3 +-
+ .../dataframe/io/arrowTypesMatching.kt        |  6 +-
+ 45 files changed, 235 insertions(+), 241 deletions(-)
+
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/ColumnsContainer.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/ColumnsContainer.kt
+index 02d72ff..59b2db7 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/ColumnsContainer.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/ColumnsContainer.kt
+@@ -28,7 +28,7 @@ public interface ColumnsContainer<out T> : ColumnsScope<T> {
+     // region columns
+ 
+     @RequiredByIntellijPlugin
+-    public fun columns(): List<AnyCol>
++    public fun columns(): List<DataColumn<*>>
+ 
+     @RequiredByIntellijPlugin
+     public fun columnsCount(): Int
+@@ -43,9 +43,9 @@ public interface ColumnsContainer<out T> : ColumnsScope<T> {
+ 
+     // region getColumnOrNull
+ 
+-    public fun getColumnOrNull(name: String): AnyCol?
++    public fun getColumnOrNull(name: String): DataColumn<*>?
+ 
+-    public fun getColumnOrNull(index: Int): AnyCol?
++    public fun getColumnOrNull(index: Int): DataColumn<*>?
+ 
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+@@ -55,7 +55,7 @@ public interface ColumnsContainer<out T> : ColumnsScope<T> {
+     @AccessApiOverload
+     public fun <R> getColumnOrNull(column: KProperty<R>): DataColumn<R>?
+ 
+-    public fun getColumnOrNull(path: ColumnPath): AnyCol?
++    public fun getColumnOrNull(path: ColumnPath): DataColumn<*>?
+ 
+     public fun <R> getColumnOrNull(column: ColumnSelector<T, R>): DataColumn<R>?
+ 
+@@ -63,9 +63,9 @@ public interface ColumnsContainer<out T> : ColumnsScope<T> {
+ 
+     // region get
+ 
+-    public override operator fun get(columnName: String): AnyCol = getColumn(columnName)
++    public override operator fun get(columnName: String): DataColumn<*> = getColumn(columnName)
+ 
+-    public operator fun get(columnPath: ColumnPath): AnyCol = getColumn(columnPath)
++    public operator fun get(columnPath: ColumnPath): DataColumn<*> = getColumn(columnPath)
+ 
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/ColumnsScope.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/ColumnsScope.kt
+index 3ef0bda..826ac0f 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/ColumnsScope.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/ColumnsScope.kt
+@@ -8,5 +8,5 @@ package org.jetbrains.kotlinx.dataframe
+  * @param T Schema marker. Used to resolve generated extension properties for typed column access.
+  */
+ public interface ColumnsScope<out T> {
+-    public operator fun get(columnName: String): AnyCol
++    public operator fun get(columnName: String): DataColumn<*>
+ }
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataColumn.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataColumn.kt
+index d6d0ab9..ee0b2c4 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataColumn.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataColumn.kt
+@@ -308,17 +308,17 @@ public interface DataColumn<out T> : BaseColumn<T> {
+     public override operator fun get(range: IntRange): DataColumn<T>
+ }
+ 
+-public val AnyCol.name: String get() = name()
+-public val AnyCol.path: ColumnPath get() = path()
++public val DataColumn<*>.name: String get() = name()
++public val DataColumn<*>.path: ColumnPath get() = path()
+ 
+ public val <T> DataColumn<T>.values: Iterable<T> get() = values()
+-public val AnyCol.hasNulls: Boolean get() = hasNulls()
+-public val AnyCol.size: Int get() = size()
+-public val AnyCol.indices: IntRange get() = indices()
++public val DataColumn<*>.hasNulls: Boolean get() = hasNulls()
++public val DataColumn<*>.size: Int get() = size()
++public val DataColumn<*>.indices: IntRange get() = indices()
+ 
+-public val AnyCol.type: KType get() = type()
+-public val AnyCol.kind: ColumnKind get() = kind()
+-public val AnyCol.typeClass: KClass<*>
++public val DataColumn<*>.type: KType get() = type()
++public val DataColumn<*>.kind: ColumnKind get() = kind()
++public val DataColumn<*>.typeClass: KClass<*>
+     get() = type.classifier as? KClass<*>
+         ?: error("Cannot cast ${type.classifier?.javaClass} to a ${KClass::class}. Column $name: $type")
+ 
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataFrame.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataFrame.kt
+index deaabab..8579ae8 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataFrame.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataFrame.kt
+@@ -17,6 +17,7 @@ import org.jetbrains.kotlinx.dataframe.api.indices
+ import org.jetbrains.kotlinx.dataframe.api.rows
+ import org.jetbrains.kotlinx.dataframe.api.select
+ import org.jetbrains.kotlinx.dataframe.api.toDataFrame
++import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.UnresolvedColumnsPolicy
+ import org.jetbrains.kotlinx.dataframe.columns.toColumnSet
+ import org.jetbrains.kotlinx.dataframe.impl.DataFrameImpl
+@@ -164,7 +165,7 @@ public operator fun <T, C> DataFrame<T>.get(columns: ColumnsSelector<T, C>): Lis
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public operator fun <T> DataFrame<T>.get(first: AnyColumnReference, vararg other: AnyColumnReference): DataFrame<T> =
++public operator fun <T> DataFrame<T>.get(first: ColumnReference<*>, vararg other: ColumnReference<*>): DataFrame<T> =
+     select { (listOf(first) + other).toColumnSet() }
+ 
+ @Refine
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataRow.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataRow.kt
+index 7c0a17c..611714c 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataRow.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/DataRow.kt
+@@ -47,7 +47,7 @@ public interface DataRow<out T> {
+ 
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public operator fun get(first: AnyColumnReference, vararg other: AnyColumnReference): DataRow<T> =
++    public operator fun get(first: ColumnReference<*>, vararg other: ColumnReference<*>): DataRow<T> =
+         owner.get(first, *other)[index]
+ 
+     public operator fun get(first: String, vararg other: String): DataRow<T> = owner.get(first, *other)[index]
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataColumnArithmetics.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataColumnArithmetics.kt
+index ca8d9d2..1dc07ef 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataColumnArithmetics.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataColumnArithmetics.kt
+@@ -413,7 +413,7 @@ private interface ColumnPlusStringDocs {
+ /**
+  * @include [ColumnPlusStringDocs]
+  */
+-public operator fun AnyCol.plus(str: String): DataColumn<String> = map { it.toString() + str }
++public operator fun DataColumn<*>.plus(str: String): DataColumn<String> = map { it.toString() + str }
+ 
+ /**
+  * @include [ColumnPlusStringDocs]
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataColumnType.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataColumnType.kt
+index 1cace0e..e43b5f1 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataColumnType.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataColumnType.kt
+@@ -2,7 +2,6 @@
+ 
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnGroup
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnKind
+@@ -23,39 +22,39 @@ import kotlin.reflect.KType
+ import kotlin.reflect.full.isSubtypeOf
+ import kotlin.reflect.typeOf
+ 
+-public fun AnyCol.isColumnGroup(): Boolean {
++public fun DataColumn<*>.isColumnGroup(): Boolean {
+     contract { returns(true) implies (this@isColumnGroup is ColumnGroup<*>) }
+     return kind() == ColumnKind.Group
+ }
+ 
+-public fun AnyCol.isFrameColumn(): Boolean {
++public fun DataColumn<*>.isFrameColumn(): Boolean {
+     contract { returns(true) implies (this@isFrameColumn is FrameColumn<*>) }
+     return kind() == ColumnKind.Frame
+ }
+ 
+-public fun AnyCol.isValueColumn(): Boolean {
++public fun DataColumn<*>.isValueColumn(): Boolean {
+     contract { returns(true) implies (this@isValueColumn is ValueColumn<*>) }
+     return kind() == ColumnKind.Value
+ }
+ 
+-public fun AnyCol.isSubtypeOf(type: KType): Boolean =
++public fun DataColumn<*>.isSubtypeOf(type: KType): Boolean =
+     this.type.isSubtypeOf(type) && (!this.type.isMarkedNullable || type.isMarkedNullable)
+ 
+-public inline fun <reified T> AnyCol.isSubtypeOf(): Boolean = isSubtypeOf(typeOf<T>())
++public inline fun <reified T> DataColumn<*>.isSubtypeOf(): Boolean = isSubtypeOf(typeOf<T>())
+ 
+-public inline fun <reified T> AnyCol.isType(): Boolean = type() == typeOf<T>()
++public inline fun <reified T> DataColumn<*>.isType(): Boolean = type() == typeOf<T>()
+ 
+ /** Returns `true` when this column's type is a subtype of `Number?` */
+-public fun AnyCol.isNumber(): Boolean = isSubtypeOf<Number?>()
++public fun DataColumn<*>.isNumber(): Boolean = isSubtypeOf<Number?>()
+ 
+ /** Returns `true` only when this column's type is exactly `Number` or `Number?`. */
+-public fun AnyCol.isMixedNumber(): Boolean = type().isMixedNumber()
++public fun DataColumn<*>.isMixedNumber(): Boolean = type().isMixedNumber()
+ 
+ /**
+  * Returns `true` when this column has the (nullable) type of either:
+  * [Byte], [Short], [Int], [Long], [Float], or [Double].
+  */
+-public fun AnyCol.isPrimitiveNumber(): Boolean = type().isPrimitiveNumber()
++public fun DataColumn<*>.isPrimitiveNumber(): Boolean = type().isPrimitiveNumber()
+ 
+ /**
+  * Returns `true` when this column has the (nullable) type of either:
+@@ -64,9 +63,9 @@ public fun AnyCol.isPrimitiveNumber(): Boolean = type().isPrimitiveNumber()
+  * Careful: Will return `true` if the column contains multiple number types that
+  * might NOT be primitive.
+  */
+-public fun AnyCol.isPrimitiveOrMixedNumber(): Boolean = type().isPrimitiveOrMixedNumber()
++public fun DataColumn<*>.isPrimitiveOrMixedNumber(): Boolean = type().isPrimitiveOrMixedNumber()
+ 
+-public fun AnyCol.isList(): Boolean = typeClass == List::class
++public fun DataColumn<*>.isList(): Boolean = typeClass == List::class
+ 
+ /** @include [valuesAreComparable] */
+ @Deprecated(
+@@ -74,7 +73,7 @@ public fun AnyCol.isList(): Boolean = typeClass == List::class
+     replaceWith = ReplaceWith(IS_COMPARABLE_REPLACE, IS_INTER_COMPARABLE_IMPORT),
+     level = DeprecationLevel.ERROR,
+ )
+-public fun AnyCol.isComparable(): Boolean = valuesAreComparable()
++public fun DataColumn<*>.isComparable(): Boolean = valuesAreComparable()
+ 
+ /**
+  * Returns `true` if [this] column is intra-comparable (mutually comparable), i.e.,
+@@ -85,4 +84,4 @@ public fun AnyCol.isComparable(): Boolean = valuesAreComparable()
+  *
+  * Technically, this means the values' common type `T(?)` is a subtype of [Comparable]`<in T>(?)`
+  */
+-public fun AnyCol.valuesAreComparable(): Boolean = isValueColumn() && type().isIntraComparable()
++public fun DataColumn<*>.valuesAreComparable(): Boolean = isValueColumn() && type().isIntraComparable()
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataFrameGet.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataFrameGet.kt
+index 6f7f964..57973cd 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataFrameGet.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataFrameGet.kt
+@@ -1,7 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnSelector
+ import org.jetbrains.kotlinx.dataframe.ColumnsContainer
+ import org.jetbrains.kotlinx.dataframe.ColumnsScope
+@@ -41,9 +39,12 @@ public fun <T, C> DataFrame<T>.getColumnWithPath(selector: ColumnSelector<T, C>)
+ 
+ public fun <T, C> DataFrame<T>.getColumns(selector: ColumnsSelector<T, C>): List<DataColumn<C>> = get(selector)
+ 
+-public fun <T> DataFrame<T>.getColumns(vararg columns: String): List<AnyCol> = getColumns { columns.toColumnSet() }
++public fun <T> DataFrame<T>.getColumns(vararg columns: String): List<DataColumn<*>> =
++    getColumns {
++        columns.toColumnSet()
++    }
+ 
+-public fun <T> DataFrame<T>.getColumnIndex(col: AnyCol): Int = getColumnIndex(col.name())
++public fun <T> DataFrame<T>.getColumnIndex(col: DataColumn<*>): Int = getColumnIndex(col.name())
+ 
+ public fun <T> DataFrame<T>.getRows(range: IntRange): DataFrame<T> = get(range)
+ 
+@@ -84,7 +85,7 @@ public fun <T> DataFrame<T>.properties(): ColumnsScope<T> = this
+ 
+ // region getColumn
+ 
+-public fun <T> ColumnsContainer<T>.getColumn(name: String): AnyCol =
++public fun <T> ColumnsContainer<T>.getColumn(name: String): DataColumn<*> =
+     getColumnOrNull(name) ?: throw IllegalArgumentException("Column not found: '$name'")
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+@@ -102,10 +103,10 @@ public fun <T, R> ColumnsContainer<T>.getColumn(column: ColumnReference<DataRow<
+ public fun <T, R> ColumnsContainer<T>.getColumn(column: ColumnReference<R>): DataColumn<R> =
+     getColumnOrNull(column) ?: throw IllegalArgumentException("Column not found: '$column'")
+ 
+-public fun <T> ColumnsContainer<T>.getColumn(path: ColumnPath): AnyCol =
++public fun <T> ColumnsContainer<T>.getColumn(path: ColumnPath): DataColumn<*> =
+     getColumnOrNull(path) ?: throw IllegalArgumentException("Column not found: '$path'")
+ 
+-public fun <T> ColumnsContainer<T>.getColumn(index: Int): AnyCol =
++public fun <T> ColumnsContainer<T>.getColumn(index: Int): DataColumn<*> =
+     getColumnOrNull(index)
+         ?: throw IllegalArgumentException("Column index is out of bounds: $index. Columns count = $ncol")
+ 
+@@ -158,7 +159,7 @@ public fun ColumnsContainer<*>.containsColumn(column: KProperty<*>): Boolean = c
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public operator fun ColumnsContainer<*>.contains(column: AnyColumnReference): Boolean = containsColumn(column)
++public operator fun ColumnsContainer<*>.contains(column: ColumnReference<*>): Boolean = containsColumn(column)
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataRowApi.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataRowApi.kt
+index 9278a23..db88fbf 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataRowApi.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/DataRowApi.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsContainer
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+@@ -95,13 +94,13 @@ public fun DataRow<*>.containsKey(columnName: String): Boolean = owner.containsC
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun DataRow<*>.containsKey(column: AnyColumnReference): Boolean = owner.containsColumn(column)
++public fun DataRow<*>.containsKey(column: ColumnReference<*>): Boolean = owner.containsColumn(column)
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+ public fun DataRow<*>.containsKey(column: KProperty<*>): Boolean = owner.containsColumn(column)
+ 
+-public operator fun DataRow<*>.contains(column: AnyColumnReference): Boolean = containsKey(column)
++public operator fun DataRow<*>.contains(column: ColumnReference<*>): Boolean = containsKey(column)
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/Nulls.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/Nulls.kt
+index 3236a32..d58acd5 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/Nulls.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/Nulls.kt
+@@ -1,7 +1,6 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+ import org.jetbrains.kotlinx.dataframe.AnyCol
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.AnyFrame
+ import org.jetbrains.kotlinx.dataframe.AnyRow
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+@@ -445,7 +444,7 @@ public fun <T> DataFrame<T>.dropNulls(vararg columns: String, whereAllNull: Bool
+  */
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.dropNulls(vararg columns: AnyColumnReference, whereAllNull: Boolean = false): DataFrame<T> =
++public fun <T> DataFrame<T>.dropNulls(vararg columns: ColumnReference<*>, whereAllNull: Boolean = false): DataFrame<T> =
+     dropNulls(whereAllNull) { columns.toColumnSet() }
+ 
+ /**
+@@ -554,7 +553,7 @@ public fun <T> DataFrame<T>.dropNA(vararg columns: String, whereAllNA: Boolean =
+  */
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.dropNA(vararg columns: AnyColumnReference, whereAllNA: Boolean = false): DataFrame<T> =
++public fun <T> DataFrame<T>.dropNA(vararg columns: ColumnReference<*>, whereAllNA: Boolean = false): DataFrame<T> =
+     dropNA(whereAllNA) { columns.toColumnSet() }
+ 
+ /**
+@@ -671,7 +670,7 @@ public fun <T> DataFrame<T>.dropNaNs(vararg columns: String, whereAllNaN: Boolea
+  */
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.dropNaNs(vararg columns: AnyColumnReference, whereAllNaN: Boolean = false): DataFrame<T> =
++public fun <T> DataFrame<T>.dropNaNs(vararg columns: ColumnReference<*>, whereAllNaN: Boolean = false): DataFrame<T> =
+     dropNaNs(whereAllNaN) { columns.toColumnSet() }
+ 
+ /**
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/add.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/add.kt
+index 98043ef..421ef07 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/add.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/add.kt
+@@ -1,8 +1,6 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+ import org.jetbrains.kotlinx.dataframe.AnyCol
+-import org.jetbrains.kotlinx.dataframe.AnyColumnGroupAccessor
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsContainer
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+@@ -294,10 +292,10 @@ public class AddDsl<T>(
+     @PublishedApi
+     internal val columns: MutableList<AnyCol> = mutableListOf<AnyCol>()
+ 
+-    public fun add(column: AnyColumnReference): Boolean = columns.add(column.resolveSingle(df)!!.data)
++    public fun add(column: ColumnReference<*>): Boolean = columns.add(column.resolveSingle(df)!!.data)
+ 
+     @Interpretable("AddDslReferencePlus")
+-    public operator fun AnyColumnReference.unaryPlus(): Boolean = add(this)
++    public operator fun ColumnReference<*>.unaryPlus(): Boolean = add(this)
+ 
+     public operator fun String.unaryPlus(): Boolean = add(df[this])
+ 
+@@ -328,7 +326,7 @@ public class AddDsl<T>(
+     public inline infix fun <reified R> KProperty<R>.from(noinline expression: AddExpression<T, R>): Boolean =
+         add(name, Infer.Nulls, expression)
+ 
+-    public infix fun String.from(column: AnyColumnReference): Boolean = add(column.rename(this))
++    public infix fun String.from(column: ColumnReference<*>): Boolean = add(column.rename(this))
+ 
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+@@ -339,7 +337,7 @@ public class AddDsl<T>(
+     public inline infix fun <reified R> KProperty<R>.from(column: ColumnReference<R>): Boolean = name from column
+ 
+     @Interpretable("Into")
+-    public infix fun AnyColumnReference.into(name: String): Boolean = add(rename(name))
++    public infix fun ColumnReference<*>.into(name: String): Boolean = add(rename(name))
+ 
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+@@ -354,11 +352,11 @@ public class AddDsl<T>(
+ 
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public infix fun AnyColumnGroupAccessor.from(body: AddDsl<T>.() -> Unit): Unit = group(this, body)
++    public infix fun ColumnAccessor<DataRow<*>>.from(body: AddDsl<T>.() -> Unit): Unit = group(this, body)
+ 
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun group(column: AnyColumnGroupAccessor, body: AddDsl<T>.() -> Unit): Unit = group(column.name(), body)
++    public fun group(column: ColumnAccessor<DataRow<*>>, body: AddDsl<T>.() -> Unit): Unit = group(column.name(), body)
+ 
+     @Interpretable("AddDslNamedGroup")
+     public fun group(name: String, body: AddDsl<T>.() -> Unit) {
+@@ -375,7 +373,7 @@ public class AddDsl<T>(
+ 
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public infix fun AddGroup<T>.into(column: AnyColumnGroupAccessor): Unit = into(column.name())
++    public infix fun AddGroup<T>.into(column: ColumnAccessor<DataRow<*>>): Unit = into(column.name())
+ }
+ 
+ /**
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/addId.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/addId.kt
+index 7a79701..3d470b5 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/addId.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/addId.kt
+@@ -1,6 +1,6 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyCol
++import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.annotations.AccessApiOverload
+ import org.jetbrains.kotlinx.dataframe.annotations.Interpretable
+@@ -10,7 +10,7 @@ import org.jetbrains.kotlinx.dataframe.util.DEPRECATED_ACCESS_API
+ 
+ // region DataColumn
+ 
+-public fun AnyCol.addId(columnName: String = "id"): DataFrame<*> = toDataFrame().addId(columnName)
++public fun DataColumn<*>.addId(columnName: String = "id"): DataFrame<*> = toDataFrame().addId(columnName)
+ 
+ // endregion
+ 
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/all.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/all.kt
+index 8ec3d2b..6a73f8e 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/all.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/all.kt
+@@ -1,7 +1,6 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+ import org.jetbrains.kotlinx.dataframe.AnyCol
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.AnyRow
+ import org.jetbrains.kotlinx.dataframe.ColumnFilter
+ import org.jetbrains.kotlinx.dataframe.ColumnSelector
+@@ -14,6 +13,7 @@ import org.jetbrains.kotlinx.dataframe.annotations.AccessApiOverload
+ import org.jetbrains.kotlinx.dataframe.annotations.Interpretable
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnGroup
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnPath
++import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnSet
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnWithPath
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnsResolver
+@@ -377,7 +377,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+ 
+     /** @include [ColumnSetAllAfterDocs] {@set [ColumnSetAllAfterDocs.Arg] (myColumn)} */
+     @Interpretable("AllAfter0")
+-    public fun <C> ColumnSet<C>.allAfter(column: AnyColumnReference): ColumnSet<C> = allAfter(column.path())
++    public fun <C> ColumnSet<C>.allAfter(column: ColumnReference<*>): ColumnSet<C> = allAfter(column.path())
+ 
+     /** @include [ColumnSetAllAfterDocs] {@set [ColumnSetAllAfterDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+@@ -412,7 +412,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+ 
+     /** @include [ColumnsSelectionDslAllAfterDocs] {@set [ColumnsSelectionDslAllAfterDocs.Arg] (myColumn)} */
+     @Interpretable("AllAfter2")
+-    public fun ColumnsSelectionDsl<*>.allAfter(column: AnyColumnReference): ColumnSet<*> = allAfter(column.path())
++    public fun ColumnsSelectionDsl<*>.allAfter(column: ColumnReference<*>): ColumnSet<*> = allAfter(column.path())
+ 
+     /** @include [ColumnsSelectionDslAllAfterDocs] {@set [ColumnsSelectionDslAllAfterDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+@@ -458,7 +458,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun SingleColumn<DataRow<*>>.allColsAfter(column: String): ColumnSet<*> = allColsAfter(pathOf(column))
+ 
+     /** @include [SingleColumnAllAfterDocs] {@set [SingleColumnAllAfterDocs.Arg] (myColumn)} */
+-    public fun SingleColumn<DataRow<*>>.allColsAfter(column: AnyColumnReference): ColumnSet<*> =
++    public fun SingleColumn<DataRow<*>>.allColsAfter(column: ColumnReference<*>): ColumnSet<*> =
+         allColsAfter(column.path())
+ 
+     /** @include [SingleColumnAllAfterDocs] {@set [SingleColumnAllAfterDocs.Arg] (Type::myColumn)} */
+@@ -490,7 +490,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun String.allColsAfter(column: String): ColumnSet<*> = columnGroup(this).allColsAfter(column)
+ 
+     /** @include [StringAllAfterDocs] {@set [StringAllAfterDocs.Arg] (myColumn)} */
+-    public fun String.allColsAfter(column: AnyColumnReference): ColumnSet<*> = columnGroup(this).allColsAfter(column)
++    public fun String.allColsAfter(column: ColumnReference<*>): ColumnSet<*> = columnGroup(this).allColsAfter(column)
+ 
+     /** @include [StringAllAfterDocs] {@set [StringAllAfterDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+@@ -531,7 +531,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     /** @include [KPropertyAllAfterDocs] {@set [KPropertyAllAfterDocs.Arg] (myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun KProperty<*>.allColsAfter(column: AnyColumnReference): ColumnSet<*> =
++    public fun KProperty<*>.allColsAfter(column: ColumnReference<*>): ColumnSet<*> =
+         columnGroup(this).allColsAfter(column)
+ 
+     /** @include [KPropertyAllAfterDocs] {@set [KPropertyAllAfterDocs.Arg] (Type::myColumn)} */
+@@ -563,7 +563,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun ColumnPath.allColsAfter(column: String): ColumnSet<*> = columnGroup(this).allColsAfter(column)
+ 
+     /** @include [ColumnPathAllAfterDocs] {@set [ColumnPathAllAfterDocs.Arg] (myColumn)} */
+-    public fun ColumnPath.allColsAfter(column: AnyColumnReference): ColumnSet<*> =
++    public fun ColumnPath.allColsAfter(column: ColumnReference<*>): ColumnSet<*> =
+         columnGroup(this).allColsAfter(column)
+ 
+     /** @include [ColumnPathAllAfterDocs] {@set [ColumnPathAllAfterDocs.Arg] (Type::myColumn)} */
+@@ -616,7 +616,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+ 
+     /** @include [ColumnSetAllFromDocs] {@set [ColumnSetAllFromDocs.Arg] (myColumn)} */
+     @Interpretable("AllFrom0")
+-    public fun <C> ColumnSet<C>.allFrom(column: AnyColumnReference): ColumnSet<C> = allFrom(column.path())
++    public fun <C> ColumnSet<C>.allFrom(column: ColumnReference<*>): ColumnSet<C> = allFrom(column.path())
+ 
+     /** @include [ColumnSetAllFromDocs] {@set [ColumnSetAllFromDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+@@ -649,7 +649,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+ 
+     /** @include [ColumnsSelectionDslAllFromDocs] {@set [ColumnsSelectionDslAllFromDocs.Arg] (myColumn)} */
+     @Interpretable("AllFrom2")
+-    public fun ColumnsSelectionDsl<*>.allFrom(column: AnyColumnReference): ColumnSet<*> =
++    public fun ColumnsSelectionDsl<*>.allFrom(column: ColumnReference<*>): ColumnSet<*> =
+         asSingleColumn().allColsFrom(column)
+ 
+     /** @include [ColumnsSelectionDslAllFromDocs] {@set [ColumnsSelectionDslAllFromDocs.Arg] (Type::myColumn)} */
+@@ -695,7 +695,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun SingleColumn<DataRow<*>>.allColsFrom(column: String): ColumnSet<*> = allColsFrom(pathOf(column))
+ 
+     /** @include [SingleColumnAllFromDocs] {@set [SingleColumnAllFromDocs.Arg] (myColumn)} */
+-    public fun SingleColumn<DataRow<*>>.allColsFrom(column: AnyColumnReference): ColumnSet<*> =
++    public fun SingleColumn<DataRow<*>>.allColsFrom(column: ColumnReference<*>): ColumnSet<*> =
+         allColsFrom(column.path())
+ 
+     /** @include [SingleColumnAllFromDocs] {@set [SingleColumnAllFromDocs.Arg] (Type::myColumn)} */
+@@ -727,7 +727,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun String.allColsFrom(column: String): ColumnSet<*> = columnGroup(this).allColsFrom(column)
+ 
+     /** @include [StringAllFromDocs] {@set [StringAllFromDocs.Arg] (myColumn)} */
+-    public fun String.allColsFrom(column: AnyColumnReference): ColumnSet<*> = columnGroup(this).allColsFrom(column)
++    public fun String.allColsFrom(column: ColumnReference<*>): ColumnSet<*> = columnGroup(this).allColsFrom(column)
+ 
+     /** @include [StringAllFromDocs] {@set [StringAllFromDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+@@ -768,7 +768,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     /** @include [KPropertyAllFromDocs] {@set [KPropertyAllFromDocs.Arg] (myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun KProperty<*>.allColsFrom(column: AnyColumnReference): ColumnSet<*> =
++    public fun KProperty<*>.allColsFrom(column: ColumnReference<*>): ColumnSet<*> =
+         columnGroup(this).allColsFrom(column)
+ 
+     /** @include [KPropertyAllFromDocs] {@set [KPropertyAllFromDocs.Arg] (Type::myColumn)} */
+@@ -800,7 +800,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun ColumnPath.allColsFrom(column: String): ColumnSet<*> = columnGroup(this).allColsFrom(column)
+ 
+     /** @include [ColumnPathAllFromDocs] {@set [ColumnPathAllFromDocs.Arg] (myColumn)} */
+-    public fun ColumnPath.allColsFrom(column: AnyColumnReference): ColumnSet<*> = columnGroup(this).allColsFrom(column)
++    public fun ColumnPath.allColsFrom(column: ColumnReference<*>): ColumnSet<*> = columnGroup(this).allColsFrom(column)
+ 
+     /** @include [ColumnPathAllFromDocs] {@set [ColumnPathAllFromDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+@@ -851,7 +851,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+ 
+     /** @include [ColumnSetAllBeforeDocs] {@set [ColumnSetAllBeforeDocs.Arg] (myColumn)} */
+     @Interpretable("AllBefore0")
+-    public fun <C> ColumnSet<C>.allBefore(column: AnyColumnReference): ColumnSet<C> = allBefore(column.path())
++    public fun <C> ColumnSet<C>.allBefore(column: ColumnReference<*>): ColumnSet<C> = allBefore(column.path())
+ 
+     /** @include [ColumnSetAllBeforeDocs] {@set [ColumnSetAllBeforeDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+@@ -887,7 +887,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+ 
+     /** @include [ColumnsSelectionDslAllBeforeDocs] {@set [ColumnsSelectionDslAllBeforeDocs.Arg] (myColumn)} */
+     @Interpretable("AllBefore2")
+-    public fun ColumnsSelectionDsl<*>.allBefore(column: AnyColumnReference): ColumnSet<*> = allBefore(column.path())
++    public fun ColumnsSelectionDsl<*>.allBefore(column: ColumnReference<*>): ColumnSet<*> = allBefore(column.path())
+ 
+     /** @include [ColumnsSelectionDslAllBeforeDocs] {@set [ColumnsSelectionDslAllBeforeDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+@@ -930,7 +930,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun SingleColumn<DataRow<*>>.allColsBefore(column: String): ColumnSet<*> = allColsBefore(pathOf(column))
+ 
+     /** @include [SingleColumnAllBeforeDocs] {@set [SingleColumnAllBeforeDocs.Arg] (myColumn)} */
+-    public fun SingleColumn<DataRow<*>>.allColsBefore(column: AnyColumnReference): ColumnSet<*> =
++    public fun SingleColumn<DataRow<*>>.allColsBefore(column: ColumnReference<*>): ColumnSet<*> =
+         allColsBefore(column.path())
+ 
+     /** @include [SingleColumnAllBeforeDocs] {@set [SingleColumnAllBeforeDocs.Arg] (Type::myColumn)} */
+@@ -963,7 +963,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun String.allColsBefore(column: String): ColumnSet<*> = columnGroup(this).allColsBefore(column)
+ 
+     /** @include [StringAllBeforeDocs] {@set [StringAllBeforeDocs.Arg] (myColumn)} */
+-    public fun String.allColsBefore(column: AnyColumnReference): ColumnSet<*> = columnGroup(this).allColsBefore(column)
++    public fun String.allColsBefore(column: ColumnReference<*>): ColumnSet<*> = columnGroup(this).allColsBefore(column)
+ 
+     /** @include [StringAllBeforeDocs] {@set [StringAllBeforeDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+@@ -1004,7 +1004,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     /** @include [KPropertyAllBeforeDocs] {@set [KPropertyAllBeforeDocs.Arg] (myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun KProperty<*>.allColsBefore(column: AnyColumnReference): ColumnSet<*> =
++    public fun KProperty<*>.allColsBefore(column: ColumnReference<*>): ColumnSet<*> =
+         columnGroup(this).allColsBefore(column)
+ 
+     /** @include [KPropertyAllBeforeDocs] {@set [KPropertyAllBeforeDocs.Arg] (Type::myColumn)} */
+@@ -1036,7 +1036,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun ColumnPath.allColsBefore(column: String): ColumnSet<*> = columnGroup(this).allColsBefore(column)
+ 
+     /** @include [ColumnPathAllBeforeDocs] {@set [ColumnPathAllBeforeDocs.Arg] (myColumn)} */
+-    public fun ColumnPath.allColsBefore(column: AnyColumnReference): ColumnSet<*> =
++    public fun ColumnPath.allColsBefore(column: ColumnReference<*>): ColumnSet<*> =
+         columnGroup(this).allColsBefore(column)
+ 
+     /** @include [ColumnPathAllBeforeDocs] {@set [ColumnPathAllBeforeDocs.Arg] (Type::myColumn)} */
+@@ -1088,7 +1088,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+ 
+     /** @include [ColumnSetAllUpToDocs] {@set [ColumnSetAllUpToDocs.Arg] (myColumn)} */
+     @Interpretable("AllUpTo0")
+-    public fun <C> ColumnSet<C>.allUpTo(column: AnyColumnReference): ColumnSet<C> = allUpTo(column.path())
++    public fun <C> ColumnSet<C>.allUpTo(column: ColumnReference<*>): ColumnSet<C> = allUpTo(column.path())
+ 
+     /** @include [ColumnSetAllUpToDocs] {@set [ColumnSetAllUpToDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+@@ -1122,7 +1122,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+ 
+     /** @include [ColumnsSelectionDslAllUpToDocs] {@set [ColumnsSelectionDslAllUpToDocs.Arg] (myColumn)} */
+     @Interpretable("AllUpTo2")
+-    public fun ColumnsSelectionDsl<*>.allUpTo(column: AnyColumnReference): ColumnSet<*> =
++    public fun ColumnsSelectionDsl<*>.allUpTo(column: ColumnReference<*>): ColumnSet<*> =
+         asSingleColumn().allColsUpTo(column)
+ 
+     /** @include [ColumnsSelectionDslAllUpToDocs] {@set [ColumnsSelectionDslAllUpToDocs.Arg] (Type::myColumn)} */
+@@ -1168,7 +1168,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun SingleColumn<DataRow<*>>.allColsUpTo(column: String): ColumnSet<*> = allColsUpTo(pathOf(column))
+ 
+     /** @include [SingleColumnAllUpToDocs] {@set [SingleColumnAllUpToDocs.Arg] (myColumn)} */
+-    public fun SingleColumn<DataRow<*>>.allColsUpTo(column: AnyColumnReference): ColumnSet<*> =
++    public fun SingleColumn<DataRow<*>>.allColsUpTo(column: ColumnReference<*>): ColumnSet<*> =
+         allColsUpTo(column.path())
+ 
+     /** @include [SingleColumnAllUpToDocs] {@set [SingleColumnAllUpToDocs.Arg] (Type::myColumn)} */
+@@ -1200,7 +1200,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun String.allColsUpTo(column: String): ColumnSet<*> = columnGroup(this).allColsUpTo(column)
+ 
+     /** @include [StringAllUpToDocs] {@set [StringAllUpToDocs.Arg] (myColumn)} */
+-    public fun String.allColsUpTo(column: AnyColumnReference): ColumnSet<*> = columnGroup(this).allColsUpTo(column)
++    public fun String.allColsUpTo(column: ColumnReference<*>): ColumnSet<*> = columnGroup(this).allColsUpTo(column)
+ 
+     /** @include [StringAllUpToDocs] {@set [StringAllUpToDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+@@ -1241,7 +1241,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     /** @include [KPropertyAllUpToDocs] {@set [KPropertyAllUpToDocs.Arg] (myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun KProperty<*>.allColsUpTo(column: AnyColumnReference): ColumnSet<*> =
++    public fun KProperty<*>.allColsUpTo(column: ColumnReference<*>): ColumnSet<*> =
+         columnGroup(this).allColsUpTo(column)
+ 
+     /** @include [KPropertyAllUpToDocs] {@set [KPropertyAllUpToDocs.Arg] (Type::myColumn)} */
+@@ -1273,7 +1273,7 @@ public interface AllColumnsSelectionDsl<out _UNUSED> {
+     public fun ColumnPath.allColsUpTo(column: String): ColumnSet<*> = columnGroup(this).allColsUpTo(column)
+ 
+     /** @include [ColumnPathAllUpToDocs] {@set [ColumnPathAllUpToDocs.Arg] (myColumn)} */
+-    public fun ColumnPath.allColsUpTo(column: AnyColumnReference): ColumnSet<*> = columnGroup(this).allColsUpTo(column)
++    public fun ColumnPath.allColsUpTo(column: ColumnReference<*>): ColumnSet<*> = columnGroup(this).allColsUpTo(column)
+ 
+     /** @include [ColumnPathAllUpToDocs] {@set [ColumnPathAllUpToDocs.Arg] (Type::myColumn)} */
+     @Deprecated(DEPRECATED_ACCESS_API)
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/cast.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/cast.kt
+index 7762888..bbaef55 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/cast.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/cast.kt
+@@ -2,7 +2,6 @@
+ 
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.DataRow
+@@ -77,7 +76,7 @@ public fun <T> DataRow<*>.cast(): DataRow<T> = this as DataRow<T>
+ public inline fun <reified T> DataRow<*>.cast(verify: Boolean = true): DataRow<T> = df().cast<T>(verify)[0]
+ 
+ @Interpretable("AnyColCast")
+-public fun <T> AnyCol.cast(): DataColumn<T> = this as DataColumn<T>
++public fun <T> DataColumn<*>.cast(): DataColumn<T> = this as DataColumn<T>
+ 
+ public fun <T> ValueColumn<*>.cast(): ValueColumn<T> = this as ValueColumn<T>
+ 
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/col.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/col.kt
+index 3a73bff..d5a6bac 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/col.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/col.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnGroupAccessor
+ import org.jetbrains.kotlinx.dataframe.ColumnGroupReference
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.DataRow
+@@ -185,7 +184,7 @@ public interface ColColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun <C> AnyColumnGroupAccessor.col(col: ColumnAccessor<C>): ColumnAccessor<C> =
++    public fun <C> ColumnAccessor<DataRow<*>>.col(col: ColumnAccessor<C>): ColumnAccessor<C> =
+         this.ensureIsColumnGroup().column(col.path())
+ 
+     /**
+@@ -264,13 +263,14 @@ public interface ColColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Suppress("INAPPLICABLE_JVM_NAME")
+     @JvmName("colUnTyped")
+-    public fun AnyColumnGroupAccessor.col(name: String): ColumnAccessor<*> = col<Any?>(name)
++    public fun ColumnAccessor<DataRow<*>>.col(name: String): ColumnAccessor<*> = col<Any?>(name)
+ 
+     /**
+      * @include [ColNameDocs] {@set [CommonColDocs.RECEIVER] myColumnGroup.}
+      * @include [CommonColDocs.ColumnTypeParam]
+      */
+-    public fun <C> AnyColumnGroupAccessor.col(name: String): ColumnAccessor<C> = this.ensureIsColumnGroup().column(name)
++    public fun <C> ColumnAccessor<DataRow<*>>.col(name: String): ColumnAccessor<C> =
++        this.ensureIsColumnGroup().column(name)
+ 
+     /**
+      * @include [ColNameDocs] {@set [CommonColDocs.RECEIVER] "myColumnGroup".}
+@@ -372,13 +372,13 @@ public interface ColColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Suppress("INAPPLICABLE_JVM_NAME")
+     @JvmName("colUnTyped")
+-    public fun AnyColumnGroupAccessor.col(path: ColumnPath): ColumnAccessor<*> = col<Any?>(path)
++    public fun ColumnAccessor<DataRow<*>>.col(path: ColumnPath): ColumnAccessor<*> = col<Any?>(path)
+ 
+     /**
+      * @include [ColPathDocs] {@set [CommonColDocs.RECEIVER] myColumnGroup.}
+      * @include [CommonColDocs.ColumnTypeParam]
+      */
+-    public fun <C> AnyColumnGroupAccessor.col(path: ColumnPath): ColumnAccessor<C> =
++    public fun <C> ColumnAccessor<DataRow<*>>.col(path: ColumnPath): ColumnAccessor<C> =
+         this.ensureIsColumnGroup().column(path)
+ 
+     /**
+@@ -459,7 +459,7 @@ public interface ColColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun <C> AnyColumnGroupAccessor.col(property: KProperty<C>): ColumnAccessor<C> =
++    public fun <C> ColumnAccessor<DataRow<*>>.col(property: KProperty<C>): ColumnAccessor<C> =
+         this.ensureIsColumnGroup().column(property)
+ 
+     /**
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/colGroup.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/colGroup.kt
+index b310103..8e659ed 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/colGroup.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/colGroup.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnGroupAccessor
+ import org.jetbrains.kotlinx.dataframe.ColumnGroupReference
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.DataRow
+@@ -189,8 +188,9 @@ public interface ColGroupColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun <C> AnyColumnGroupAccessor.colGroup(colGroup: ColumnAccessor<DataRow<C>>): ColumnAccessor<DataRow<C>> =
+-        this.ensureIsColumnGroup().columnGroup<C>(colGroup.path()).ensureIsColumnGroup()
++    public fun <C> ColumnAccessor<DataRow<*>>.colGroup(
++        colGroup: ColumnAccessor<DataRow<C>>,
++    ): ColumnAccessor<DataRow<C>> = this.ensureIsColumnGroup().columnGroup<C>(colGroup.path()).ensureIsColumnGroup()
+ 
+     /**
+      * @include [ColGroupReferenceDocs] {@set [CommonColGroupDocs.RECEIVER] "myColumnGroup".}
+@@ -265,13 +265,13 @@ public interface ColGroupColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Suppress("INAPPLICABLE_JVM_NAME")
+     @JvmName("colGroupUnTyped")
+-    public fun AnyColumnGroupAccessor.colGroup(name: String): ColumnAccessor<DataRow<*>> = colGroup<Any?>(name)
++    public fun ColumnAccessor<DataRow<*>>.colGroup(name: String): ColumnAccessor<DataRow<*>> = colGroup<Any?>(name)
+ 
+     /**
+      * @include [ColGroupNameDocs] {@set [CommonColGroupDocs.RECEIVER] myColumnGroup.}
+      * @include [CommonColGroupDocs.ColumnGroupTypeParam]
+      */
+-    public fun <C> AnyColumnGroupAccessor.colGroup(name: String): ColumnAccessor<DataRow<C>> =
++    public fun <C> ColumnAccessor<DataRow<*>>.colGroup(name: String): ColumnAccessor<DataRow<C>> =
+         this.ensureIsColumnGroup().columnGroup<C>(name).ensureIsColumnGroup()
+ 
+     /**
+@@ -370,13 +370,13 @@ public interface ColGroupColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Suppress("INAPPLICABLE_JVM_NAME")
+     @JvmName("colGroupUnTyped")
+-    public fun AnyColumnGroupAccessor.colGroup(path: ColumnPath): ColumnAccessor<DataRow<*>> = colGroup<Any?>(path)
++    public fun ColumnAccessor<DataRow<*>>.colGroup(path: ColumnPath): ColumnAccessor<DataRow<*>> = colGroup<Any?>(path)
+ 
+     /**
+      * @include [ColGroupPathDocs] {@set [CommonColGroupDocs.RECEIVER] myColumnGroup.}
+      * @include [CommonColGroupDocs.ColumnGroupTypeParam]
+      */
+-    public fun <C> AnyColumnGroupAccessor.colGroup(path: ColumnPath): ColumnAccessor<DataRow<C>> =
++    public fun <C> ColumnAccessor<DataRow<*>>.colGroup(path: ColumnPath): ColumnAccessor<DataRow<C>> =
+         this.ensureIsColumnGroup().columnGroup<C>(path).ensureIsColumnGroup()
+ 
+     /**
+@@ -481,7 +481,7 @@ public interface ColGroupColumnsSelectionDsl<out _UNUSED> {
+     @JvmName("colGroupDataRowKProperty")
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun <C> AnyColumnGroupAccessor.colGroup(property: KProperty<DataRow<C>>): ColumnAccessor<DataRow<C>> =
++    public fun <C> ColumnAccessor<DataRow<*>>.colGroup(property: KProperty<DataRow<C>>): ColumnAccessor<DataRow<C>> =
+         this.ensureIsColumnGroup().columnGroup(property).ensureIsColumnGroup()
+ 
+     /**
+@@ -489,7 +489,7 @@ public interface ColGroupColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun <C> AnyColumnGroupAccessor.colGroup(property: KProperty<C>): ColumnAccessor<DataRow<C>> =
++    public fun <C> ColumnAccessor<DataRow<*>>.colGroup(property: KProperty<C>): ColumnAccessor<DataRow<C>> =
+         this.ensureIsColumnGroup().columnGroup(property).ensureIsColumnGroup()
+ 
+     /**
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/columnRange.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/columnRange.kt
+index 5c9ac29..5172648 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/columnRange.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/columnRange.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.annotations.AccessApiOverload
+ import org.jetbrains.kotlinx.dataframe.annotations.Interpretable
+@@ -96,7 +95,7 @@ public interface ColumnRangeColumnsSelectionDsl {
+      * @include [CommonRangeOfColumnsDocs]
+      * {@set [CommonRangeOfColumnsDocs.Example] `"fromColumn"`[`..`][String.rangeTo]`toColumn`}
+      */
+-    public operator fun String.rangeTo(endInclusive: AnyColumnReference): ColumnSet<*> =
++    public operator fun String.rangeTo(endInclusive: ColumnReference<*>): ColumnSet<*> =
+         toColumnAccessor().rangeTo(endInclusive)
+ 
+     /**
+@@ -123,21 +122,21 @@ public interface ColumnRangeColumnsSelectionDsl {
+      */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public operator fun KProperty<*>.rangeTo(endInclusive: AnyColumnReference): ColumnSet<*> =
++    public operator fun KProperty<*>.rangeTo(endInclusive: ColumnReference<*>): ColumnSet<*> =
+         toColumnAccessor().rangeTo(endInclusive)
+ 
+     /**
+      * @include [CommonRangeOfColumnsDocs]
+      * {@set [CommonRangeOfColumnsDocs.Example] `fromColumn`[`..`][ColumnReference.rangeTo]`"toColumn"`}
+      */
+-    public operator fun AnyColumnReference.rangeTo(endInclusive: String): ColumnSet<*> =
++    public operator fun ColumnReference<*>.rangeTo(endInclusive: String): ColumnSet<*> =
+         rangeTo(endInclusive.toColumnAccessor())
+ 
+     /**
+      * @include [CommonRangeOfColumnsDocs]
+      * {@set [CommonRangeOfColumnsDocs.Example] `fromColumn`[`..`][ColumnReference.rangeTo]`Type::toColumn`}
+      */
+-    public operator fun AnyColumnReference.rangeTo(endInclusive: KProperty<*>): ColumnSet<*> =
++    public operator fun ColumnReference<*>.rangeTo(endInclusive: KProperty<*>): ColumnSet<*> =
+         rangeTo(endInclusive.toColumnAccessor())
+ 
+     /**
+@@ -145,7 +144,7 @@ public interface ColumnRangeColumnsSelectionDsl {
+      * {@set [CommonRangeOfColumnsDocs.Example] `fromColumn`[`..`][ColumnReference.rangeTo]`toColumn`}
+      */
+     @Interpretable("ColumnRange")
+-    public operator fun AnyColumnReference.rangeTo(endInclusive: AnyColumnReference): ColumnSet<*> =
++    public operator fun ColumnReference<*>.rangeTo(endInclusive: ColumnReference<*>): ColumnSet<*> =
+         createColumnSet { context ->
+             val startPath = this@rangeTo.resolveSingle(context)!!.path
+             val endPath = endInclusive.resolveSingle(context)!!.path
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/constructors.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/constructors.kt
+index 33a4c84..f80d3ea 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/constructors.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/constructors.kt
+@@ -1,7 +1,6 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+ import org.jetbrains.kotlinx.dataframe.AnyCol
+-import org.jetbrains.kotlinx.dataframe.ColumnGroupReference
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.DataRow
+@@ -53,15 +52,16 @@ public fun <T> column(path: ColumnPath): ColumnAccessor<T> = ColumnAccessorImpl(
+ @AccessApiOverload
+ public fun <T> column(property: KProperty<T>): ColumnAccessor<T> = ColumnAccessorImpl(property.name)
+ 
+-public fun <T> ColumnGroupReference.column(): ColumnDelegate<T> = ColumnDelegate(this)
++public fun <T> ColumnReference<DataRow<*>>.column(): ColumnDelegate<T> = ColumnDelegate(this)
+ 
+-public fun <T> ColumnGroupReference.column(name: String): ColumnAccessor<T> = ColumnAccessorImpl(path() + name)
++public fun <T> ColumnReference<DataRow<*>>.column(name: String): ColumnAccessor<T> = ColumnAccessorImpl(path() + name)
+ 
+-public fun <T> ColumnGroupReference.column(path: ColumnPath): ColumnAccessor<T> = ColumnAccessorImpl(this.path() + path)
++public fun <T> ColumnReference<DataRow<*>>.column(path: ColumnPath): ColumnAccessor<T> =
++    ColumnAccessorImpl(this.path() + path)
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> ColumnGroupReference.column(property: KProperty<T>): ColumnAccessor<T> =
++public fun <T> ColumnReference<DataRow<*>>.column(property: KProperty<T>): ColumnAccessor<T> =
+     ColumnAccessorImpl(this.path() + property.name)
+ 
+ public inline fun <reified T> column(
+@@ -101,26 +101,28 @@ public fun <T> valueColumn(path: ColumnPath): ColumnAccessor<T> = column(path)
+ @AccessApiOverload
+ public fun <T> valueColumn(property: KProperty<T>): ColumnAccessor<T> = column(property.name)
+ 
+-public fun ColumnGroupReference.valueColumn(): ColumnDelegate<Any?> = ColumnDelegate(this)
++public fun ColumnReference<DataRow<*>>.valueColumn(): ColumnDelegate<Any?> = ColumnDelegate(this)
+ 
+ @JvmName("valueColumnTyped")
+-public fun <T> ColumnGroupReference.valueColumn(): ColumnDelegate<T> = ColumnDelegate(this)
++public fun <T> ColumnReference<DataRow<*>>.valueColumn(): ColumnDelegate<T> = ColumnDelegate(this)
+ 
+-public fun ColumnGroupReference.valueColumn(name: String): ColumnAccessor<Any?> = ColumnAccessorImpl(path() + name)
++public fun ColumnReference<DataRow<*>>.valueColumn(name: String): ColumnAccessor<Any?> =
++    ColumnAccessorImpl(path() + name)
+ 
+ @JvmName("valueColumnTyped")
+-public fun <T> ColumnGroupReference.valueColumn(name: String): ColumnAccessor<T> = ColumnAccessorImpl(path() + name)
++public fun <T> ColumnReference<DataRow<*>>.valueColumn(name: String): ColumnAccessor<T> =
++    ColumnAccessorImpl(path() + name)
+ 
+-public fun ColumnGroupReference.valueColumn(path: ColumnPath): ColumnAccessor<Any?> =
++public fun ColumnReference<DataRow<*>>.valueColumn(path: ColumnPath): ColumnAccessor<Any?> =
+     ColumnAccessorImpl(this.path() + path)
+ 
+ @JvmName("valueColumnTyped")
+-public fun <T> ColumnGroupReference.valueColumn(path: ColumnPath): ColumnAccessor<T> =
++public fun <T> ColumnReference<DataRow<*>>.valueColumn(path: ColumnPath): ColumnAccessor<T> =
+     ColumnAccessorImpl(this.path() + path)
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> ColumnGroupReference.valueColumn(property: KProperty<T>): ColumnAccessor<T> =
++public fun <T> ColumnReference<DataRow<*>>.valueColumn(property: KProperty<T>): ColumnAccessor<T> =
+     ColumnAccessorImpl(this.path() + property.name)
+ 
+ // endregion
+@@ -151,34 +153,34 @@ public fun <T> columnGroup(property: KProperty<DataRow<T>>): ColumnAccessor<Data
+ @AccessApiOverload
+ public fun <T> columnGroup(property: KProperty<T>): ColumnAccessor<DataRow<T>> = column(property.name)
+ 
+-public fun ColumnGroupReference.columnGroup(): ColumnDelegate<DataRow<*>> = ColumnDelegate(this)
++public fun ColumnReference<DataRow<*>>.columnGroup(): ColumnDelegate<DataRow<*>> = ColumnDelegate(this)
+ 
+ @JvmName("columnGroupTyped")
+-public fun <T> ColumnGroupReference.columnGroup(): ColumnDelegate<DataRow<T>> = ColumnDelegate(this)
++public fun <T> ColumnReference<DataRow<*>>.columnGroup(): ColumnDelegate<DataRow<T>> = ColumnDelegate(this)
+ 
+-public fun ColumnGroupReference.columnGroup(name: String): ColumnAccessor<DataRow<*>> =
++public fun ColumnReference<DataRow<*>>.columnGroup(name: String): ColumnAccessor<DataRow<*>> =
+     ColumnAccessorImpl(path() + name)
+ 
+ @JvmName("columnGroupTyped")
+-public fun <T> ColumnGroupReference.columnGroup(name: String): ColumnAccessor<DataRow<T>> =
++public fun <T> ColumnReference<DataRow<*>>.columnGroup(name: String): ColumnAccessor<DataRow<T>> =
+     ColumnAccessorImpl(path() + name)
+ 
+-public fun ColumnGroupReference.columnGroup(path: ColumnPath): ColumnAccessor<DataRow<*>> =
++public fun ColumnReference<DataRow<*>>.columnGroup(path: ColumnPath): ColumnAccessor<DataRow<*>> =
+     ColumnAccessorImpl(this.path() + path)
+ 
+ @JvmName("columnGroupTyped")
+-public fun <T> ColumnGroupReference.columnGroup(path: ColumnPath): ColumnAccessor<DataRow<T>> =
++public fun <T> ColumnReference<DataRow<*>>.columnGroup(path: ColumnPath): ColumnAccessor<DataRow<T>> =
+     ColumnAccessorImpl(this.path() + path)
+ 
+ @JvmName("columnGroupDataRowKProperty")
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> ColumnGroupReference.columnGroup(property: KProperty<DataRow<T>>): ColumnAccessor<DataRow<T>> =
++public fun <T> ColumnReference<DataRow<*>>.columnGroup(property: KProperty<DataRow<T>>): ColumnAccessor<DataRow<T>> =
+     ColumnAccessorImpl(this.path() + property.name)
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> ColumnGroupReference.columnGroup(property: KProperty<T>): ColumnAccessor<DataRow<T>> =
++public fun <T> ColumnReference<DataRow<*>>.columnGroup(property: KProperty<T>): ColumnAccessor<DataRow<T>> =
+     ColumnAccessorImpl(this.path() + property.name)
+ 
+ // endregion
+@@ -209,39 +211,40 @@ public fun <T> frameColumn(property: KProperty<DataFrame<T>>): ColumnAccessor<Da
+ @AccessApiOverload
+ public fun <T> frameColumn(property: KProperty<List<T>>): ColumnAccessor<DataFrame<T>> = column(property.name)
+ 
+-public fun ColumnGroupReference.frameColumn(): ColumnDelegate<DataFrame<*>> = ColumnDelegate(this)
++public fun ColumnReference<DataRow<*>>.frameColumn(): ColumnDelegate<DataFrame<*>> = ColumnDelegate(this)
+ 
+ @JvmName("frameColumnTyped")
+-public fun <T> ColumnGroupReference.frameColumn(): ColumnDelegate<DataFrame<T>> = ColumnDelegate(this)
++public fun <T> ColumnReference<DataRow<*>>.frameColumn(): ColumnDelegate<DataFrame<T>> = ColumnDelegate(this)
+ 
+-public fun ColumnGroupReference.frameColumn(name: String): ColumnAccessor<DataFrame<*>> =
++public fun ColumnReference<DataRow<*>>.frameColumn(name: String): ColumnAccessor<DataFrame<*>> =
+     ColumnAccessorImpl(path() + name)
+ 
+ @JvmName("frameColumnTyped")
+-public fun <T> ColumnGroupReference.frameColumn(name: String): ColumnAccessor<DataFrame<T>> =
++public fun <T> ColumnReference<DataRow<*>>.frameColumn(name: String): ColumnAccessor<DataFrame<T>> =
+     ColumnAccessorImpl(path() + name)
+ 
+-public fun ColumnGroupReference.frameColumn(path: ColumnPath): ColumnAccessor<DataFrame<*>> =
++public fun ColumnReference<DataRow<*>>.frameColumn(path: ColumnPath): ColumnAccessor<DataFrame<*>> =
+     ColumnAccessorImpl(this.path() + path)
+ 
+ @JvmName("frameColumnTyped")
+-public fun <T> ColumnGroupReference.frameColumn(path: ColumnPath): ColumnAccessor<DataFrame<T>> =
++public fun <T> ColumnReference<DataRow<*>>.frameColumn(path: ColumnPath): ColumnAccessor<DataFrame<T>> =
+     ColumnAccessorImpl(this.path() + path)
+ 
+ @JvmName("frameColumnDataFrameKProperty")
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> ColumnGroupReference.frameColumn(property: KProperty<DataFrame<T>>): ColumnAccessor<DataFrame<T>> =
+-    ColumnAccessorImpl(this.path() + property.name)
++public fun <T> ColumnReference<DataRow<*>>.frameColumn(
++    property: KProperty<DataFrame<T>>,
++): ColumnAccessor<DataFrame<T>> = ColumnAccessorImpl(this.path() + property.name)
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> ColumnGroupReference.frameColumn(property: KProperty<List<T>>): ColumnAccessor<DataFrame<T>> =
++public fun <T> ColumnReference<DataRow<*>>.frameColumn(property: KProperty<List<T>>): ColumnAccessor<DataFrame<T>> =
+     ColumnAccessorImpl(this.path() + property.name)
+ 
+ // endregion
+ 
+-public class ColumnDelegate<T>(private val parent: ColumnGroupReference? = null) {
++public class ColumnDelegate<T>(private val parent: ColumnReference<DataRow<*>>? = null) {
+     public operator fun getValue(thisRef: Any?, property: KProperty<*>): ColumnAccessor<T> = named(property.columnName)
+ 
+     public infix fun named(name: String): ColumnAccessor<T> =
+@@ -384,9 +387,9 @@ public fun dataFrameOf(header: CharProgression): DataFrameBuilder = dataFrameOf(
+ 
+ public class DataFrameBuilder(private val header: List<String>) {
+ 
+-    public operator fun invoke(vararg columns: AnyCol): DataFrame<*> = invoke(columns.asIterable())
++    public operator fun invoke(vararg columns: DataColumn<*>): DataFrame<*> = invoke(columns.asIterable())
+ 
+-    public operator fun invoke(columns: Iterable<AnyCol>): DataFrame<*> {
++    public operator fun invoke(columns: Iterable<DataColumn<*>>): DataFrame<*> {
+         val cols = columns.asList()
+         require(cols.size == header.size) { "Number of columns differs from number of column names" }
+         return cols.mapIndexed { i, col ->
+@@ -406,7 +409,7 @@ public class DataFrameBuilder(private val header: List<String>) {
+ 
+     public operator fun invoke(args: Sequence<Any?>): DataFrame<*> = invoke(*args.toList().toTypedArray())
+ 
+-    public fun withColumns(columnBuilder: (String) -> AnyCol): DataFrame<*> =
++    public fun withColumns(columnBuilder: (String) -> DataColumn<*>): DataFrame<*> =
+         header
+             .map { columnBuilder(it) named it } // create the columns and make sure to rename them to the given header
+             .toDataFrame()
+@@ -534,7 +537,7 @@ public class DynamicDataFrameBuilder(private val checkDuplicateValues: Boolean =
+      * @param col The column to add to the DataFrame builder.
+      * @return The final unique name assigned to the column.
+      */
+-    public fun add(col: AnyCol): String {
++    public fun add(col: DataColumn<*>): String {
+         val originalName = col.name()
+         if (checkDuplicateValues && generator.contains(originalName)) {
+             if (cols[originalName] == col) return originalName
+@@ -581,7 +584,7 @@ public class DynamicDataFrameBuilder(private val checkDuplicateValues: Boolean =
+      * @param column The name of the column to retrieve.
+      * @return The column corresponding to the specified name, or `null` if no such column exists.
+      */
+-    public fun get(column: String): AnyCol? = cols[column]
++    public fun get(column: String): DataColumn<*>? = cols[column]
+ 
+     /**
+      * Converts the current [DynamicDataFrameBuilder] instance into a [DataFrame].
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/convert.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/convert.kt
+index 06ba8e9..0e5ca99 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/convert.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/convert.kt
+@@ -12,7 +12,6 @@ import kotlinx.datetime.format.FormatStringsInDatetimeFormats
+ import kotlinx.datetime.format.byUnicodePattern
+ import kotlinx.datetime.toLocalDateTime
+ import kotlinx.datetime.toStdlibInstant
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+ import org.jetbrains.kotlinx.dataframe.ColumnsContainer
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+@@ -635,7 +634,7 @@ public inline fun <T, C, reified R> Convert<T, C>.perRowCol(
+  * @param [C] The target type to convert values to.
+  * @return A new [DataColumn] with the values converted to type [C].
+  */
+-public inline fun <reified C> AnyCol.convertTo(): DataColumn<C> = convertTo(typeOf<C>()) as DataColumn<C>
++public inline fun <reified C> DataColumn<*>.convertTo(): DataColumn<C> = convertTo(typeOf<C>()) as DataColumn<C>
+ 
+ /**
+  * Converts values in this column to the specified [type][newType].
+@@ -648,7 +647,7 @@ public inline fun <reified C> AnyCol.convertTo(): DataColumn<C> = convertTo(type
+  * @return A new [DataColumn] with the values converted to [type].
+  */
+ @Suppress("UNCHECKED_CAST")
+-public fun AnyCol.convertTo(newType: KType): AnyCol = convertToTypeImpl(newType, null)
++public fun DataColumn<*>.convertTo(newType: KType): DataColumn<*> = convertToTypeImpl(newType, null)
+ 
+ /**
+  * Converts values in this `String` column to the specified type [C].
+@@ -679,7 +678,7 @@ public inline fun <reified C> DataColumn<String?>.convertTo(parserOptions: Parse
+  * @param [parserOptions] Optional [ParserOptions] to customize parsing behavior (e.g., locale, null strings).
+  * @return A new [DataColumn] with the values converted to [type].
+  */
+-public fun DataColumn<String?>.convertTo(newType: KType, parserOptions: ParserOptions? = null): AnyCol =
++public fun DataColumn<String?>.convertTo(newType: KType, parserOptions: ParserOptions? = null): DataColumn<*> =
+     convertToTypeImpl(newType, parserOptions)
+ 
+ /**
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/countDistinct.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/countDistinct.kt
+index 4b5cefb..6d38fc6 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/countDistinct.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/countDistinct.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.annotations.AccessApiOverload
+@@ -11,6 +10,7 @@ import org.jetbrains.kotlinx.dataframe.api.CountDistinctOnGroupByDocs.COLUMN_SEL
+ import org.jetbrains.kotlinx.dataframe.api.CountDistinctOnGroupByDocs.COMPARISON_OBJECT
+ import org.jetbrains.kotlinx.dataframe.api.CountDistinctOnGroupByDocs.EXAMPLE
+ import org.jetbrains.kotlinx.dataframe.api.CountDistinctOnGroupByDocs.SCOPE
++import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.toColumnSet
+ import org.jetbrains.kotlinx.dataframe.documentation.DocumentationUrls
+ import org.jetbrains.kotlinx.dataframe.documentation.ExcludeFromSources
+@@ -97,7 +97,7 @@ public fun <T, C> DataFrame<T>.countDistinct(vararg columns: KProperty<C>): Int
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.countDistinct(vararg columns: AnyColumnReference): Int =
++public fun <T> DataFrame<T>.countDistinct(vararg columns: ColumnReference<*>): Int =
+     countDistinct { columns.toColumnSet() }
+ 
+ // endregion
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/distinct.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/distinct.kt
+index e30fc5f..75ff066 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/distinct.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/distinct.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.DataRow
+@@ -14,6 +13,7 @@ import org.jetbrains.kotlinx.dataframe.api.DistinctDocs.DISTINCT_RETURN
+ import org.jetbrains.kotlinx.dataframe.api.DistinctDocs.PHRASE_ENDING
+ import org.jetbrains.kotlinx.dataframe.api.DistinctDocs.SEE_ALSO
+ import org.jetbrains.kotlinx.dataframe.api.Select.SelectSelectingOptions
++import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnSet
+ import org.jetbrains.kotlinx.dataframe.columns.toColumnSet
+ import org.jetbrains.kotlinx.dataframe.documentation.DocumentationUrls
+@@ -105,7 +105,7 @@ public fun <T> DataFrame<T>.distinct(vararg columns: String): DataFrame<T> = dis
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.distinct(vararg columns: AnyColumnReference): DataFrame<T> =
++public fun <T> DataFrame<T>.distinct(vararg columns: ColumnReference<*>): DataFrame<T> =
+     distinct { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+@@ -126,7 +126,7 @@ public fun <T> DataFrame<T>.distinctBy(vararg columns: String): DataFrame<T> = d
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.distinctBy(vararg columns: AnyColumnReference): DataFrame<T> =
++public fun <T> DataFrame<T>.distinctBy(vararg columns: ColumnReference<*>): DataFrame<T> =
+     distinctBy { columns.toColumnSet() }
+ 
+ /**
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/frameCol.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/frameCol.kt
+index bb888a6..9c9acc9 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/frameCol.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/frameCol.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnGroupAccessor
+ import org.jetbrains.kotlinx.dataframe.ColumnGroupReference
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.DataRow
+@@ -191,7 +190,7 @@ public interface FrameColColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun <C> AnyColumnGroupAccessor.frameCol(
++    public fun <C> ColumnAccessor<DataRow<*>>.frameCol(
+         frameCol: ColumnAccessor<DataFrame<C>>,
+     ): ColumnAccessor<DataFrame<C>> = this.ensureIsColumnGroup().frameColumn<C>(frameCol.path()).ensureIsFrameColumn()
+ 
+@@ -268,13 +267,13 @@ public interface FrameColColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Suppress("INAPPLICABLE_JVM_NAME")
+     @JvmName("frameColUnTyped")
+-    public fun AnyColumnGroupAccessor.frameCol(name: String): ColumnAccessor<DataFrame<*>> = frameCol<Any?>(name)
++    public fun ColumnAccessor<DataRow<*>>.frameCol(name: String): ColumnAccessor<DataFrame<*>> = frameCol<Any?>(name)
+ 
+     /**
+      * @include [FrameColNameDocs] {@set [CommonFrameColDocs.RECEIVER] myColumnGroup.}
+      * @include [CommonFrameColDocs.FrameColumnTypeParam]
+      */
+-    public fun <C> AnyColumnGroupAccessor.frameCol(name: String): ColumnAccessor<DataFrame<C>> =
++    public fun <C> ColumnAccessor<DataRow<*>>.frameCol(name: String): ColumnAccessor<DataFrame<C>> =
+         this.ensureIsColumnGroup().frameColumn<C>(name).ensureIsFrameColumn()
+ 
+     /**
+@@ -368,13 +367,14 @@ public interface FrameColColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Suppress("INAPPLICABLE_JVM_NAME")
+     @JvmName("frameColUnTyped")
+-    public fun AnyColumnGroupAccessor.frameCol(path: ColumnPath): ColumnAccessor<DataFrame<*>> = frameCol<Any?>(path)
++    public fun ColumnAccessor<DataRow<*>>.frameCol(path: ColumnPath): ColumnAccessor<DataFrame<*>> =
++        frameCol<Any?>(path)
+ 
+     /**
+      * @include [FrameColPathDocs] {@set [CommonFrameColDocs.RECEIVER] myColumnGroup.}
+      * @include [CommonFrameColDocs.FrameColumnTypeParam]
+      */
+-    public fun <C> AnyColumnGroupAccessor.frameCol(path: ColumnPath): ColumnAccessor<DataFrame<C>> =
++    public fun <C> ColumnAccessor<DataRow<*>>.frameCol(path: ColumnPath): ColumnAccessor<DataFrame<C>> =
+         this.ensureIsColumnGroup().frameColumn<C>(path).ensureIsFrameColumn()
+ 
+     /**
+@@ -475,15 +475,16 @@ public interface FrameColColumnsSelectionDsl<out _UNUSED> {
+     @AccessApiOverload
+     @Suppress("INAPPLICABLE_JVM_NAME")
+     @JvmName("frameColDataFrameKProperty")
+-    public fun <C> AnyColumnGroupAccessor.frameCol(property: KProperty<DataFrame<C>>): ColumnAccessor<DataFrame<C>> =
+-        this.ensureIsColumnGroup().frameColumn(property).ensureIsFrameColumn()
++    public fun <C> ColumnAccessor<DataRow<*>>.frameCol(
++        property: KProperty<DataFrame<C>>,
++    ): ColumnAccessor<DataFrame<C>> = this.ensureIsColumnGroup().frameColumn(property).ensureIsFrameColumn()
+ 
+     /**
+      * @include [FrameColKPropertyDocs] {@set [CommonFrameColDocs.RECEIVER] myColumnGroup.}
+      */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun <C> AnyColumnGroupAccessor.frameCol(property: KProperty<List<C>>): ColumnAccessor<DataFrame<C>> =
++    public fun <C> ColumnAccessor<DataRow<*>>.frameCol(property: KProperty<List<C>>): ColumnAccessor<DataFrame<C>> =
+         this.ensureIsColumnGroup().frameColumn(property).ensureIsFrameColumn()
+ 
+     /**
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/group.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/group.kt
+index 4a0276f..6f6257f 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/group.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/group.kt
+@@ -1,14 +1,16 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnGroupAccessor
+ import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataFrame
++import org.jetbrains.kotlinx.dataframe.DataRow
+ import org.jetbrains.kotlinx.dataframe.annotations.AccessApiOverload
+ import org.jetbrains.kotlinx.dataframe.annotations.Interpretable
+ import org.jetbrains.kotlinx.dataframe.annotations.Refine
+ import org.jetbrains.kotlinx.dataframe.annotations.StringApiInterpretable
++import org.jetbrains.kotlinx.dataframe.columns.ColumnAccessor
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnGroup
++import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnWithPath
+ import org.jetbrains.kotlinx.dataframe.columns.toColumnSet
+ import org.jetbrains.kotlinx.dataframe.documentation.DocumentationUrls
+@@ -118,7 +120,7 @@ public fun <T> DataFrame<T>.group(vararg columns: String): GroupClause<T, Any?>
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.group(vararg columns: AnyColumnReference): GroupClause<T, Any?> =
++public fun <T> DataFrame<T>.group(vararg columns: ColumnReference<*>): GroupClause<T, Any?> =
+     group { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+@@ -212,7 +214,7 @@ public fun <T, C> GroupClause<T, C>.into(column: ColumnsSelectionDsl<T>.(ColumnW
+  */
+ @JvmName("intoColumn")
+ public fun <T, C> GroupClause<T, C>.into(
+-    column: ColumnsSelectionDsl<T>.(ColumnWithPath<C>) -> AnyColumnReference,
++    column: ColumnsSelectionDsl<T>.(ColumnWithPath<C>) -> ColumnReference<*>,
+ ): DataFrame<T> = df.move(columns).under(column)
+ 
+ /**
+@@ -242,7 +244,8 @@ public fun <T, C> GroupClause<T, C>.into(column: String): DataFrame<T> = into(co
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T, C> GroupClause<T, C>.into(column: AnyColumnGroupAccessor): DataFrame<T> = df.move(columns).under(column)
++public fun <T, C> GroupClause<T, C>.into(column: ColumnAccessor<DataRow<*>>): DataFrame<T> =
++    df.move(columns).under(column)
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/groupBy.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/groupBy.kt
+index 1abd3b0..3fb5c3f 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/groupBy.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/groupBy.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.AnyFrame
+ import org.jetbrains.kotlinx.dataframe.ColumnSelector
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+@@ -19,6 +18,7 @@ import org.jetbrains.kotlinx.dataframe.annotations.Interpretable
+ import org.jetbrains.kotlinx.dataframe.annotations.Refine
+ import org.jetbrains.kotlinx.dataframe.annotations.StringApiInterpretable
+ import org.jetbrains.kotlinx.dataframe.api.GroupByDocs.Grammar
++import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.FrameColumn
+ import org.jetbrains.kotlinx.dataframe.columns.toColumnSet
+ import org.jetbrains.kotlinx.dataframe.documentation.DocumentationUrls
+@@ -443,7 +443,7 @@ public fun <T> DataFrame<T>.groupBy(vararg cols: String): GroupBy<T, T> = groupB
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.groupBy(vararg cols: AnyColumnReference, moveToTop: Boolean = true): GroupBy<T, T> =
++public fun <T> DataFrame<T>.groupBy(vararg cols: ColumnReference<*>, moveToTop: Boolean = true): GroupBy<T, T> =
+     groupBy(moveToTop) { cols.toColumnSet() }
+ 
+ // endregion
+@@ -485,7 +485,7 @@ public fun <T> Pivot<T>.groupBy(moveToTop: Boolean = true, columns: ColumnsSelec
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> Pivot<T>.groupBy(vararg columns: AnyColumnReference): PivotGroupBy<T> = groupBy { columns.toColumnSet() }
++public fun <T> Pivot<T>.groupBy(vararg columns: ColumnReference<*>): PivotGroupBy<T> = groupBy { columns.toColumnSet() }
+ 
+ /**
+  * {@include [CommonGroupByForPivotDocs]}
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/inferType.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/inferType.kt
+index 20679be..3aa6f98 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/inferType.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/inferType.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+@@ -13,7 +12,7 @@ import org.jetbrains.kotlinx.dataframe.type
+ import org.jetbrains.kotlinx.dataframe.util.DEPRECATED_ACCESS_API
+ import kotlin.reflect.KProperty
+ 
+-public fun AnyCol.inferType(): DataColumn<*> =
++public fun DataColumn<*>.inferType(): DataColumn<*> =
+     createColumnGuessingType(
+         name = name,
+         values = toList(),
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/insert.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/insert.kt
+index f2b11c1..aaade1f 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/insert.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/insert.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+ import org.jetbrains.kotlinx.dataframe.ColumnSelector
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+@@ -178,7 +177,7 @@ public inline fun <T, reified R> DataFrame<T>.insert(
+  *
+  * See [Grammar][InsertDocs.Grammar] for more details.
+  */
+-public class InsertClause<T>(internal val df: DataFrame<T>, internal val column: AnyCol) {
++public class InsertClause<T>(internal val df: DataFrame<T>, internal val column: DataColumn<*>) {
+     override fun toString(): String = "InsertClause(df=$df, column=$column)"
+ }
+ 
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/length.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/length.kt
+index 57b1a3c..ddd5ba7 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/length.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/length.kt
+@@ -8,6 +8,6 @@ import org.jetbrains.kotlinx.dataframe.util.MESSAGE_SHORTCUT
+ // region StringCol
+ 
+ @Deprecated(MESSAGE_SHORTCUT, ReplaceWith(LENGTH_REPLACE), DeprecationLevel.WARNING)
+-public fun StringCol.length(): DataColumn<Int> = map { it?.length ?: 0 }
++public fun DataColumn<String?>.length(): DataColumn<Int> = map { it?.length ?: 0 }
+ 
+ // endregion
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/lowercase.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/lowercase.kt
+index d6df0da..727ff80 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/lowercase.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/lowercase.kt
+@@ -1,5 +1,6 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
++import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.StringCol
+ import org.jetbrains.kotlinx.dataframe.util.LOWERCASE_REPLACE
+ import org.jetbrains.kotlinx.dataframe.util.MESSAGE_SHORTCUT
+@@ -7,6 +8,6 @@ import org.jetbrains.kotlinx.dataframe.util.MESSAGE_SHORTCUT
+ // region StringCol
+ 
+ @Deprecated(MESSAGE_SHORTCUT, ReplaceWith(LOWERCASE_REPLACE), DeprecationLevel.WARNING)
+-public fun StringCol.lowercase(): StringCol = map { it?.lowercase() }
++public fun DataColumn<String?>.lowercase(): DataColumn<String?> = map { it?.lowercase() }
+ 
+ // endregion
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/move.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/move.kt
+index 3f7b7d5..4a270d8 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/move.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/move.kt
+@@ -1,14 +1,14 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnGroupAccessor
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnSelector
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataFrame
++import org.jetbrains.kotlinx.dataframe.DataRow
+ import org.jetbrains.kotlinx.dataframe.annotations.AccessApiOverload
+ import org.jetbrains.kotlinx.dataframe.annotations.Interpretable
+ import org.jetbrains.kotlinx.dataframe.annotations.Refine
+ import org.jetbrains.kotlinx.dataframe.annotations.StringApiInterpretable
++import org.jetbrains.kotlinx.dataframe.columns.ColumnAccessor
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnGroup
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnWithPath
+@@ -218,7 +218,7 @@ public fun <T> DataFrame<T>.moveTo(newColumnIndex: Int, vararg columns: String):
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.moveTo(newColumnIndex: Int, vararg columns: AnyColumnReference): DataFrame<T> =
++public fun <T> DataFrame<T>.moveTo(newColumnIndex: Int, vararg columns: ColumnReference<*>): DataFrame<T> =
+     moveTo(newColumnIndex) { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+@@ -324,12 +324,12 @@ public fun <T> DataFrame<T>.moveToStart(vararg columns: String): DataFrame<T> =
+ 
+ @Deprecated(MOVE_TO_LEFT, ReplaceWith(MOVE_TO_LEFT_REPLACE), DeprecationLevel.ERROR)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.moveToLeft(vararg columns: AnyColumnReference): DataFrame<T> =
++public fun <T> DataFrame<T>.moveToLeft(vararg columns: ColumnReference<*>): DataFrame<T> =
+     moveToStart { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.moveToStart(vararg columns: AnyColumnReference): DataFrame<T> =
++public fun <T> DataFrame<T>.moveToStart(vararg columns: ColumnReference<*>): DataFrame<T> =
+     moveToStart { columns.toColumnSet() }
+ 
+ @Deprecated(MOVE_TO_LEFT, ReplaceWith(MOVE_TO_LEFT_REPLACE), DeprecationLevel.ERROR)
+@@ -413,12 +413,12 @@ public fun <T> DataFrame<T>.moveToEnd(vararg columns: String): DataFrame<T> = mo
+ 
+ @Deprecated(MOVE_TO_RIGHT, ReplaceWith(MOVE_TO_RIGHT_REPLACE), DeprecationLevel.ERROR)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.moveToRight(vararg columns: AnyColumnReference): DataFrame<T> =
++public fun <T> DataFrame<T>.moveToRight(vararg columns: ColumnReference<*>): DataFrame<T> =
+     moveToEnd { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.moveToEnd(vararg columns: AnyColumnReference): DataFrame<T> =
++public fun <T> DataFrame<T>.moveToEnd(vararg columns: ColumnReference<*>): DataFrame<T> =
+     moveToEnd { columns.toColumnSet() }
+ 
+ @Deprecated(MOVE_TO_RIGHT, ReplaceWith(MOVE_TO_RIGHT_REPLACE), DeprecationLevel.ERROR)
+@@ -461,7 +461,7 @@ public fun <T> DataFrame<T>.moveToEnd(vararg columns: KProperty<*>): DataFrame<T
+  * a path in the [DataFrame] to move columns.
+  */
+ public fun <T, C> MoveClause<T, C>.into(
+-    column: ColumnsSelectionDsl<T>.(ColumnWithPath<C>) -> AnyColumnReference,
++    column: ColumnsSelectionDsl<T>.(ColumnWithPath<C>) -> ColumnReference<*>,
+ ): DataFrame<T> =
+     moveImpl(
+         under = false,
+@@ -510,7 +510,7 @@ public fun <T, C> MoveClause<T, C>.into(column: String): DataFrame<T> = pathOf(c
+  * a path in the [DataFrame] to move columns.
+  */
+ public fun <T, C> MoveClause<T, C>.intoIndexed(
+-    newPathExpression: ColumnsSelectionDsl<T>.(ColumnWithPath<C>, Int) -> AnyColumnReference,
++    newPathExpression: ColumnsSelectionDsl<T>.(ColumnWithPath<C>, Int) -> ColumnReference<*>,
+ ): DataFrame<T> {
+     var counter = 0
+     return into { col ->
+@@ -548,7 +548,7 @@ public fun <T, C> MoveClause<T, C>.under(column: String): DataFrame<T> = under {
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T, C> MoveClause<T, C>.under(column: AnyColumnGroupAccessor): DataFrame<T> = under { column.path() }
++public fun <T, C> MoveClause<T, C>.under(column: ColumnAccessor<DataRow<*>>): DataFrame<T> = under { column.path() }
+ 
+ /**
+  * Moves columns, previously selected with [move] under a new or
+@@ -577,7 +577,7 @@ public fun <T, C> MoveClause<T, C>.under(column: AnyColumnGroupAccessor): DataFr
+ @Refine
+ @Interpretable("MoveUnder1")
+ public fun <T, C> MoveClause<T, C>.under(
+-    column: ColumnsSelectionDsl<T>.(ColumnWithPath<C>) -> AnyColumnReference,
++    column: ColumnsSelectionDsl<T>.(ColumnWithPath<C>) -> ColumnReference<*>,
+ ): DataFrame<T> =
+     moveImpl(
+         under = true,
+@@ -711,7 +711,7 @@ public fun <T, C> MoveClause<T, C>.after(column: String): DataFrame<T> = after {
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T, C> MoveClause<T, C>.after(column: AnyColumnReference): DataFrame<T> = after { column }
++public fun <T, C> MoveClause<T, C>.after(column: ColumnReference<*>): DataFrame<T> = after { column }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/pivot.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/pivot.kt
+index d673210..25d47a2 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/pivot.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/pivot.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+@@ -17,6 +16,7 @@ import org.jetbrains.kotlinx.dataframe.annotations.AccessApiOverload
+ import org.jetbrains.kotlinx.dataframe.api.GroupByDocs.Grammar
+ import org.jetbrains.kotlinx.dataframe.api.Select.SelectSelectingOptions
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnGroup
++import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnSet
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnsResolver
+ import org.jetbrains.kotlinx.dataframe.columns.FrameColumn
+@@ -439,7 +439,7 @@ public fun <T> DataFrame<T>.pivot(vararg columns: String, inward: Boolean? = nul
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.pivot(vararg columns: AnyColumnReference, inward: Boolean? = null): Pivot<T> =
++public fun <T> DataFrame<T>.pivot(vararg columns: ColumnReference<*>, inward: Boolean? = null): Pivot<T> =
+     pivot(inward) { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+@@ -535,7 +535,7 @@ public fun <T> DataFrame<T>.pivotMatches(vararg columns: String, inward: Boolean
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.pivotMatches(vararg columns: AnyColumnReference, inward: Boolean = true): DataFrame<T> =
++public fun <T> DataFrame<T>.pivotMatches(vararg columns: ColumnReference<*>, inward: Boolean = true): DataFrame<T> =
+     pivotMatches(inward) { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+@@ -627,7 +627,7 @@ public fun <T> DataFrame<T>.pivotCounts(vararg columns: String, inward: Boolean
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.pivotCounts(vararg columns: AnyColumnReference, inward: Boolean = true): DataFrame<T> =
++public fun <T> DataFrame<T>.pivotCounts(vararg columns: ColumnReference<*>, inward: Boolean = true): DataFrame<T> =
+     pivotCounts(inward) { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+@@ -674,7 +674,7 @@ public fun <G> GroupBy<*, G>.pivot(inward: Boolean = true, columns: PivotColumns
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <G> GroupBy<*, G>.pivot(vararg columns: AnyColumnReference, inward: Boolean = true): PivotGroupBy<G> =
++public fun <G> GroupBy<*, G>.pivot(vararg columns: ColumnReference<*>, inward: Boolean = true): PivotGroupBy<G> =
+     pivot(inward) { columns.toColumnSet() }
+ 
+ /**
+@@ -763,7 +763,7 @@ public fun <G> GroupBy<*, G>.pivotMatches(vararg columns: String, inward: Boolea
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <G> GroupBy<*, G>.pivotMatches(vararg columns: AnyColumnReference, inward: Boolean = true): DataFrame<G> =
++public fun <G> GroupBy<*, G>.pivotMatches(vararg columns: ColumnReference<*>, inward: Boolean = true): DataFrame<G> =
+     pivotMatches(inward) { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+@@ -839,7 +839,7 @@ public fun <G> GroupBy<*, G>.pivotCounts(vararg columns: String, inward: Boolean
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <G> GroupBy<*, G>.pivotCounts(vararg columns: AnyColumnReference, inward: Boolean = true): DataFrame<G> =
++public fun <G> GroupBy<*, G>.pivotCounts(vararg columns: ColumnReference<*>, inward: Boolean = true): DataFrame<G> =
+     pivotCounts(inward) { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+@@ -959,7 +959,7 @@ public fun <T> AggregateGroupedDsl<T>.pivot(vararg columns: String, inward: Bool
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+ public fun <T> AggregateGroupedDsl<T>.pivot(
+-    vararg columns: AnyColumnReference,
++    vararg columns: ColumnReference<*>,
+     inward: Boolean = true,
+ ): PivotGroupBy<T> = pivot(inward) { columns.toColumnSet() }
+ 
+@@ -1045,7 +1045,7 @@ public fun <T> AggregateGroupedDsl<T>.pivotMatches(vararg columns: String, inwar
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+ public fun <T> AggregateGroupedDsl<T>.pivotMatches(
+-    vararg columns: AnyColumnReference,
++    vararg columns: ColumnReference<*>,
+     inward: Boolean = true,
+ ): DataFrame<T> = pivotMatches(inward) { columns.toColumnSet() }
+ 
+@@ -1131,7 +1131,7 @@ public fun <T> AggregateGroupedDsl<T>.pivotCounts(vararg columns: String, inward
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+ public fun <T> AggregateGroupedDsl<T>.pivotCounts(
+-    vararg columns: AnyColumnReference,
++    vararg columns: ColumnReference<*>,
+     inward: Boolean = true,
+ ): DataFrame<T> = pivotCounts(inward) { columns.toColumnSet() }
+ 
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/remove.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/remove.kt
+index 144714a..7585614 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/remove.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/remove.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.annotations.AccessApiOverload
+@@ -72,7 +71,7 @@ public fun <T> DataFrame<T>.remove(vararg columns: String): DataFrame<T> = remov
+  */
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.remove(vararg columns: AnyColumnReference): DataFrame<T> = remove { columns.toColumnSet() }
++public fun <T> DataFrame<T>.remove(vararg columns: ColumnReference<*>): DataFrame<T> = remove { columns.toColumnSet() }
+ 
+ /**
+  * @include [CommonRemoveDocs]
+@@ -95,7 +94,7 @@ public infix operator fun <T> DataFrame<T>.minus(column: String): DataFrame<T> =
+ 
+ @Deprecated(MINUS, ReplaceWith(MINUS_REPLACE), DeprecationLevel.ERROR)
+ @AccessApiOverload
+-public infix operator fun <T> DataFrame<T>.minus(column: AnyColumnReference): DataFrame<T> = remove(column)
++public infix operator fun <T> DataFrame<T>.minus(column: ColumnReference<*>): DataFrame<T> = remove(column)
+ 
+ @Deprecated(MINUS, ReplaceWith(MINUS_REPLACE), DeprecationLevel.ERROR)
+ @AccessApiOverload
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/reorder.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/reorder.kt
+index a3f6f17..f9de3c2 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/reorder.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/reorder.kt
+@@ -1,8 +1,8 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+ import org.jetbrains.kotlinx.dataframe.ColumnExpression
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
++import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.Selector
+ import org.jetbrains.kotlinx.dataframe.annotations.AccessApiOverload
+@@ -54,7 +54,7 @@ public fun <T, C, V : Comparable<V>> Reorder<T, C>.byDesc(expression: ColumnExpr
+ public fun <T, V : Comparable<V>> DataFrame<T>.reorderColumnsBy(
+     atAnyDepth: Boolean = true,
+     desc: Boolean = false,
+-    expression: Selector<AnyCol, V>,
++    expression: Selector<DataColumn<*>, V>,
+ ): DataFrame<T> =
+     Reorder(
+         df = this,
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/replace.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/replace.kt
+index 6faaff4..3b383de 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/replace.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/replace.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+ import org.jetbrains.kotlinx.dataframe.ColumnsContainer
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+@@ -43,9 +42,9 @@ public class ReplaceClause<T, C>(internal val df: DataFrame<T>, internal val col
+     override fun toString(): String = "ReplaceClause(df=$df, columns=$columns)"
+ }
+ 
+-public fun <T, C> ReplaceClause<T, C>.with(vararg columns: AnyCol): DataFrame<T> = with(columns.toList())
++public fun <T, C> ReplaceClause<T, C>.with(vararg columns: DataColumn<*>): DataFrame<T> = with(columns.toList())
+ 
+-public fun <T, C> ReplaceClause<T, C>.with(newColumns: List<AnyCol>): DataFrame<T> {
++public fun <T, C> ReplaceClause<T, C>.with(newColumns: List<DataColumn<*>>): DataFrame<T> {
+     var index = 0
+     return with {
+         require(index < newColumns.size) {
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/select.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/select.kt
+index f584e43..35b8510 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/select.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/select.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+@@ -93,7 +92,7 @@ public fun <T> DataFrame<T>.select(vararg columns: String): DataFrame<T> = selec
+  */
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.select(vararg columns: AnyColumnReference): DataFrame<T> = select { columns.toColumnSet() }
++public fun <T> DataFrame<T>.select(vararg columns: ColumnReference<*>): DataFrame<T> = select { columns.toColumnSet() }
+ 
+ // endregion
+ 
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/typeConversions.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/typeConversions.kt
+index 392a4f9..70b5a0e 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/typeConversions.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/typeConversions.kt
+@@ -107,7 +107,7 @@ public fun <T> DataColumn<T>.castToNullable(): DataColumn<T?> = cast()
+ 
+ public fun <T> ColumnReference<T>.castToNullable(): ColumnReference<T?> = cast()
+ 
+-public fun AnyCol.setNullable(nullable: Boolean): AnyCol =
++public fun DataColumn<*>.setNullable(nullable: Boolean): DataColumn<*> =
+     if (nullable) {
+         this.castToNullable()
+     } else {
+@@ -132,13 +132,13 @@ public fun DataColumn<Number>.toByteArray(): ByteArray = convertTo<Byte>().toLis
+ 
+ // endregion
+ 
+-public fun AnyCol.asValueColumn(): ValueColumn<*> = this as ValueColumn<*>
++public fun DataColumn<*>.asValueColumn(): ValueColumn<*> = this as ValueColumn<*>
+ 
+ @JvmName("asColumnGroupUntyped")
+-public fun AnyCol.asColumnGroup(): ColumnGroup<*> = this as ColumnGroup<*>
++public fun DataColumn<*>.asColumnGroup(): ColumnGroup<*> = this as ColumnGroup<*>
+ 
+ @JvmName("asFrameColumnUntyped")
+-public fun AnyCol.asFrameColumn(): FrameColumn<*> = this as FrameColumn<*>
++public fun DataColumn<*>.asFrameColumn(): FrameColumn<*> = this as FrameColumn<*>
+ 
+ public fun <T> DataColumn<DataFrame<T>>.asFrameColumn(): FrameColumn<T> =
+     (this as AnyCol).asAnyFrameColumn().castFrameColumn()
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/unfold.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/unfold.kt
+index 60eee12..ffd8433 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/unfold.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/unfold.kt
+@@ -1,7 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+@@ -12,6 +10,7 @@ import org.jetbrains.kotlinx.dataframe.annotations.Interpretable
+ import org.jetbrains.kotlinx.dataframe.annotations.Refine
+ import org.jetbrains.kotlinx.dataframe.annotations.StringApiInterpretable
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnGroup
++import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.FrameColumn
+ import org.jetbrains.kotlinx.dataframe.columns.toColumnSet
+ import org.jetbrains.kotlinx.dataframe.documentation.DocumentationUrls
+@@ -159,7 +158,7 @@ private typealias SetUnfoldOperationArg = Nothing
+  * @include [UnfoldDocs.ParamsSnippet]
+  * @return A [ColumnGroup] with the name of this column, or this column itself when it cannot be unfolded.
+  */
+-public inline fun <reified T> DataColumn<T>.unfold(vararg roots: KCallable<*>, maxDepth: Int = 0): AnyCol =
++public inline fun <reified T> DataColumn<T>.unfold(vararg roots: KCallable<*>, maxDepth: Int = 0): DataColumn<*> =
+     unfoldImpl(typeOf<T>()) { properties(roots = roots, maxDepth) }
+ 
+ /**
+@@ -235,7 +234,7 @@ public fun <T> DataFrame<T>.unfold(vararg columns: String): DataFrame<T> = unfol
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.unfold(vararg columns: AnyColumnReference): DataFrame<T> = unfold { columns.toColumnSet() }
++public fun <T> DataFrame<T>.unfold(vararg columns: ColumnReference<*>): DataFrame<T> = unfold { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/ungroup.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/ungroup.kt
+index a6140f9..d750f92 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/ungroup.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/ungroup.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.annotations.AccessApiOverload
+@@ -8,6 +7,7 @@ import org.jetbrains.kotlinx.dataframe.annotations.Interpretable
+ import org.jetbrains.kotlinx.dataframe.annotations.Refine
+ import org.jetbrains.kotlinx.dataframe.annotations.StringApiInterpretable
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnGroup
++import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnWithPath
+ import org.jetbrains.kotlinx.dataframe.columns.toColumnSet
+ import org.jetbrains.kotlinx.dataframe.documentation.DocumentationUrls
+@@ -96,7 +96,7 @@ public fun <T> DataFrame<T>.ungroup(vararg columns: String): DataFrame<T> = ungr
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> DataFrame<T>.ungroup(vararg columns: AnyColumnReference): DataFrame<T> =
++public fun <T> DataFrame<T>.ungroup(vararg columns: ColumnReference<*>): DataFrame<T> =
+     ungroup { columns.toColumnSet() }
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/uppercase.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/uppercase.kt
+index f9c8d93..46f2466 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/uppercase.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/uppercase.kt
+@@ -1,5 +1,6 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
++import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.StringCol
+ import org.jetbrains.kotlinx.dataframe.util.MESSAGE_SHORTCUT
+ import org.jetbrains.kotlinx.dataframe.util.UPPERCASE_REPLACE
+@@ -7,6 +8,6 @@ import org.jetbrains.kotlinx.dataframe.util.UPPERCASE_REPLACE
+ // region StringCol
+ 
+ @Deprecated(MESSAGE_SHORTCUT, ReplaceWith(UPPERCASE_REPLACE), DeprecationLevel.WARNING)
+-public fun StringCol.uppercase(): StringCol = map { it?.uppercase() }
++public fun DataColumn<String?>.uppercase(): DataColumn<String?> = map { it?.uppercase() }
+ 
+ // endregion
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/valueCol.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/valueCol.kt
+index 5f6147a..af0d3b4 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/valueCol.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/valueCol.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnGroupAccessor
+ import org.jetbrains.kotlinx.dataframe.ColumnGroupReference
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.DataRow
+@@ -184,7 +183,7 @@ public interface ValueColColumnsSelectionDsl<out _UNUSED> {
+     /**
+      * @include [ValueColReferenceDocs] {@set [CommonValueColDocs.RECEIVER] myColumnGroup.}
+      */
+-    public fun <C> AnyColumnGroupAccessor.valueCol(valueCol: ColumnAccessor<C>): ColumnAccessor<C> =
++    public fun <C> ColumnAccessor<DataRow<*>>.valueCol(valueCol: ColumnAccessor<C>): ColumnAccessor<C> =
+         this.ensureIsColumnGroup().valueColumn<C>(valueCol.path()).ensureIsValueColumn()
+ 
+     /**
+@@ -256,13 +255,13 @@ public interface ValueColColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Suppress("INAPPLICABLE_JVM_NAME")
+     @JvmName("valueColUnTyped")
+-    public fun AnyColumnGroupAccessor.valueCol(name: String): ColumnAccessor<*> = valueCol<Any?>(name)
++    public fun ColumnAccessor<DataRow<*>>.valueCol(name: String): ColumnAccessor<*> = valueCol<Any?>(name)
+ 
+     /**
+      * @include [ValueColNameDocs] {@set [CommonValueColDocs.RECEIVER] myColumnGroup.}
+      * @include [CommonValueColDocs.ValueColumnTypeParam]
+      */
+-    public fun <C> AnyColumnGroupAccessor.valueCol(name: String): ColumnAccessor<C> =
++    public fun <C> ColumnAccessor<DataRow<*>>.valueCol(name: String): ColumnAccessor<C> =
+         this.ensureIsColumnGroup().valueColumn<C>(name).ensureIsValueColumn()
+ 
+     /**
+@@ -360,13 +359,13 @@ public interface ValueColColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Suppress("INAPPLICABLE_JVM_NAME")
+     @JvmName("valueColUnTyped")
+-    public fun AnyColumnGroupAccessor.valueCol(path: ColumnPath): ColumnAccessor<*> = valueCol<Any?>(path)
++    public fun ColumnAccessor<DataRow<*>>.valueCol(path: ColumnPath): ColumnAccessor<*> = valueCol<Any?>(path)
+ 
+     /**
+      * @include [ValueColPathDocs] {@set [CommonValueColDocs.RECEIVER] myColumnGroup.}
+      * @include [CommonValueColDocs.ValueColumnTypeParam]
+      */
+-    public fun <C> AnyColumnGroupAccessor.valueCol(path: ColumnPath): ColumnAccessor<C> =
++    public fun <C> ColumnAccessor<DataRow<*>>.valueCol(path: ColumnPath): ColumnAccessor<C> =
+         this.ensureIsColumnGroup().valueColumn<C>(path).ensureIsValueColumn()
+ 
+     /**
+@@ -448,7 +447,7 @@ public interface ValueColColumnsSelectionDsl<out _UNUSED> {
+      */
+     @Deprecated(DEPRECATED_ACCESS_API)
+     @AccessApiOverload
+-    public fun <C> AnyColumnGroupAccessor.valueCol(property: KProperty<C>): ColumnAccessor<C> =
++    public fun <C> ColumnAccessor<DataRow<*>>.valueCol(property: KProperty<C>): ColumnAccessor<C> =
+         this.ensureIsColumnGroup().valueColumn(property).ensureIsValueColumn()
+ 
+     /**
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/valueCounts.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/valueCounts.kt
+index 1ed55b2..29533a4 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/valueCounts.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/valueCounts.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+@@ -10,6 +9,7 @@ import org.jetbrains.kotlinx.dataframe.annotations.Interpretable
+ import org.jetbrains.kotlinx.dataframe.annotations.Refine
+ import org.jetbrains.kotlinx.dataframe.annotations.RequiredByIntellijPlugin
+ import org.jetbrains.kotlinx.dataframe.annotations.StringApiInterpretable
++import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.toColumnSet
+ import org.jetbrains.kotlinx.dataframe.documentation.DocumentationUrls
+ import org.jetbrains.kotlinx.dataframe.documentation.ExcludeFromSources
+@@ -231,7 +231,7 @@ public fun <T> DataFrame<T>.valueCounts(
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+ public fun <T> DataFrame<T>.valueCounts(
+-    vararg columns: AnyColumnReference,
++    vararg columns: ColumnReference<*>,
+     sort: Boolean = true,
+     ascending: Boolean = false,
+     dropNA: Boolean = true,
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/values.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/values.kt
+index d493b26..6d349e7 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/values.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/api/values.kt
+@@ -1,11 +1,11 @@
+ package org.jetbrains.kotlinx.dataframe.api
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyColumnReference
+ import org.jetbrains.kotlinx.dataframe.ColumnsSelector
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.DataRow
+ import org.jetbrains.kotlinx.dataframe.aggregation.ColumnsForAggregateSelector
+ import org.jetbrains.kotlinx.dataframe.annotations.AccessApiOverload
++import org.jetbrains.kotlinx.dataframe.columns.ColumnReference
+ import org.jetbrains.kotlinx.dataframe.columns.toColumnSet
+ import org.jetbrains.kotlinx.dataframe.impl.aggregation.columnValues
+ import org.jetbrains.kotlinx.dataframe.impl.aggregation.internal
+@@ -39,7 +39,7 @@ internal const val GROUP_BY_VALUES_EXCEPTION_MESSAGE =
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+ public fun <T> Grouped<T>.values(
+-    vararg columns: AnyColumnReference,
++    vararg columns: ColumnReference<*>,
+     dropNA: Boolean = false,
+     distinct: Boolean = false,
+ ): DataFrame<T> = values(dropNA, distinct) { columns.toColumnSet() }
+@@ -72,7 +72,7 @@ public fun <T, G> ReducedGroupBy<T, G>.values(): DataFrame<G> = values(groupBy.r
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T, G> ReducedGroupBy<T, G>.values(vararg columns: AnyColumnReference): DataFrame<G> =
++public fun <T, G> ReducedGroupBy<T, G>.values(vararg columns: ColumnReference<*>): DataFrame<G> =
+     values { columns.toColumnSet() }
+ 
+ public fun <T, G> ReducedGroupBy<T, G>.values(vararg columns: String): DataFrame<G> = values { columns.toColumnSet() }
+@@ -103,7 +103,7 @@ public fun <T> Pivot<T>.values(
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+ public fun <T> Pivot<T>.values(
+-    vararg columns: AnyColumnReference,
++    vararg columns: ColumnReference<*>,
+     dropNA: Boolean = false,
+     distinct: Boolean = false,
+     separate: Boolean = false,
+@@ -143,7 +143,7 @@ public fun <T> ReducedPivot<T>.values(separate: Boolean = false): DataRow<T> =
+ 
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+-public fun <T> ReducedPivot<T>.values(vararg columns: AnyColumnReference, separate: Boolean = false): DataRow<T> =
++public fun <T> ReducedPivot<T>.values(vararg columns: ColumnReference<*>, separate: Boolean = false): DataRow<T> =
+     values(separate) { columns.toColumnSet() }
+ 
+ public fun <T> ReducedPivot<T>.values(vararg columns: String, separate: Boolean = false): DataRow<T> =
+@@ -172,7 +172,7 @@ public fun <T> PivotGroupBy<T>.values(
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+ public fun <T> PivotGroupBy<T>.values(
+-    vararg columns: AnyColumnReference,
++    vararg columns: ColumnReference<*>,
+     dropNA: Boolean = false,
+     distinct: Boolean = false,
+     separate: Boolean = false,
+@@ -216,7 +216,7 @@ public fun <T> ReducedPivotGroupBy<T>.values(separate: Boolean = false): DataFra
+ @Deprecated(DEPRECATED_ACCESS_API)
+ @AccessApiOverload
+ public fun <T> ReducedPivotGroupBy<T>.values(
+-    vararg columns: AnyColumnReference,
++    vararg columns: ColumnReference<*>,
+     separate: Boolean = false,
+ ): DataFrame<T> = values(separate) { columns.toColumnSet() }
+ 
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/columns/BaseColumn.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/columns/BaseColumn.kt
+index 2285add..f6bb026 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/columns/BaseColumn.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/columns/BaseColumn.kt
+@@ -1,8 +1,8 @@
+ package org.jetbrains.kotlinx.dataframe.columns
+ 
+ import org.jetbrains.kotlinx.dataframe.AnyBaseCol
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+ import org.jetbrains.kotlinx.dataframe.AnyRow
++import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.annotations.RequiredByIntellijPlugin
+ import org.jetbrains.kotlinx.dataframe.api.ColumnsSelectionDsl
+@@ -75,7 +75,7 @@ public interface BaseColumn<out T> : ColumnReference<T> {
+      */
+     public operator fun get(indices: Iterable<Int>): BaseColumn<T>
+ 
+-    public operator fun get(columnName: String): AnyCol
++    public operator fun get(columnName: String): DataColumn<*>
+ 
+     // endregion
+ 
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/columns/ColumnGroup.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/columns/ColumnGroup.kt
+index bd1fe61..41c90b1 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/columns/ColumnGroup.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/columns/ColumnGroup.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.columns
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.DataFrame
+ import org.jetbrains.kotlinx.dataframe.DataRow
+@@ -38,7 +37,7 @@ public interface ColumnGroup<out T> :
+      */
+     override fun get(indices: Iterable<Int>): ColumnGroup<T>
+ 
+-    override fun get(columnName: String): AnyCol
++    override fun get(columnName: String): DataColumn<*>
+ 
+     override fun kind(): ColumnKind = ColumnKind.Group
+ 
+diff --git a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/exceptions/ColumnTypeMismatchesColumnValuesException.kt b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/exceptions/ColumnTypeMismatchesColumnValuesException.kt
+index b985aba..e60f3d0 100644
+--- a/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/exceptions/ColumnTypeMismatchesColumnValuesException.kt
++++ b/core/src/main/kotlin/org/jetbrains/kotlinx/dataframe/exceptions/ColumnTypeMismatchesColumnValuesException.kt
+@@ -1,6 +1,5 @@
+ package org.jetbrains.kotlinx.dataframe.exceptions
+ 
+-import org.jetbrains.kotlinx.dataframe.AnyCol
+ import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.columns.values
+ import org.jetbrains.kotlinx.dataframe.type
+@@ -12,5 +11,5 @@ import org.jetbrains.kotlinx.dataframe.type
+  * If generated extension property causes this exception, this is a bug in the library
+  * You can work around this problem by referring to [column] using String API
+  */
+-public class ColumnTypeMismatchesColumnValuesException(public val column: AnyCol, cause: Throwable) :
++public class ColumnTypeMismatchesColumnValuesException(public val column: DataColumn<*>, cause: Throwable) :
+     RuntimeException("Failed to convert column '${column.name()}'", cause)
+diff --git a/dataframe-arrow/src/main/kotlin/org/jetbrains/kotlinx/dataframe/io/arrowTypesMatching.kt b/dataframe-arrow/src/main/kotlin/org/jetbrains/kotlinx/dataframe/io/arrowTypesMatching.kt
+index de428a6..c6570d2 100644
+--- a/dataframe-arrow/src/main/kotlin/org/jetbrains/kotlinx/dataframe/io/arrowTypesMatching.kt
++++ b/dataframe-arrow/src/main/kotlin/org/jetbrains/kotlinx/dataframe/io/arrowTypesMatching.kt
+@@ -10,7 +10,7 @@ import org.apache.arrow.vector.types.pojo.ArrowType
+ import org.apache.arrow.vector.types.pojo.Field
+ import org.apache.arrow.vector.types.pojo.FieldType
+ import org.apache.arrow.vector.types.pojo.Schema
+-import org.jetbrains.kotlinx.dataframe.AnyCol
++import org.jetbrains.kotlinx.dataframe.DataColumn
+ import org.jetbrains.kotlinx.dataframe.api.schema
+ import org.jetbrains.kotlinx.dataframe.columns.ColumnGroup
+ import org.jetbrains.kotlinx.dataframe.schema.ColumnSchema
+@@ -28,7 +28,7 @@ import kotlinx.datetime.Instant as DeprecatedInstant
+  * Create Arrow [Field] (note: this is part of [Schema], does not contain data itself) that has the same
+  * name, type and nullable as [this]
+  */
+-public fun AnyCol.toArrowField(mismatchSubscriber: (ConvertingMismatch) -> Unit = ignoreMismatchMessage): Field {
++public fun DataColumn<*>.toArrowField(mismatchSubscriber: (ConvertingMismatch) -> Unit = ignoreMismatchMessage): Field {
+     val column = this
+     val columnType = column.type()
+     return when (column) {
+@@ -163,7 +163,7 @@ internal fun KType.toArrowField(name: String, mismatchSubscriber: (ConvertingMis
+  * and Parquet mark values already normalized to UTC. Sub-microsecond instants lose their last three digits at that
+  * precision, reported as [ConvertingMismatch.PrecisionReduced]; see [DEFAULT_INSTANT_UNIT] for why.
+  */
+-public fun List<AnyCol>.toArrowSchema(
++public fun List<DataColumn<*>>.toArrowSchema(
+     mismatchSubscriber: (ConvertingMismatch) -> Unit = ignoreMismatchMessage,
+ ): Schema {
+     val fields = this.map { it.toArrowField(mismatchSubscriber) }
+-- 
+2.43.0
+

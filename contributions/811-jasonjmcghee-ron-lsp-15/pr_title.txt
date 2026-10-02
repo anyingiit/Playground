@@ -1,0 +1,1 @@
+Issue 15: Resolve crate-qualified type paths in Cargo workspaces

@@ -1,0 +1,319 @@
+From 6ad82b7b4690dc07b506ce08710b476b4efe12fc Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:34:46 +0000
+Subject: [PATCH] fix(capsule): return dedicated AlreadyRegistered errors for
+ duplicate registrations
+
+Duplicate capsule and uplink registrations were reported as
+CapsuleError::UnsupportedEntryPoint, producing messages such as
+"Unsupported entry point: Already registered: <id>" and forcing callers
+to string-match to detect duplicates.
+
+Add CapsuleError::AlreadyRegistered and
+CapsuleError::UplinkAlreadyRegistered, return them from every duplicate
+check in the registry, and name them in the `# Errors` docs. Add
+regression tests for register, register_existing and register_uplink.
+
+Closes #476
+---
+ changes/476.fixed.md                          |  7 ++
+ crates/astrid-capsule-types/src/error.rs      |  6 ++
+ crates/astrid-capsule/src/registry.rs         | 40 +++++------
+ .../src/registry/compatibility.rs             |  6 +-
+ .../src/registry/replacement.rs               | 21 +++---
+ crates/astrid-capsule/src/registry/uplinks.rs |  7 +-
+ crates/astrid-capsule/src/registry_tests.rs   | 70 +++++++++++++++++++
+ 7 files changed, 119 insertions(+), 38 deletions(-)
+ create mode 100644 changes/476.fixed.md
+
+diff --git a/changes/476.fixed.md b/changes/476.fixed.md
+new file mode 100644
+index 0000000..9ff7e95
+--- /dev/null
++++ b/changes/476.fixed.md
+@@ -0,0 +1,7 @@
++Return dedicated `CapsuleError::AlreadyRegistered` and
++`CapsuleError::UplinkAlreadyRegistered` errors when a capsule or uplink is
++registered twice, instead of `UnsupportedEntryPoint`. The error messages no
++longer carry the misleading "Unsupported entry point:" prefix, and the
++registry's `# Errors` docs now name the variants callers can match on.
++
++Closes #476
+diff --git a/crates/astrid-capsule-types/src/error.rs b/crates/astrid-capsule-types/src/error.rs
+index 2c68637..72070c1 100644
+--- a/crates/astrid-capsule-types/src/error.rs
++++ b/crates/astrid-capsule-types/src/error.rs
+@@ -27,6 +27,12 @@ pub enum CapsuleError {
+     /// The engine does not support the requested operation.
+     #[error("Not supported: {0}")]
+     NotSupported(String),
++    /// A capsule with this ID is already registered in the principal's view.
++    #[error("Already registered: {0}")]
++    AlreadyRegistered(String),
++    /// An uplink with this ID is already registered.
++    #[error("Uplink already registered: {0}")]
++    UplinkAlreadyRegistered(String),
+ }
+ 
+ /// A specialized Result type for capsule operations.
+diff --git a/crates/astrid-capsule/src/registry.rs b/crates/astrid-capsule/src/registry.rs
+index bebc95c..fce450b 100644
+--- a/crates/astrid-capsule/src/registry.rs
++++ b/crates/astrid-capsule/src/registry.rs
+@@ -150,6 +150,13 @@ impl CapsuleRegistry {
+     /// This compatibility wrapper is for older unit tests and single-principal
+     /// callers. Kernel loading should prefer [`Self::register_for`] with an
+     /// actual content hash.
++    ///
++    /// # Errors
++    ///
++    /// Returns [`CapsuleError::AlreadyRegistered`] when the default principal
++    /// already has a capsule with that ID, or
++    /// [`CapsuleError::UnsupportedEntryPoint`] when the capsule requires
++    /// explicit System scope.
+     pub fn register(&mut self, capsule: Box<dyn Capsule>) -> CapsuleResult<()> {
+         let id = capsule.id().clone();
+         let version = capsule.manifest().package.version.clone();
+@@ -166,8 +173,9 @@ impl CapsuleRegistry {
+     ///
+     /// # Errors
+     ///
+-    /// Returns an error when the principal already has a capsule with that ID,
+-    /// or when the capsule requires explicit System scope.
++    /// Returns [`CapsuleError::AlreadyRegistered`] when the principal already
++    /// has a capsule with that ID, or [`CapsuleError::UnsupportedEntryPoint`]
++    /// when the capsule requires explicit System scope.
+     pub fn register_for(
+         &mut self,
+         capsule: Box<dyn Capsule>,
+@@ -267,9 +275,7 @@ impl CapsuleRegistry {
+             .get(view_principal)
+             .is_some_and(|view| view.contains_key(&id))
+         {
+-            return Err(CapsuleError::UnsupportedEntryPoint(format!(
+-                "Already registered: {id}"
+-            )));
++            return Err(CapsuleError::AlreadyRegistered(id.to_string()));
+         }
+ 
+         let generation = runtime_id.generation;
+@@ -281,10 +287,9 @@ impl CapsuleRegistry {
+         let mut pending_ids = std::collections::HashSet::new();
+         for descriptor in &descriptors {
+             if self.uplinks.contains_key(&descriptor.id) || !pending_ids.insert(descriptor.id) {
+-                return Err(CapsuleError::UnsupportedEntryPoint(format!(
+-                    "Uplink already registered: {}",
+-                    descriptor.id
+-                )));
++                return Err(CapsuleError::UplinkAlreadyRegistered(
++                    descriptor.id.to_string(),
++                ));
+             }
+         }
+         let capsule: Arc<dyn Capsule> = Arc::from(capsule);
+@@ -356,17 +361,14 @@ impl CapsuleRegistry {
+             .get(view_principal)
+             .is_some_and(|view| view.contains_key(id))
+         {
+-            return Err(CapsuleError::UnsupportedEntryPoint(format!(
+-                "Already registered: {id}"
+-            )));
++            return Err(CapsuleError::AlreadyRegistered(id.to_string()));
+         }
+         let mut pending = std::collections::HashSet::new();
+         for descriptor in system_uplink_descriptors(capsule)? {
+             if self.uplinks.contains_key(&descriptor.id) || !pending.insert(descriptor.id) {
+-                return Err(CapsuleError::UnsupportedEntryPoint(format!(
+-                    "Uplink already registered: {}",
+-                    descriptor.id
+-                )));
++                return Err(CapsuleError::UplinkAlreadyRegistered(
++                    descriptor.id.to_string(),
++                ));
+             }
+         }
+         Ok(())
+@@ -377,7 +379,7 @@ impl CapsuleRegistry {
+     /// # Errors
+     ///
+     /// Returns [`CapsuleError::NotFound`] if no instance exists for `hash`, or
+-    /// an unsupported-entry error if the principal already has `id`.
++    /// [`CapsuleError::AlreadyRegistered`] if the principal already has `id`.
+     pub fn register_existing(
+         &mut self,
+         id: &CapsuleId,
+@@ -389,9 +391,7 @@ impl CapsuleRegistry {
+             .get(principal)
+             .is_some_and(|view| view.contains_key(id))
+         {
+-            return Err(CapsuleError::UnsupportedEntryPoint(format!(
+-                "Already registered: {id}"
+-            )));
++            return Err(CapsuleError::AlreadyRegistered(id.to_string()));
+         }
+         let runtime_id = self.system_runtime_for_hash(id, hash).ok_or_else(|| {
+             CapsuleError::NotFound(format!(
+diff --git a/crates/astrid-capsule/src/registry/compatibility.rs b/crates/astrid-capsule/src/registry/compatibility.rs
+index c7aaf9c..611bdb6 100644
+--- a/crates/astrid-capsule/src/registry/compatibility.rs
++++ b/crates/astrid-capsule/src/registry/compatibility.rs
+@@ -15,8 +15,10 @@ impl CapsuleRegistry {
+     ///
+     /// # Errors
+     ///
+-    /// Returns an error when the requested view already has this capsule, a
+-    /// matching runtime has a non-default owner, or uplink registration fails.
++    /// Returns [`CapsuleError::AlreadyRegistered`] when the requested view
++    /// already has this capsule, [`CapsuleError::UplinkAlreadyRegistered`] when
++    /// one of its uplinks is already registered, or an error when a matching
++    /// runtime has a non-default owner.
+     pub fn register_owned_by_default(
+         &mut self,
+         capsule: Box<dyn Capsule>,
+diff --git a/crates/astrid-capsule/src/registry/replacement.rs b/crates/astrid-capsule/src/registry/replacement.rs
+index 9e162f9..dc1c9a2 100644
+--- a/crates/astrid-capsule/src/registry/replacement.rs
++++ b/crates/astrid-capsule/src/registry/replacement.rs
+@@ -108,10 +108,9 @@ impl CapsuleRegistry {
+             if let Some((owner, _)) = self.uplinks.get(&descriptor.id)
+                 && owner != &id
+             {
+-                return Err(CapsuleError::UnsupportedEntryPoint(format!(
+-                    "Uplink already registered: {}",
+-                    descriptor.id
+-                )));
++                return Err(CapsuleError::UplinkAlreadyRegistered(
++                    descriptor.id.to_string(),
++                ));
+             }
+         }
+ 
+@@ -178,16 +177,14 @@ impl CapsuleRegistry {
+             if let Some((owner, _)) = self.uplinks.get(&descriptor.id)
+                 && owner != &id
+             {
+-                return Err(CapsuleError::UnsupportedEntryPoint(format!(
+-                    "Uplink already registered: {}",
+-                    descriptor.id
+-                )));
++                return Err(CapsuleError::UplinkAlreadyRegistered(
++                    descriptor.id.to_string(),
++                ));
+             }
+             if !pending.insert(descriptor.id) {
+-                return Err(CapsuleError::UnsupportedEntryPoint(format!(
+-                    "Uplink already registered: {}",
+-                    descriptor.id
+-                )));
++                return Err(CapsuleError::UplinkAlreadyRegistered(
++                    descriptor.id.to_string(),
++                ));
+             }
+         }
+         Ok(())
+diff --git a/crates/astrid-capsule/src/registry/uplinks.rs b/crates/astrid-capsule/src/registry/uplinks.rs
+index 654c7aa..ff02cb5 100644
+--- a/crates/astrid-capsule/src/registry/uplinks.rs
++++ b/crates/astrid-capsule/src/registry/uplinks.rs
+@@ -20,7 +20,8 @@ impl CapsuleRegistry {
+     ///
+     /// # Errors
+     ///
+-    /// Returns an error if an uplink with the same ID is already registered.
++    /// Returns [`CapsuleError::UplinkAlreadyRegistered`] if an uplink with the
++    /// same ID is already registered.
+     pub fn register_uplink(
+         &mut self,
+         capsule_id: &CapsuleId,
+@@ -28,9 +29,7 @@ impl CapsuleRegistry {
+     ) -> CapsuleResult<()> {
+         let uplink_id = descriptor.id;
+         if self.uplinks.contains_key(&uplink_id) {
+-            return Err(CapsuleError::UnsupportedEntryPoint(format!(
+-                "Uplink already registered: {uplink_id}"
+-            )));
++            return Err(CapsuleError::UplinkAlreadyRegistered(uplink_id.to_string()));
+         }
+         debug!(
+             capsule_id = %capsule_id,
+diff --git a/crates/astrid-capsule/src/registry_tests.rs b/crates/astrid-capsule/src/registry_tests.rs
+index a718d3b..e96f5c1 100644
+--- a/crates/astrid-capsule/src/registry_tests.rs
++++ b/crates/astrid-capsule/src/registry_tests.rs
+@@ -988,3 +988,73 @@ fn hash_for_and_principals_viewing_hash_separate_two_versions_of_one_id() {
+         "two distinct hashes → two runtime instances"
+     );
+ }
++
++// Duplicate registrations return dedicated errors (#476).
++#[test]
++fn duplicate_register_returns_already_registered() {
++    let mut registry = CapsuleRegistry::new();
++    registry
++        .register(Box::new(MockCapsule::new("dup-capsule")))
++        .expect("first registration");
++
++    let err = registry
++        .register(Box::new(MockCapsule::new("dup-capsule")))
++        .expect_err("second registration must fail");
++
++    assert!(
++        matches!(&err, CapsuleError::AlreadyRegistered(id) if id == "dup-capsule"),
++        "expected AlreadyRegistered, got {err:?}"
++    );
++    assert_eq!(err.to_string(), "Already registered: dup-capsule");
++    assert_eq!(registry.len(), 1);
++}
++
++#[test]
++fn duplicate_register_existing_returns_already_registered() {
++    let mut registry = CapsuleRegistry::new();
++    let hash = test_hash("dup-system-hash");
++    let id = CapsuleId::from_static("dup-service");
++    let alice = pid("alice");
++
++    registry
++        .register_system_runtime(
++            Box::new(MockCapsule::new("dup-service")),
++            hash.clone(),
++            &alice,
++        )
++        .expect("register system runtime");
++
++    let err = registry
++        .register_existing(&id, &hash, &alice)
++        .expect_err("alice already has this capsule");
++
++    assert!(
++        matches!(&err, CapsuleError::AlreadyRegistered(dup) if dup == "dup-service"),
++        "expected AlreadyRegistered, got {err:?}"
++    );
++}
++
++#[test]
++fn duplicate_register_uplink_returns_uplink_already_registered() {
++    let mut registry = CapsuleRegistry::new();
++    let id = CapsuleId::from_static("uplink-owner");
++    let descriptor = UplinkDescriptor::builder("dup-uplink", "cli").build();
++    let uplink_id = descriptor.id;
++
++    registry
++        .register_uplink(&id, descriptor.clone())
++        .expect("first uplink registration");
++
++    let err = registry
++        .register_uplink(&id, descriptor)
++        .expect_err("second uplink registration must fail");
++
++    assert!(
++        matches!(&err, CapsuleError::UplinkAlreadyRegistered(dup) if *dup == uplink_id.to_string()),
++        "expected UplinkAlreadyRegistered, got {err:?}"
++    );
++    assert_eq!(
++        err.to_string(),
++        format!("Uplink already registered: {uplink_id}")
++    );
++}
+-- 
+2.43.0
+

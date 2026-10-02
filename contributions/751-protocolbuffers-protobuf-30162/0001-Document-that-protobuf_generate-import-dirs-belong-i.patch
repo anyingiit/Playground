@@ -1,0 +1,47 @@
+From 560b94c9ed3a32094db94469eecc59f0ed7ec411 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:20:59 +0000
+Subject: [PATCH] Document that protobuf_generate import dirs belong in
+ IMPORT_DIRS.
+
+protobuf_generate() computes the paths of the generated files from
+IMPORT_DIRS/APPEND_PATH only. An import directory of the PROTOS passed
+through PROTOC_OPTIONS (--proto_path, -I) is forwarded to protoc but
+ignored for that computation, which either fails at configure time
+("could not find any correct proto include directory") or declares
+outputs that protoc never writes, so the files are regenerated on every
+build.
+
+Document that import roots belong in IMPORT_DIRS.
+
+Fixes #30162
+---
+ docs/cmake_protobuf_generate.md | 13 +++++++++++--
+ 1 file changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/docs/cmake_protobuf_generate.md b/docs/cmake_protobuf_generate.md
+index 542cf58..3a1c7d1 100644
+--- a/docs/cmake_protobuf_generate.md
++++ b/docs/cmake_protobuf_generate.md
+@@ -160,7 +160,16 @@ Multi-value arguments:
+     if the schema file is `proto/helloworld/helloworld.proto` and the import
+     directory `proto/` then the generated files are
+     `${PROTOC_OUT_DIR}/helloworld/helloworld.pb.h` and
+-    `${PROTOC_OUT_DIR}/helloworld/helloworld.pb.cc`.
++    `${PROTOC_OUT_DIR}/helloworld/helloworld.pb.cc`. Each import directory is
++    passed to protoc as `-I`, so this is also the place for directories that
++    only contain imported schema files.
+ -   `GENERATE_EXTENSIONS` — If LANGUAGE is omitted then this must be set to the
+     extensions that protoc generates.
+--   `PROTOC_OPTIONS` — Additional arguments that are forwarded to protoc.
++-   `PROTOC_OPTIONS` — Additional arguments that are forwarded to protoc. Do
++    not use it to pass the import directory of the `PROTOS` (`--proto_path` or
++    `-I`): it reaches protoc, but `protobuf_generate` does not use it to
++    compute the paths of the generated files. Depending on the layout this
++    either fails at configure time with "could not find any correct proto
++    include directory", or declares outputs that protoc never writes, so the
++    files are regenerated on every build. Use `IMPORT_DIRS` (or `APPEND_PATH`)
++    instead.
+-- 
+2.43.0
+

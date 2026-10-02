@@ -1,0 +1,185 @@
+From b232aa59ee64b5b580b567dee73fd1ef368b6770 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:41:21 +0000
+Subject: [PATCH] feat: add --json flag to stats command
+
+`sentrysearch stats --json` prints the index stats as a single JSON
+object with the keys backend, model, total_chunks, unique_source_files,
+source_files and missing_files, so scripts can consume it (e.g.
+`sentrysearch stats --json | jq .total_chunks`). An empty index still
+yields a valid object with zero counts and empty lists. The default
+human-readable output is unchanged.
+
+Closes #62
+---
+ README.md           |  4 +++
+ README.zh.md        |  4 +++
+ sentrysearch/cli.py | 18 ++++++++++-
+ tests/test_cli.py   | 73 +++++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 98 insertions(+), 1 deletion(-)
+
+diff --git a/README.md b/README.md
+index d596f10..94bb6ae 100644
+--- a/README.md
++++ b/README.md
+@@ -414,6 +414,10 @@ sentryblur prompt --last "road signs"   # → match_<...>_blurred.mp4
+ # Show index info (files marked [missing] no longer exist on disk)
+ sentrysearch stats
+ 
++# Same info as JSON for scripts (keys: backend, model, total_chunks,
++# unique_source_files, source_files, missing_files)
++sentrysearch stats --json | jq .total_chunks
++
+ # Remove specific files by path substring
+ sentrysearch remove path/to/footage
+ 
+diff --git a/README.zh.md b/README.zh.md
+index 3fa2e55..3c93ea4 100644
+--- a/README.zh.md
++++ b/README.zh.md
+@@ -340,6 +340,10 @@ sentryblur prompt --last "road signs"   # → match_<...>_blurred.mp4
+ # 查看索引信息（标记为 [missing] 表示磁盘上已不存在）
+ sentrysearch stats
+ 
++# 以 JSON 输出同样的信息，便于脚本处理（字段：backend、model、total_chunks、
++# unique_source_files、source_files、missing_files）
++sentrysearch stats --json | jq .total_chunks
++
+ # 按路径子串删除指定文件
+ sentrysearch remove path/to/footage
+ 
+diff --git a/sentrysearch/cli.py b/sentrysearch/cli.py
+index 7489892..5408c3d 100644
+--- a/sentrysearch/cli.py
++++ b/sentrysearch/cli.py
+@@ -1,5 +1,6 @@
+ """Click-based CLI entry point."""
+ 
++import json
+ import os
+ import platform
+ import shutil
+@@ -1478,7 +1479,9 @@ def overlay(video, output):
+ # -----------------------------------------------------------------------
+ 
+ @cli.command()
+-def stats():
++@click.option("--json", "as_json", is_flag=True,
++              help="Print stats as a single JSON object (for scripting).")
++def stats(as_json):
+     """Print index statistics."""
+     from .store import SentryStore, detect_index
+ 
+@@ -1488,6 +1491,19 @@ def stats():
+     store = SentryStore(backend=backend, model=model)
+     s = store.get_stats()
+ 
++    if as_json:
++        click.echo(json.dumps({
++            "backend": store.get_backend(),
++            "model": model,
++            "total_chunks": s["total_chunks"],
++            "unique_source_files": s["unique_source_files"],
++            "source_files": s["source_files"],
++            "missing_files": [
++                f for f in s["source_files"] if not os.path.exists(f)
++            ],
++        }, indent=2))
++        return
++
+     if s["total_chunks"] == 0:
+         click.echo("Index is empty. Run `sentrysearch index <directory>` first.")
+         return
+diff --git a/tests/test_cli.py b/tests/test_cli.py
+index dafd076..8279180 100644
+--- a/tests/test_cli.py
++++ b/tests/test_cli.py
+@@ -1,5 +1,6 @@
+ """Tests for sentrysearch.cli (Click CLI)."""
+ 
++import json
+ import os
+ import subprocess
+ from unittest.mock import ANY, MagicMock, patch
+@@ -94,6 +95,78 @@ class TestStatsCommand:
+             assert "10" in result.output
+             assert "qwen2b" in result.output
+ 
++    def test_stats_json_with_data(self, runner, tmp_path):
++        present = tmp_path / "video1.mp4"
++        present.write_bytes(b"")
++        missing = str(tmp_path / "gone" / "video2.mp4")
++        with patch("sentrysearch.store.SentryStore") as MockStore, \
++             patch("sentrysearch.store.detect_index", return_value=("local", "qwen2b")):
++            inst = MagicMock()
++            inst.get_stats.return_value = {
++                "total_chunks": 10,
++                "unique_source_files": 2,
++                "source_files": [str(present), missing],
++            }
++            inst.get_backend.return_value = "local"
++            MockStore.return_value = inst
++            result = runner.invoke(cli, ["stats", "--json"])
++            assert result.exit_code == 0, result.output
++            data = json.loads(result.output)
++            assert data == {
++                "backend": "local",
++                "model": "qwen2b",
++                "total_chunks": 10,
++                "unique_source_files": 2,
++                "source_files": [str(present), missing],
++                "missing_files": [missing],
++            }
++
++    def test_stats_json_empty(self, runner):
++        with patch("sentrysearch.store.SentryStore") as MockStore, \
++             patch("sentrysearch.store.detect_index", return_value=(None, None)):
++            inst = MagicMock()
++            inst.get_stats.return_value = {
++                "total_chunks": 0, "unique_source_files": 0, "source_files": [],
++            }
++            inst.get_backend.return_value = "gemini"
++            MockStore.return_value = inst
++            result = runner.invoke(cli, ["stats", "--json"])
++            assert result.exit_code == 0, result.output
++            data = json.loads(result.output)
++            assert data == {
++                "backend": "gemini",
++                "model": None,
++                "total_chunks": 0,
++                "unique_source_files": 0,
++                "source_files": [],
++                "missing_files": [],
++            }
++
++    def test_stats_without_json_is_human_readable(self, runner):
++        with patch("sentrysearch.store.SentryStore") as MockStore, \
++             patch("sentrysearch.store.detect_index", return_value=("local", "qwen2b")), \
++             patch("sentrysearch.cli.os.path.exists",
++                   side_effect=lambda p: p == "/a/video1.mp4"):
++            inst = MagicMock()
++            inst.get_stats.return_value = {
++                "total_chunks": 10,
++                "unique_source_files": 2,
++                "source_files": ["/a/video1.mp4", "/b/video2.mp4"],
++            }
++            inst.get_backend.return_value = "local"
++            MockStore.return_value = inst
++            result = runner.invoke(cli, ["stats"])
++            assert result.exit_code == 0
++            assert result.output == (
++                "Total chunks:  10\n"
++                "Source files:  2\n"
++                "Backend:       local (qwen2b)\n"
++                "\n"
++                "Indexed files:\n"
++                "  /a/video1.mp4\n"
++                "  /b/video2.mp4  [missing]\n"
++            )
++
+ 
+ class TestSearchCommand:
+     def test_search_empty_index(self, runner):
+-- 
+2.43.0
+

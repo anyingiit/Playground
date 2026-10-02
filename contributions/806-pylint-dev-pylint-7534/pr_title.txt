@@ -1,0 +1,1 @@
+Add optional extension to warn about non-standard `__exit__` argument names

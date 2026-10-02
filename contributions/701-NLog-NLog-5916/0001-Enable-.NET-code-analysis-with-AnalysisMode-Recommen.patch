@@ -1,0 +1,153 @@
+From aa1f81f929d5f4429a03cfc665da0f5a456b51a0 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:18:11 +0000
+Subject: [PATCH] Enable .NET code analysis with AnalysisMode Recommended
+
+Enable EnableNETAnalyzers with AnalysisLevel latest and AnalysisMode
+Recommended for the projects in src (all built with TreatWarningsAsErrors),
+and tune .editorconfig severities so the build stays warning-free:
+public API rules that would require breaking changes are disabled, and
+the remaining code quality rules are reported as suggestions for now.
+---
+ .editorconfig                                 | 37 ++++++++++++++++++-
+ .../NLog.OutputDebugString.csproj             |  3 ++
+ src/NLog.RegEx/NLog.RegEx.csproj              |  3 ++
+ .../NLog.Targets.AtomicFile.csproj            |  3 ++
+ .../NLog.Targets.GZipFile.csproj              |  3 ++
+ .../NLog.WindowsEventLog.csproj               |  3 ++
+ src/NLog/NLog.csproj                          |  3 ++
+ 7 files changed, 54 insertions(+), 1 deletion(-)
+
+diff --git a/.editorconfig b/.editorconfig
+index 36f9632..5fdf863 100644
+--- a/.editorconfig
++++ b/.editorconfig
+@@ -14,4 +14,39 @@ trim_trailing_whitespace = true
+ 
+ # .NET formatting rules
+ [*.{cs,vb}]
+-dotnet_sort_system_directives_first = true
+\ No newline at end of file
++dotnet_sort_system_directives_first = true
++
++# .NET code analysis (EnableNETAnalyzers + AnalysisMode=Recommended)
++dotnet_diagnostic.CA1001.severity = suggestion      # CA1001: Type owns disposable field(s) but is not disposable
++dotnet_diagnostic.CA1848.severity = suggestion      # CA1848: For improved performance, use the LoggerMessage delegates
++dotnet_diagnostic.CA1707.severity = none            # CA1707: Remove underscores from member name
++dotnet_diagnostic.IDE0130.severity = none           # IDE0130: Namespace does not match folder structure
++
++# Public API naming / design rules that cannot be changed without breaking changes
++dotnet_diagnostic.CA1000.severity = none            # CA1000: Do not declare static members on generic types
++dotnet_diagnostic.CA1067.severity = suggestion      # CA1067: Override Equals when implementing IEquatable
++dotnet_diagnostic.CA1068.severity = suggestion      # CA1068: CancellationToken parameters must come last
++dotnet_diagnostic.CA1069.severity = none            # CA1069: Enums should not have duplicate values
++dotnet_diagnostic.CA1710.severity = none            # CA1710: Identifiers should have correct suffix
++dotnet_diagnostic.CA1711.severity = none            # CA1711: Identifiers should not have incorrect suffix
++dotnet_diagnostic.CA1716.severity = none            # CA1716: Identifiers should not match keywords
++dotnet_diagnostic.CA1725.severity = suggestion      # CA1725: Parameter names should match base declaration
++
++# Rules where the suggested API is not available for all target platforms (net35, netstandard2.0)
++dotnet_diagnostic.CA1840.severity = suggestion      # CA1840: Use Environment.CurrentManagedThreadId
++dotnet_diagnostic.CA1858.severity = suggestion      # CA1858: Use StartsWith instead of IndexOf
++dotnet_diagnostic.CA1865.severity = suggestion      # CA1865: Use string.Method(char) instead of string.Method(string) for string with single char
++dotnet_diagnostic.CA2249.severity = suggestion      # CA2249: Consider using String.Contains instead of String.IndexOf
++dotnet_diagnostic.CA2263.severity = suggestion      # CA2263: Prefer generic overload when type is known
++
++# Code quality rules that can be resolved later
++dotnet_diagnostic.CA1305.severity = suggestion      # CA1305: Specify IFormatProvider
++dotnet_diagnostic.CA1309.severity = suggestion      # CA1309: Use ordinal StringComparison
++dotnet_diagnostic.CA1806.severity = suggestion      # CA1806: Do not ignore method results
++dotnet_diagnostic.CA1822.severity = suggestion      # CA1822: Mark members as static
++dotnet_diagnostic.CA1830.severity = suggestion      # CA1830: Prefer strongly-typed Append and Insert method overloads on StringBuilder
++dotnet_diagnostic.CA1838.severity = suggestion      # CA1838: Avoid StringBuilder parameters for P/Invokes
++dotnet_diagnostic.CA1859.severity = suggestion      # CA1859: Use concrete types when possible for improved performance
++dotnet_diagnostic.CA1861.severity = suggestion      # CA1861: Avoid constant arrays as arguments
++dotnet_diagnostic.CA2101.severity = suggestion      # CA2101: Specify marshalling for P/Invoke string arguments
++dotnet_diagnostic.CA2208.severity = suggestion      # CA2208: Instantiate argument exceptions correctly
+diff --git a/src/NLog.OutputDebugString/NLog.OutputDebugString.csproj b/src/NLog.OutputDebugString/NLog.OutputDebugString.csproj
+index e329d77..9e724e2 100644
+--- a/src/NLog.OutputDebugString/NLog.OutputDebugString.csproj
++++ b/src/NLog.OutputDebugString/NLog.OutputDebugString.csproj
+@@ -34,6 +34,9 @@
+     <IsPackable>true</IsPackable>
+     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
++    <EnableNETAnalyzers>true</EnableNETAnalyzers>
++    <AnalysisLevel>latest</AnalysisLevel>
++    <AnalysisMode>Recommended</AnalysisMode>
+     <Nullable>enable</Nullable>
+     <LangVersion>9</LangVersion>
+     <EnableTrimAnalyzer Condition=" '$(TargetFramework)' == 'netstandard2.1' ">true</EnableTrimAnalyzer>
+diff --git a/src/NLog.RegEx/NLog.RegEx.csproj b/src/NLog.RegEx/NLog.RegEx.csproj
+index 7a5bd43..705f233 100644
+--- a/src/NLog.RegEx/NLog.RegEx.csproj
++++ b/src/NLog.RegEx/NLog.RegEx.csproj
+@@ -34,6 +34,9 @@
+     <IsPackable>true</IsPackable>
+     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
++    <EnableNETAnalyzers>true</EnableNETAnalyzers>
++    <AnalysisLevel>latest</AnalysisLevel>
++    <AnalysisMode>Recommended</AnalysisMode>
+     <Nullable>enable</Nullable>
+     <LangVersion>9</LangVersion>
+     <EnableTrimAnalyzer Condition=" '$(TargetFramework)' == 'netstandard2.1' ">true</EnableTrimAnalyzer>
+diff --git a/src/NLog.Targets.AtomicFile/NLog.Targets.AtomicFile.csproj b/src/NLog.Targets.AtomicFile/NLog.Targets.AtomicFile.csproj
+index 8502eae..ba63813 100644
+--- a/src/NLog.Targets.AtomicFile/NLog.Targets.AtomicFile.csproj
++++ b/src/NLog.Targets.AtomicFile/NLog.Targets.AtomicFile.csproj
+@@ -35,6 +35,9 @@
+     <IsPackable>true</IsPackable>
+     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
++    <EnableNETAnalyzers>true</EnableNETAnalyzers>
++    <AnalysisLevel>latest</AnalysisLevel>
++    <AnalysisMode>Recommended</AnalysisMode>
+     <Nullable>enable</Nullable>
+     <LangVersion>9</LangVersion>
+     <EnableTrimAnalyzer Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0')) ">true</EnableTrimAnalyzer>
+diff --git a/src/NLog.Targets.GZipFile/NLog.Targets.GZipFile.csproj b/src/NLog.Targets.GZipFile/NLog.Targets.GZipFile.csproj
+index 70a6405..34475f5 100644
+--- a/src/NLog.Targets.GZipFile/NLog.Targets.GZipFile.csproj
++++ b/src/NLog.Targets.GZipFile/NLog.Targets.GZipFile.csproj
+@@ -34,6 +34,9 @@ https://github.com/NLog/NLog/wiki/GZip-File-target
+     <IsPackable>true</IsPackable>
+     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
++    <EnableNETAnalyzers>true</EnableNETAnalyzers>
++    <AnalysisLevel>latest</AnalysisLevel>
++    <AnalysisMode>Recommended</AnalysisMode>
+     <Nullable>enable</Nullable>
+     <LangVersion>9</LangVersion>
+     <EnableTrimAnalyzer Condition=" '$(TargetFramework)' == 'netstandard2.1' ">true</EnableTrimAnalyzer>
+diff --git a/src/NLog.WindowsEventLog/NLog.WindowsEventLog.csproj b/src/NLog.WindowsEventLog/NLog.WindowsEventLog.csproj
+index e3007ba..bfa23f3 100644
+--- a/src/NLog.WindowsEventLog/NLog.WindowsEventLog.csproj
++++ b/src/NLog.WindowsEventLog/NLog.WindowsEventLog.csproj
+@@ -34,6 +34,9 @@
+     <IsPackable>true</IsPackable>
+     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
++    <EnableNETAnalyzers>true</EnableNETAnalyzers>
++    <AnalysisLevel>latest</AnalysisLevel>
++    <AnalysisMode>Recommended</AnalysisMode>
+     <Nullable>enable</Nullable>
+     <LangVersion>9</LangVersion>
+     <EnableTrimAnalyzer Condition=" '$(TargetFramework)' == 'netstandard2.1' ">true</EnableTrimAnalyzer>
+diff --git a/src/NLog/NLog.csproj b/src/NLog/NLog.csproj
+index 8968b44..fe1a793 100644
+--- a/src/NLog/NLog.csproj
++++ b/src/NLog/NLog.csproj
+@@ -68,6 +68,9 @@ For all config options and platform support, check https://nlog-project.org/conf
+     <IsPackable>true</IsPackable>
+     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
++    <EnableNETAnalyzers>true</EnableNETAnalyzers>
++    <AnalysisLevel>latest</AnalysisLevel>
++    <AnalysisMode>Recommended</AnalysisMode>
+     <Nullable>enable</Nullable>
+     <LangVersion>9</LangVersion>
+     <LangVersion Condition=" '$(TargetFramework)' == 'netstandard2.1' Or $([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net9.0')) ">13</LangVersion>
+-- 
+2.43.0
+

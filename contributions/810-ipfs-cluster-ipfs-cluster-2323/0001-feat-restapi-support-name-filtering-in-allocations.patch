@@ -1,0 +1,148 @@
+From 048b680b9bd09e1a692787ea56609f02cb96ee5a Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:49:52 +0000
+Subject: [PATCH] feat(restapi): support name filtering in /allocations
+
+Add optional `name` and `match` query parameters to GET /allocations so
+that clients can list only the pins whose name matches, instead of
+fetching the full pinset and filtering client-side.
+
+The matching semantics are shared with the Pinning Services API:
+`match` accepts exact (default), iexact, partial and ipartial, and an
+invalid `match` value returns 400. The name filter combines with the
+existing `filter` (pin type) parameter.
+
+To reuse the logic, pinsvc.Pin.MatchesName now delegates to a new
+package-level pinsvc.MatchesName function.
+
+Closes #2323
+---
+ api/pinsvcapi/pinsvc/pinsvc.go |  8 +++++++-
+ api/rest/restapi.go            | 18 +++++++++++++++++-
+ api/rest/restapi_test.go       | 26 ++++++++++++++++++++++++++
+ test/rpc_api_mock.go           |  6 +++++-
+ 4 files changed, 55 insertions(+), 3 deletions(-)
+
+diff --git a/api/pinsvcapi/pinsvc/pinsvc.go b/api/pinsvcapi/pinsvc/pinsvc.go
+index a6e123b..a6c7889 100644
+--- a/api/pinsvcapi/pinsvc/pinsvc.go
++++ b/api/pinsvcapi/pinsvc/pinsvc.go
+@@ -72,10 +72,16 @@ func (p Pin) Defined() bool {
+ // MatchesName returns in a pin status matches a name option with a given
+ // match strategy.
+ func (p Pin) MatchesName(nameOpt string, strategy MatchingStrategy) bool {
++	return MatchesName(string(p.Name), nameOpt, strategy)
++}
++
++// MatchesName returns true if the given name matches a name option with a
++// given match strategy. An empty name option or an undefined strategy match
++// everything.
++func MatchesName(name, nameOpt string, strategy MatchingStrategy) bool {
+ 	if nameOpt == "" {
+ 		return true
+ 	}
+-	name := string(p.Name)
+ 
+ 	switch strategy {
+ 	case MatchingStrategyUndefined:
+diff --git a/api/rest/restapi.go b/api/rest/restapi.go
+index 7eb0717..4d2fcb7 100644
+--- a/api/rest/restapi.go
++++ b/api/rest/restapi.go
+@@ -18,6 +18,7 @@ import (
+ 	"github.com/ipfs-cluster/ipfs-cluster/adder/adderutils"
+ 	types "github.com/ipfs-cluster/ipfs-cluster/api"
+ 	"github.com/ipfs-cluster/ipfs-cluster/api/common"
++	"github.com/ipfs-cluster/ipfs-cluster/api/pinsvcapi/pinsvc"
+ 
+ 	logging "github.com/ipfs/go-log/v2"
+ 	rpc "github.com/libp2p/go-libp2p-gorpc"
+@@ -487,6 +488,20 @@ func (api *API) allocationsHandler(w http.ResponseWriter, r *http.Request) {
+ 		return
+ 	}
+ 
++	// Optional name filtering, with the same semantics as the Pinning
++	// Services API: "match" is one of exact (default), iexact, partial
++	// or ipartial.
++	name := queryValues.Get("name")
++	matchStr := queryValues.Get("match")
++	match := pinsvc.MatchingStrategyFromString(matchStr)
++	if matchStr != "" && match == pinsvc.MatchingStrategyUndefined {
++		api.SendResponse(w, http.StatusBadRequest, errors.New("invalid match value"), nil)
++		return
++	}
++	if match == pinsvc.MatchingStrategyUndefined {
++		match = pinsvc.MatchingStrategyExact
++	}
++
+ 	in := make(chan struct{})
+ 	close(in)
+ 
+@@ -524,7 +539,8 @@ func (api *API) allocationsHandler(w http.ResponseWriter, r *http.Request) {
+ 				}
+ 				// this means we keep iterating if no filter
+ 				// matched
+-				if filter == types.AllType || filter&p.Type > 0 {
++				if (filter == types.AllType || filter&p.Type > 0) &&
++					pinsvc.MatchesName(p.Name, name, match) {
+ 					break iterloop
+ 				}
+ 			}
+diff --git a/api/rest/restapi_test.go b/api/rest/restapi_test.go
+index 95b7298..bcf2cba 100644
+--- a/api/rest/restapi_test.go
++++ b/api/rest/restapi_test.go
+@@ -525,6 +525,32 @@ func TestAPIAllocationsEndpoint(t *testing.T) {
+ 		if errResp.Code != http.StatusBadRequest {
+ 			t.Error("an invalid filter value should 400")
+ 		}
++
++		test.MakeStreamingGet(t, rest, url(rest)+"/allocations?name=bbb", &resp, false)
++		if len(resp) != 1 || !resp[0].Cid.Equals(clustertest.Cid2) {
++			t.Error("name filter (default exact match) returned unexpected pin list: ", resp)
++		}
++
++		test.MakeStreamingGet(t, rest, url(rest)+"/allocations?name=b", &resp, false)
++		if len(resp) != 0 {
++			t.Error("exact name match should not match partial names: ", resp)
++		}
++
++		test.MakeStreamingGet(t, rest, url(rest)+"/allocations?name=CC&match=ipartial", &resp, false)
++		if len(resp) != 1 || !resp[0].Cid.Equals(clustertest.Cid3) {
++			t.Error("ipartial name match returned unexpected pin list: ", resp)
++		}
++
++		test.MakeStreamingGet(t, rest, url(rest)+"/allocations?filter=pin&name=AAA&match=iexact", &resp, false)
++		if len(resp) != 1 || !resp[0].Cid.Equals(clustertest.Cid1) {
++			t.Error("filter and name match combined returned unexpected pin list: ", resp)
++		}
++
++		errResp = api.Error{}
++		test.MakeStreamingGet(t, rest, url(rest)+"/allocations?name=aaa&match=invalid", &errResp, false)
++		if errResp.Code != http.StatusBadRequest {
++			t.Error("an invalid match value should 400")
++		}
+ 	}
+ 
+ 	test.BothEndpoints(t, tf)
+diff --git a/test/rpc_api_mock.go b/test/rpc_api_mock.go
+index 8a95a93..6b2d70b 100644
+--- a/test/rpc_api_mock.go
++++ b/test/rpc_api_mock.go
+@@ -132,8 +132,12 @@ func (mock *mockCluster) Pins(ctx context.Context, in <-chan struct{}, out chan<
+ 		ReplicationFactorMax: -1,
+ 	}
+ 
++	opts.Name = "aaa"
+ 	out <- api.PinWithOpts(Cid1, opts)
+-	out <- api.PinCid(Cid2)
++	pin2 := api.PinCid(Cid2)
++	pin2.Name = "bbb"
++	out <- pin2
++	opts.Name = "ccc"
+ 	out <- api.PinWithOpts(Cid3, opts)
+ 	close(out)
+ 	return nil
+-- 
+2.43.0
+

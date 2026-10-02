@@ -1,0 +1,358 @@
+From 207235c6fc7719f69622c6c5ae208cbbf116f3fa Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:44:16 +0000
+Subject: [PATCH] Add optional extension for non-standard __exit__ argument
+ names
+
+Add the ``pylint.extensions.exit_argument_names`` extension with the
+``non-standard-exit-argument-names`` (C3801) message. It is emitted when
+the three arguments of ``__exit__`` or ``__aexit__`` are not named
+``exc_type``, ``exc_value`` and ``traceback``, as in the Python data
+model documentation.
+
+Arguments matching ``ignored-argument-names``, signatures with
+``*args``/``**kwargs``, static/class methods, nested functions and
+signatures with the wrong arity are not checked.
+
+Closes #7534
+---
+ .../n/non-standard-exit-argument-names/bad.py |  6 ++
+ .../details.rst                               |  6 ++
+ .../non-standard-exit-argument-names/good.py  |  6 ++
+ .../non-standard-exit-argument-names/pylintrc |  2 +
+ .../related.rst                               |  2 +
+ doc/user_guide/checkers/extensions.rst        | 17 ++++
+ doc/user_guide/messages/messages_overview.rst |  1 +
+ doc/whatsnew/fragments/7534.new_check         |  6 ++
+ pylint/extensions/exit_argument_names.py      | 76 +++++++++++++++
+ .../exit_argument_names.py                    | 94 +++++++++++++++++++
+ .../exit_argument_names.rc                    |  2 +
+ .../exit_argument_names.txt                   |  6 ++
+ 12 files changed, 224 insertions(+)
+ create mode 100644 doc/data/messages/n/non-standard-exit-argument-names/bad.py
+ create mode 100644 doc/data/messages/n/non-standard-exit-argument-names/details.rst
+ create mode 100644 doc/data/messages/n/non-standard-exit-argument-names/good.py
+ create mode 100644 doc/data/messages/n/non-standard-exit-argument-names/pylintrc
+ create mode 100644 doc/data/messages/n/non-standard-exit-argument-names/related.rst
+ create mode 100644 doc/whatsnew/fragments/7534.new_check
+ create mode 100644 pylint/extensions/exit_argument_names.py
+ create mode 100644 tests/functional/ext/exit_argument_names/exit_argument_names.py
+ create mode 100644 tests/functional/ext/exit_argument_names/exit_argument_names.rc
+ create mode 100644 tests/functional/ext/exit_argument_names/exit_argument_names.txt
+
+diff --git a/doc/data/messages/n/non-standard-exit-argument-names/bad.py b/doc/data/messages/n/non-standard-exit-argument-names/bad.py
+new file mode 100644
+index 0000000..8c1f274
+--- /dev/null
++++ b/doc/data/messages/n/non-standard-exit-argument-names/bad.py
+@@ -0,0 +1,6 @@
++class Resource:
++    def __enter__(self):
++        return self
++
++    def __exit__(self, t, v, tb):  # [non-standard-exit-argument-names]
++        pass
+diff --git a/doc/data/messages/n/non-standard-exit-argument-names/details.rst b/doc/data/messages/n/non-standard-exit-argument-names/details.rst
+new file mode 100644
+index 0000000..5d4afac
+--- /dev/null
++++ b/doc/data/messages/n/non-standard-exit-argument-names/details.rst
+@@ -0,0 +1,6 @@
++The `Python data model documentation <https://docs.python.org/3/reference/datamodel.html#object.__exit__>`_
++names the three arguments of ``__exit__`` and ``__aexit__`` ``exc_type``, ``exc_value`` and
++``traceback``. Using these names everywhere makes context managers easier to read.
++
++Arguments matching ``ignored-argument-names`` (for example ``_``) are not checked, and
++signatures using ``*args`` or ``**kwargs`` are ignored.
+diff --git a/doc/data/messages/n/non-standard-exit-argument-names/good.py b/doc/data/messages/n/non-standard-exit-argument-names/good.py
+new file mode 100644
+index 0000000..4af4191
+--- /dev/null
++++ b/doc/data/messages/n/non-standard-exit-argument-names/good.py
+@@ -0,0 +1,6 @@
++class Resource:
++    def __enter__(self):
++        return self
++
++    def __exit__(self, exc_type, exc_value, traceback):
++        pass
+diff --git a/doc/data/messages/n/non-standard-exit-argument-names/pylintrc b/doc/data/messages/n/non-standard-exit-argument-names/pylintrc
+new file mode 100644
+index 0000000..a7325a1
+--- /dev/null
++++ b/doc/data/messages/n/non-standard-exit-argument-names/pylintrc
+@@ -0,0 +1,2 @@
++[MAIN]
++load-plugins=pylint.extensions.exit_argument_names
+diff --git a/doc/data/messages/n/non-standard-exit-argument-names/related.rst b/doc/data/messages/n/non-standard-exit-argument-names/related.rst
+new file mode 100644
+index 0000000..97dd659
+--- /dev/null
++++ b/doc/data/messages/n/non-standard-exit-argument-names/related.rst
+@@ -0,0 +1,2 @@
++- `With Statement Context Managers <https://docs.python.org/3/reference/datamodel.html#with-statement-context-managers>`_
++- `Asynchronous Context Managers <https://docs.python.org/3/reference/datamodel.html#asynchronous-context-managers>`_
+diff --git a/doc/user_guide/checkers/extensions.rst b/doc/user_guide/checkers/extensions.rst
+index 28e5951..7755ed6 100644
+--- a/doc/user_guide/checkers/extensions.rst
++++ b/doc/user_guide/checkers/extensions.rst
+@@ -20,6 +20,7 @@ Pylint provides the following optional plugins:
+ - :ref:`pylint.extensions.dunder`
+ - :ref:`pylint.extensions.empty_comment`
+ - :ref:`pylint.extensions.eq_without_hash`
++- :ref:`pylint.extensions.exit_argument_names`
+ - :ref:`pylint.extensions.for_any_all`
+ - :ref:`pylint.extensions.magic_value`
+ - :ref:`pylint.extensions.mccabe`
+@@ -352,6 +353,22 @@ Eq-Without-Hash checker Messages
+   their default __hash__ implementation if they also implement __eq__.
+ 
+ 
++.. _pylint.extensions.exit_argument_names:
++
++Exit-Argument-Names checker
++~~~~~~~~~~~~~~~~~~~~~~~~~~~
++
++This checker is provided by ``pylint.extensions.exit_argument_names``.
++Verbatim name of the checker is ``exit-argument-names``.
++
++Exit-Argument-Names checker Messages
++^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
++:non-standard-exit-argument-names (C3801): *Arguments of %s should be named '%s' instead of '%s'*
++  Used when the three arguments of a ``__exit__`` or ``__aexit__`` method are
++  not named ``exc_type, exc_value, traceback``, as in the Python data model
++  documentation. Arguments matching ``ignored-argument-names`` are not checked.
++
++
+ .. _pylint.extensions.private_import:
+ 
+ Import-Private-Name checker
+diff --git a/doc/user_guide/messages/messages_overview.rst b/doc/user_guide/messages/messages_overview.rst
+index d0e371b..064acd3 100644
+--- a/doc/user_guide/messages/messages_overview.rst
++++ b/doc/user_guide/messages/messages_overview.rst
+@@ -529,6 +529,7 @@ All messages in the convention category:
+    convention/multiple-statements
+    convention/non-ascii-module-import
+    convention/non-ascii-name
++   convention/non-standard-exit-argument-names
+    convention/single-string-used-for-slots
+    convention/singleton-comparison
+    convention/superfluous-parens
+diff --git a/doc/whatsnew/fragments/7534.new_check b/doc/whatsnew/fragments/7534.new_check
+new file mode 100644
+index 0000000..bcb6539
+--- /dev/null
++++ b/doc/whatsnew/fragments/7534.new_check
+@@ -0,0 +1,6 @@
++Add the optional ``pylint.extensions.exit_argument_names`` extension with the
++``non-standard-exit-argument-names`` message. It is emitted when the arguments of
++``__exit__`` or ``__aexit__`` are not named ``exc_type``, ``exc_value`` and
++``traceback``, as in the Python data model documentation.
++
++Closes #7534
+diff --git a/pylint/extensions/exit_argument_names.py b/pylint/extensions/exit_argument_names.py
+new file mode 100644
+index 0000000..25599a0
+--- /dev/null
++++ b/pylint/extensions/exit_argument_names.py
+@@ -0,0 +1,76 @@
++# Licensed under the GPL: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
++# For details: https://github.com/pylint-dev/pylint/blob/main/LICENSE
++# Copyright (c) https://github.com/pylint-dev/pylint/blob/main/CONTRIBUTORS.txt
++
++"""Optional checker for the argument names of ``__exit__`` and ``__aexit__``."""
++
++from __future__ import annotations
++
++from typing import TYPE_CHECKING
++
++from astroid import nodes
++
++from pylint.checkers import BaseChecker, utils
++from pylint.interfaces import HIGH
++
++if TYPE_CHECKING:
++    from pylint.lint import PyLinter
++
++EXIT_METHODS = frozenset(("__exit__", "__aexit__"))
++EXPECTED_ARGUMENT_NAMES = ("exc_type", "exc_value", "traceback")
++
++
++class ExitArgumentNamesChecker(BaseChecker):
++    """Checks that ``__exit__`` and ``__aexit__`` use the argument names of the
++    Python data model documentation.
++    """
++
++    name = "exit-argument-names"
++    msgs = {
++        "C3801": (
++            "Arguments of %s should be named '%s' instead of '%s'",
++            "non-standard-exit-argument-names",
++            "Used when the three arguments of a ``__exit__`` or ``__aexit__`` method "
++            "are not named ``exc_type, exc_value, traceback``, as in the Python data "
++            "model documentation. Arguments matching ``ignored-argument-names`` are "
++            "not checked.",
++        ),
++    }
++
++    @utils.only_required_for_messages("non-standard-exit-argument-names")
++    def visit_functiondef(self, node: nodes.FunctionDef) -> None:
++        if node.name not in EXIT_METHODS or not node.is_method():
++            return
++        if node.type != "method":
++            # staticmethod / classmethod: the arguments are shifted, skip them.
++            return
++        arguments = node.args
++        if arguments.vararg or arguments.kwarg:
++            return
++        positional = [*arguments.posonlyargs, *arguments.args]
++        if len(positional) != 4:
++            # Wrong arity is reported by unexpected-special-method-signature.
++            return
++        names = [arg.name for arg in positional[1:]]
++        ignored = self.linter.config.ignored_argument_names
++        if all(
++            name == expected or (ignored and ignored.match(name))
++            for name, expected in zip(names, EXPECTED_ARGUMENT_NAMES)
++        ):
++            return
++        self.add_message(
++            "non-standard-exit-argument-names",
++            node=node,
++            args=(
++                node.name,
++                ", ".join(EXPECTED_ARGUMENT_NAMES),
++                ", ".join(names),
++            ),
++            confidence=HIGH,
++        )
++
++    visit_asyncfunctiondef = visit_functiondef
++
++
++def register(linter: PyLinter) -> None:
++    linter.register_checker(ExitArgumentNamesChecker(linter))
+diff --git a/tests/functional/ext/exit_argument_names/exit_argument_names.py b/tests/functional/ext/exit_argument_names/exit_argument_names.py
+new file mode 100644
+index 0000000..106d31d
+--- /dev/null
++++ b/tests/functional/ext/exit_argument_names/exit_argument_names.py
+@@ -0,0 +1,94 @@
++"""Tests for non-standard-exit-argument-names."""
++
++# pylint: disable=missing-class-docstring,missing-function-docstring,too-few-public-methods
++# pylint: disable=unused-argument,invalid-name,unexpected-special-method-signature
++# pylint: disable=redefined-outer-name
++
++
++class Good:
++    def __enter__(self):
++        return self
++
++    def __exit__(self, exc_type, exc_value, traceback):
++        return None
++
++
++class AsyncGood:
++    async def __aenter__(self):
++        return self
++
++    async def __aexit__(self, exc_type, exc_value, traceback):
++        return None
++
++
++class ShortNames:
++    def __exit__(self, t, v, tb):  # [non-standard-exit-argument-names]
++        return None
++
++
++class AbbreviatedNames:
++    def __exit__(self, exc_type, exc_val, exc_tb):  # [non-standard-exit-argument-names]
++        return None
++
++
++class AsyncBadNames:
++    async def __aexit__(self, typ, value, tb):  # [non-standard-exit-argument-names]
++        return None
++
++
++class PositionalOnly:
++    def __exit__(self, t, v, tb, /):  # [non-standard-exit-argument-names]
++        return None
++
++
++class IgnoredNames:
++    def __exit__(self, _, __, ___):
++        return None
++
++
++class PartlyIgnored:
++    def __exit__(self, exc_type, _exc_value, tb):  # [non-standard-exit-argument-names]
++        return None
++
++
++class StarArgs:
++    def __exit__(self, *args):
++        return None
++
++
++class StarArgsAfterNames:
++    def __exit__(self, t, v, tb, *args, **kwargs):
++        return None
++
++
++class DefaultValues:
++    def __exit__(self, t=None, v=None, tb=None):  # [non-standard-exit-argument-names]
++        return None
++
++
++class WrongArity:
++    def __exit__(self, exc_type, exc_value):
++        return None
++
++
++class StaticExit:
++    @staticmethod
++    def __exit__(t, v, tb):
++        return None
++
++
++def __exit__(t, v, tb):
++    """Module-level function, not a context manager method."""
++
++
++class Outer:
++    def method(self):
++        def __exit__(t, v, tb):
++            return None
++
++        return __exit__
++
++
++class NotExit:
++    def __enter__(self, t, v, tb):
++        return self
+diff --git a/tests/functional/ext/exit_argument_names/exit_argument_names.rc b/tests/functional/ext/exit_argument_names/exit_argument_names.rc
+new file mode 100644
+index 0000000..0c52220
+--- /dev/null
++++ b/tests/functional/ext/exit_argument_names/exit_argument_names.rc
+@@ -0,0 +1,2 @@
++[MAIN]
++load-plugins=pylint.extensions.exit_argument_names,
+diff --git a/tests/functional/ext/exit_argument_names/exit_argument_names.txt b/tests/functional/ext/exit_argument_names/exit_argument_names.txt
+new file mode 100644
+index 0000000..1fdc883
+--- /dev/null
++++ b/tests/functional/ext/exit_argument_names/exit_argument_names.txt
+@@ -0,0 +1,6 @@
++non-standard-exit-argument-names:25:4:25:16:ShortNames.__exit__:Arguments of __exit__ should be named 'exc_type, exc_value, traceback' instead of 't, v, tb':HIGH
++non-standard-exit-argument-names:30:4:30:16:AbbreviatedNames.__exit__:Arguments of __exit__ should be named 'exc_type, exc_value, traceback' instead of 'exc_type, exc_val, exc_tb':HIGH
++non-standard-exit-argument-names:35:4:35:23:AsyncBadNames.__aexit__:Arguments of __aexit__ should be named 'exc_type, exc_value, traceback' instead of 'typ, value, tb':HIGH
++non-standard-exit-argument-names:40:4:40:16:PositionalOnly.__exit__:Arguments of __exit__ should be named 'exc_type, exc_value, traceback' instead of 't, v, tb':HIGH
++non-standard-exit-argument-names:50:4:50:16:PartlyIgnored.__exit__:Arguments of __exit__ should be named 'exc_type, exc_value, traceback' instead of 'exc_type, _exc_value, tb':HIGH
++non-standard-exit-argument-names:65:4:65:16:DefaultValues.__exit__:Arguments of __exit__ should be named 'exc_type, exc_value, traceback' instead of 't, v, tb':HIGH
+-- 
+2.43.0
+

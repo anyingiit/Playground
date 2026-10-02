@@ -1,0 +1,417 @@
+From 27802a823bde85571f594fc5620127d7d893f822 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:13:28 +0000
+Subject: [PATCH] Validate host-derived network config before checkpointing
+
+Add an optional cloudprovider.NetworkConfigValidator interface. When the
+cloud provider implements it, DraNet passes the final network
+configuration of a netdev device, including the routes, rules and
+neighbors derived from the host, to the provider right before persisting
+it with SetDeviceConfig. If the provider rejects it, the device
+preparation fails through PrepareResult.Err, the interface stays in the
+host namespace, any allocated profile is released and kubelet retries.
+
+Providers that do not implement the interface keep the current behavior.
+The hook is read-only and does not add any provider-specific routing
+logic.
+
+Fixes #278
+---
+ pkg/cloudprovider/cloud.go   |  17 +++++
+ pkg/driver/dra_hooks.go      |   7 ++
+ pkg/driver/dra_hooks_test.go | 136 +++++++++++++++++++++++++++++++++++
+ pkg/driver/driver.go         |   1 +
+ pkg/driver/driver_test.go    |  32 ++++++---
+ pkg/inventory/db.go          |  20 ++++++
+ pkg/inventory/db_test.go     |  78 ++++++++++++++++++++
+ 7 files changed, 280 insertions(+), 11 deletions(-)
+
+diff --git a/pkg/cloudprovider/cloud.go b/pkg/cloudprovider/cloud.go
+index 194d525..1355e47 100644
+--- a/pkg/cloudprovider/cloud.go
++++ b/pkg/cloudprovider/cloud.go
+@@ -54,3 +54,20 @@ type ProfileProvider interface {
+ 	// previously allocated for the given claim and profile.
+ 	ReleaseProfileConfig(id DeviceIdentifiers, claimUID types.UID, config *apis.NetworkConfig) error
+ }
++
++// NetworkConfigValidator is an optional interface implemented by cloud providers
++// that need to verify the final network configuration of a device, including
++// the routes, rules and neighbors that DraNet derived from the host, before it
++// is persisted and later applied inside the Pod network namespace.
++//
++// This is useful on platforms where a host agent configures the network
++// asynchronously, so a snapshot taken during NodePrepareResources may be
++// incomplete. Implementations must be read-only: they must not modify the
++// given config nor the host network state. Returning an error fails the
++// preparation of the device, leaving the interface in the host network
++// namespace so that kubelet retries NodePrepareResources later.
++type NetworkConfigValidator interface {
++	// ValidateNetworkConfig returns an error if config is not a valid
++	// configuration for the device identified by id.
++	ValidateNetworkConfig(id DeviceIdentifiers, config *apis.NetworkConfig) error
++}
+diff --git a/pkg/driver/dra_hooks.go b/pkg/driver/dra_hooks.go
+index e700435..30a436a 100644
+--- a/pkg/driver/dra_hooks.go
++++ b/pkg/driver/dra_hooks.go
+@@ -495,6 +495,13 @@ func (np *NetworkDriver) prepareDevice(ctx context.Context, nlHandle nlwrap.Hand
+ 		deviceCfg.RDMADevice = buildRDMAConfig(rdmaDev)
+ 	}
+ 
++	// Let the provider validate the final configuration, including the state
++	// derived from the host, before it is persisted. On failure the interface
++	// stays in the host namespace and kubelet retries the preparation.
++	if err := np.netdb.ValidateNetworkConfig(result.Device, &deviceCfg.NetworkInterfaceConfigInPod); err != nil {
++		return fmt.Errorf("device %s: provider rejected the network configuration of interface %s: %w", result.Device, ifName, err)
++	}
++
+ 	// Remove the pinned programs before the NRI hooks since it
+ 	// has to walk the entire bpf virtual filesystem and is slow
+ 	// TODO: check if there is some other way to do this
+diff --git a/pkg/driver/dra_hooks_test.go b/pkg/driver/dra_hooks_test.go
+index c55f8f8..d442c5a 100644
+--- a/pkg/driver/dra_hooks_test.go
++++ b/pkg/driver/dra_hooks_test.go
+@@ -19,6 +19,7 @@ package driver
+ import (
+ 	"context"
+ 	"encoding/json"
++	"errors"
+ 	"fmt"
+ 	"net/http"
+ 	"net/http/httptest"
+@@ -1308,6 +1309,141 @@ func testPrepareResourceClaim_Namespaced(t *testing.T) {
+ 				},
+ 			},
+ 		},
++		{
++			name: "provider validates the final network config before it is persisted",
++			claim: &resourcev1.ResourceClaim{
++				ObjectMeta: metav1.ObjectMeta{UID: "claim-uid-net-validate-ok", Namespace: "default", Name: "claim-net-validate-ok"},
++				Status: resourcev1.ResourceClaimStatus{
++					ReservedFor: []resourcev1.ResourceClaimConsumerReference{
++						{APIGroup: "", Resource: "pods", Name: "test-pod", UID: "pod-uid-net-validate-ok"},
++					},
++					Allocation: &resourcev1.AllocationResult{
++						Devices: resourcev1.DeviceAllocationResult{
++							Results: []resourcev1.DeviceRequestAllocationResult{
++								{Driver: testDriverName, Device: "net-dev-0", Request: "req-0"},
++							},
++						},
++					},
++				},
++			},
++			setupDB: func(db *fakeInventoryDB) {
++				db.IsIBOnlyDeviceFunc = func(deviceName string) bool { return false }
++				db.GetNetInterfaceNameFunc = func(deviceName string) (string, error) { return "dummy0", nil }
++				db.GetDeviceFunc = func(deviceName string) (resourcev1.Device, bool) {
++					return resourcev1.Device{Name: deviceName}, true
++				}
++				db.ValidateNetworkConfigFunc = func(deviceName string, config *apis.NetworkConfig) error {
++					if deviceName != "net-dev-0" || config.Interface.Name != "dummy0" {
++						return fmt.Errorf("unexpected validation of device %q with interface %q", deviceName, config.Interface.Name)
++					}
++					return nil
++				}
++			},
++			wantPodConfig: &PodConfig{
++				DeviceConfigs: map[string]DeviceConfig{
++					"net-dev-0": {
++						Claim: types.NamespacedName{
++							Namespace: "default",
++							Name:      "claim-net-validate-ok",
++						},
++						DeviceSnapshot: &resourcev1.Device{Name: "net-dev-0"},
++						NetworkInterfaceConfigInHost: apis.NetworkConfig{
++							Interface: apis.InterfaceConfig{
++								Name: "dummy0",
++							},
++						},
++						NetworkInterfaceConfigInPod: apis.NetworkConfig{
++							Interface: apis.InterfaceConfig{
++								Name: "dummy0",
++							},
++						},
++					},
++				},
++			},
++			check: func(t *testing.T, db *fakeInventoryDB) {
++				if got := db.validateCalls.Load(); got != 1 {
++					t.Errorf("ValidateNetworkConfig calls = %d, want 1", got)
++				}
++			},
++		},
++		{
++			name: "provider validation failure returns an error and does not persist the config",
++			claim: &resourcev1.ResourceClaim{
++				ObjectMeta: metav1.ObjectMeta{UID: "claim-uid-net-validate-fail", Namespace: "default", Name: "claim-net-validate-fail"},
++				Status: resourcev1.ResourceClaimStatus{
++					ReservedFor: []resourcev1.ResourceClaimConsumerReference{
++						{APIGroup: "", Resource: "pods", Name: "test-pod", UID: "pod-uid-net-validate-fail"},
++					},
++					Allocation: &resourcev1.AllocationResult{
++						Devices: resourcev1.DeviceAllocationResult{
++							Results: []resourcev1.DeviceRequestAllocationResult{
++								{Driver: testDriverName, Device: "net-dev-0", Request: "req-0"},
++							},
++						},
++					},
++				},
++			},
++			setupDB: func(db *fakeInventoryDB) {
++				db.IsIBOnlyDeviceFunc = func(deviceName string) bool { return false }
++				db.GetNetInterfaceNameFunc = func(deviceName string) (string, error) { return "dummy0", nil }
++				db.GetDeviceFunc = func(deviceName string) (resourcev1.Device, bool) {
++					return resourcev1.Device{Name: deviceName}, true
++				}
++				db.ValidateNetworkConfigFunc = func(deviceName string, config *apis.NetworkConfig) error {
++					return errors.New("connected route not yet configured")
++				}
++			},
++			wantErr:     "provider rejected the network configuration of interface dummy0",
++			wantErrAlso: "connected route not yet configured",
++			check: func(t *testing.T, db *fakeInventoryDB) {
++				if got := db.validateCalls.Load(); got != 1 {
++					t.Errorf("ValidateNetworkConfig calls = %d, want 1", got)
++				}
++			},
++		},
++		{
++			name: "provider validation failure releases the allocated profile",
++			claim: &resourcev1.ResourceClaim{
++				ObjectMeta: metav1.ObjectMeta{UID: "claim-uid-net-validate-profile", Namespace: "default", Name: "claim-net-validate-profile"},
++				Status: resourcev1.ResourceClaimStatus{
++					ReservedFor: []resourcev1.ResourceClaimConsumerReference{
++						{APIGroup: "", Resource: "pods", Name: "test-pod", UID: "pod-uid-net-validate-profile"},
++					},
++					Allocation: &resourcev1.AllocationResult{
++						Devices: resourcev1.DeviceAllocationResult{
++							Results: []resourcev1.DeviceRequestAllocationResult{
++								{Driver: testDriverName, Device: "net-dev-0", Request: "req-0"},
++							},
++						},
++					},
++				},
++			},
++			setupDB: func(db *fakeInventoryDB) {
++				db.IsIBOnlyDeviceFunc = func(deviceName string) bool { return false }
++				db.GetNetInterfaceNameFunc = func(deviceName string) (string, error) { return "dummy0", nil }
++				db.GetDeviceFunc = func(deviceName string) (resourcev1.Device, bool) {
++					return resourcev1.Device{Name: deviceName}, true
++				}
++				db.GetDeviceConfigFunc = func(deviceName string) (*apis.NetworkConfig, bool) {
++					return &apis.NetworkConfig{Profile: "cloud-managed"}, true
++				}
++				db.GetProfileConfigFunc = func(deviceName string, claim *resourcev1.ResourceClaim, config *apis.NetworkConfig) (*apis.NetworkConfig, error) {
++					return &apis.NetworkConfig{Interface: apis.InterfaceConfig{Addresses: []string{"10.24.3.5/32"}}}, nil
++				}
++				db.ValidateNetworkConfigFunc = func(deviceName string, config *apis.NetworkConfig) error {
++					return errors.New("connected route not yet configured")
++				}
++			},
++			wantErr: "connected route not yet configured",
++			check: func(t *testing.T, db *fakeInventoryDB) {
++				if got := db.validateCalls.Load(); got != 1 {
++					t.Errorf("ValidateNetworkConfig calls = %d, want 1", got)
++				}
++				if got := db.releaseProfileCalls.Load(); got != 1 {
++					t.Errorf("ReleaseProfileConfig calls = %d, want 1", got)
++				}
++			},
++		},
+ 		{
+ 			name: "no pods allocated to claim",
+ 			claim: &resourcev1.ResourceClaim{
+diff --git a/pkg/driver/driver.go b/pkg/driver/driver.go
+index 8559560..b52bacc 100644
+--- a/pkg/driver/driver.go
++++ b/pkg/driver/driver.go
+@@ -69,6 +69,7 @@ type inventoryDB interface {
+ 	RequestRescan()
+ 	GetProfileConfig(deviceName string, claim *resourceapi.ResourceClaim, config *apis.NetworkConfig) (*apis.NetworkConfig, error)
+ 	ReleaseProfileConfig(deviceName string, claimUID types.UID, config *apis.NetworkConfig) error
++	ValidateNetworkConfig(deviceName string, config *apis.NetworkConfig) error
+ }
+ 
+ // WithFilter
+diff --git a/pkg/driver/driver_test.go b/pkg/driver/driver_test.go
+index e71754d..8aa2be1 100644
+--- a/pkg/driver/driver_test.go
++++ b/pkg/driver/driver_test.go
+@@ -46,17 +46,19 @@ func (m *fakePluginHelper) RegistrationStatus() *registerapi.RegistrationStatus
+ 
+ // mockNetDB is a mock implementation of the inventoryDB interface for testing.
+ type fakeInventoryDB struct {
+-	resources                chan []resourcev1.Device
+-	rescanCalls              atomic.Int32
+-	GetDeviceFunc            func(deviceName string) (resourcev1.Device, bool)
+-	GetDeviceConfigFunc      func(deviceName string) (*apis.NetworkConfig, bool)
+-	GetNetInterfaceNameFunc  func(deviceName string) (string, error)
+-	IsIBOnlyDeviceFunc       func(deviceName string) bool
+-	GetRDMADeviceNameFunc    func(deviceName string) (string, error)
+-	GetProfileConfigFunc     func(deviceName string, claim *resourcev1.ResourceClaim, config *apis.NetworkConfig) (*apis.NetworkConfig, error)
+-	ReleaseProfileConfigFunc func(deviceName string, claimUID types.UID, config *apis.NetworkConfig) error
+-	profileCalls             atomic.Int32
+-	releaseProfileCalls      atomic.Int32
++	resources                 chan []resourcev1.Device
++	rescanCalls               atomic.Int32
++	GetDeviceFunc             func(deviceName string) (resourcev1.Device, bool)
++	GetDeviceConfigFunc       func(deviceName string) (*apis.NetworkConfig, bool)
++	GetNetInterfaceNameFunc   func(deviceName string) (string, error)
++	IsIBOnlyDeviceFunc        func(deviceName string) bool
++	GetRDMADeviceNameFunc     func(deviceName string) (string, error)
++	GetProfileConfigFunc      func(deviceName string, claim *resourcev1.ResourceClaim, config *apis.NetworkConfig) (*apis.NetworkConfig, error)
++	ReleaseProfileConfigFunc  func(deviceName string, claimUID types.UID, config *apis.NetworkConfig) error
++	ValidateNetworkConfigFunc func(deviceName string, config *apis.NetworkConfig) error
++	profileCalls              atomic.Int32
++	releaseProfileCalls       atomic.Int32
++	validateCalls             atomic.Int32
+ }
+ 
+ func newFakeInventoryDB() *fakeInventoryDB {
+@@ -126,6 +128,14 @@ func (m *fakeInventoryDB) ReleaseProfileConfig(deviceName string, claimUID types
+ 	return nil
+ }
+ 
++func (m *fakeInventoryDB) ValidateNetworkConfig(deviceName string, config *apis.NetworkConfig) error {
++	m.validateCalls.Add(1)
++	if m.ValidateNetworkConfigFunc != nil {
++		return m.ValidateNetworkConfigFunc(deviceName, config)
++	}
++	return nil
++}
++
+ // fakeNriStub is a mock implementation of the stub.Stub interface for testing.
+ type fakeNriStub struct {
+ 	stub.Stub
+diff --git a/pkg/inventory/db.go b/pkg/inventory/db.go
+index 4dd185c..2a91e45 100644
+--- a/pkg/inventory/db.go
++++ b/pkg/inventory/db.go
+@@ -657,6 +657,26 @@ func (db *DB) ReleaseProfileConfig(deviceName string, claimUID types.UID, config
+ 	return p.ReleaseProfileConfig(id, claimUID, config)
+ }
+ 
++// ValidateNetworkConfig lets the cloud provider validate the final network
++// configuration of a device before it is persisted. It is a no-op unless the
++// cloud provider implements cloudprovider.NetworkConfigValidator.
++func (db *DB) ValidateNetworkConfig(deviceName string, config *apis.NetworkConfig) error {
++	v, ok := db.instance.(cloudprovider.NetworkConfigValidator)
++	if !ok {
++		return nil
++	}
++
++	db.mu.RLock()
++	device, exists := db.deviceStore[deviceName]
++	db.mu.RUnlock()
++
++	if !exists {
++		return fmt.Errorf("device %s not found in inventory", deviceName)
++	}
++
++	return v.ValidateNetworkConfig(getDeviceIdentifiers(&device), config)
++}
++
+ // GetDeviceConfig returns the network configuration associated with the device, if any.
+ func (db *DB) GetDeviceConfig(deviceName string) (*apis.NetworkConfig, bool) {
+ 	db.mu.RLock()
+diff --git a/pkg/inventory/db_test.go b/pkg/inventory/db_test.go
+index 62b5ad5..4571f8a 100644
+--- a/pkg/inventory/db_test.go
++++ b/pkg/inventory/db_test.go
+@@ -17,6 +17,7 @@ limitations under the License.
+ package inventory
+ 
+ import (
++	"errors"
+ 	"fmt"
+ 	"os"
+ 	"path/filepath"
+@@ -556,6 +557,83 @@ func TestProviderIdentifiers(t *testing.T) {
+ 	}
+ }
+ 
++type validatingProvider struct {
++	mockCloudInstance
++	gotID     cloudprovider.DeviceIdentifiers
++	gotConfig *apis.NetworkConfig
++	err       error
++}
++
++func (p *validatingProvider) ValidateNetworkConfig(id cloudprovider.DeviceIdentifiers, config *apis.NetworkConfig) error {
++	p.gotID = id
++	p.gotConfig = config
++	return p.err
++}
++
++func TestValidateNetworkConfig(t *testing.T) {
++	device := resourceapi.Device{
++		Name: "pci-0000-00-01-0",
++		Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
++			apis.AttrInterfaceName: {StringValue: ptr.To("eth1")},
++			apis.AttrMac:           {StringValue: ptr.To("00:11:22:33:44:55")},
++			apis.AttrPCIAddress:    {StringValue: ptr.To("0000:00:01.0")},
++		},
++	}
++	config := &apis.NetworkConfig{Interface: apis.InterfaceConfig{Name: "eth1"}}
++
++	t.Run("no cloud provider", func(t *testing.T) {
++		db := New()
++		db.updateDeviceStore([]resourceapi.Device{device})
++		if err := db.ValidateNetworkConfig(device.Name, config); err != nil {
++			t.Errorf("ValidateNetworkConfig() unexpected error: %v", err)
++		}
++	})
++
++	t.Run("provider without validator", func(t *testing.T) {
++		db := New(WithCloudInstance(&mockCloudInstance{}))
++		db.updateDeviceStore([]resourceapi.Device{device})
++		if err := db.ValidateNetworkConfig(device.Name, config); err != nil {
++			t.Errorf("ValidateNetworkConfig() unexpected error: %v", err)
++		}
++	})
++
++	t.Run("provider accepts the config", func(t *testing.T) {
++		provider := &validatingProvider{}
++		db := New(WithCloudInstance(provider))
++		db.updateDeviceStore([]resourceapi.Device{device})
++		if err := db.ValidateNetworkConfig(device.Name, config); err != nil {
++			t.Fatalf("ValidateNetworkConfig() unexpected error: %v", err)
++		}
++		wantID := cloudprovider.DeviceIdentifiers{Name: "eth1", MAC: "00:11:22:33:44:55", PCIAddress: "0000:00:01.0"}
++		if diff := cmp.Diff(wantID, provider.gotID); diff != "" {
++			t.Errorf("identifiers mismatch (-want +got):\n%s", diff)
++		}
++		if provider.gotConfig != config {
++			t.Errorf("provider got config %v, want %v", provider.gotConfig, config)
++		}
++	})
++
++	t.Run("provider rejects the config", func(t *testing.T) {
++		wantErr := errors.New("connected route not yet configured")
++		db := New(WithCloudInstance(&validatingProvider{err: wantErr}))
++		db.updateDeviceStore([]resourceapi.Device{device})
++		if err := db.ValidateNetworkConfig(device.Name, config); !errors.Is(err, wantErr) {
++			t.Errorf("ValidateNetworkConfig() error = %v, want %v", err, wantErr)
++		}
++	})
++
++	t.Run("device not in inventory", func(t *testing.T) {
++		provider := &validatingProvider{}
++		db := New(WithCloudInstance(provider))
++		if err := db.ValidateNetworkConfig(device.Name, config); err == nil {
++			t.Errorf("ValidateNetworkConfig() expected an error for a device missing from the inventory")
++		}
++		if provider.gotConfig != nil {
++			t.Errorf("provider was called for a device missing from the inventory")
++		}
++	})
++}
++
+ func TestGetProviderAttributes(t *testing.T) {
+ 	tests := []struct {
+ 		name     string
+-- 
+2.43.0
+

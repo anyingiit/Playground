@@ -1,0 +1,6 @@
+includePaths:
+    - /home/user/work/supercollider/SCClassLibrary
+    - /home/user/work/supercollider/testsuite/classlibrary
+excludePaths: []
+postInlineWarnings: false
+excludeDefaultPaths: true

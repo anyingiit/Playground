@@ -1,0 +1,1 @@
+building: Name xref and dot files after the analyzed script

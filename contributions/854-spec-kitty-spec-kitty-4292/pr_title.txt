@@ -1,0 +1,1 @@
+[#4292] Clear the three mypy --strict no-any-return errors in the agent profile repository

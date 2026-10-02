@@ -1,0 +1,1 @@
+fix(mcp-text): keep separators when the first and last chunk text match

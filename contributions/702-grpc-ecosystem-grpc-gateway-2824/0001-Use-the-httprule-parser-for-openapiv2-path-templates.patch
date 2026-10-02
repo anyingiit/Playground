@@ -1,0 +1,425 @@
+From 1a7e01459cb22bbecd4746559097c0102a9fb760 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:18:55 +0000
+Subject: [PATCH] Use the httprule parser for openapiv2 path templates
+
+protoc-gen-openapiv2 had its own hand-written parser for the http.proto
+path template syntax, duplicating the one in internal/httprule that
+protoc-gen-grpc-gateway uses. Add httprule.SplitTemplate, which exposes
+the top-level segments and verb of a parsed template, and build the
+openapiv2 path parts from it so both generators split templates the same
+way.
+
+Path templates are already validated with httprule.Parse when the
+descriptor registry is loaded, so only templates that the gateway accepts
+reach the OpenAPI generator. Unit test inputs that httprule rejects (no
+leading slash, trailing slash, ":" right after a "/") were updated or
+removed accordingly. An explicit "{name=*}" is now treated like "{name}"
+(as the gateway does) and no longer gets a redundant "[^/]+" pattern.
+
+Fixes #2824
+---
+ internal/httprule/parse.go                    |  44 ++++++
+ internal/httprule/parse_test.go               |  59 ++++++++
+ .../internal/genopenapi/BUILD.bazel           |   1 +
+ .../internal/genopenapi/template.go           | 126 +++++-------------
+ .../internal/genopenapi/template_test.go      |  44 +++---
+ 5 files changed, 160 insertions(+), 114 deletions(-)
+
+diff --git a/internal/httprule/parse.go b/internal/httprule/parse.go
+index 65ffcf5..3ef0c9b 100644
+--- a/internal/httprule/parse.go
++++ b/internal/httprule/parse.go
+@@ -18,6 +18,50 @@ func (e InvalidTemplateError) Error() string {
+ 
+ // Parse parses the string representation of path template
+ func Parse(tmpl string) (Compiler, error) {
++	return parse(tmpl)
++}
++
++// Segment is a top-level segment of a parsed path template.
++type Segment struct {
++	// FieldPath is the field path bound by a variable segment, e.g. "name"
++	// for "{name=projects/*}". It is empty for literal and wildcard segments.
++	FieldPath string
++	// Value is the literal or wildcard ("*" or "**") of a non-variable
++	// segment, or the pattern of a variable segment, e.g. "projects/*" for
++	// "{name=projects/*}". A variable without an explicit pattern, such as
++	// "{name}", has the pattern "*".
++	Value string
++}
++
++// SplitTemplate parses the string representation of path template and
++// returns its top-level segments and its verb. The root template "/" has no
++// segments.
++func SplitTemplate(tmpl string) (segments []Segment, verb string, err error) {
++	t, err := parse(tmpl)
++	if err != nil {
++		return nil, "", err
++	}
++	for _, s := range t.segments {
++		switch s := s.(type) {
++		case literal:
++			if s == eof {
++				continue
++			}
++			segments = append(segments, Segment{Value: string(s)})
++		case variable:
++			pattern := make([]string, 0, len(s.segments))
++			for _, vs := range s.segments {
++				pattern = append(pattern, vs.String())
++			}
++			segments = append(segments, Segment{FieldPath: s.path, Value: strings.Join(pattern, "/")})
++		default:
++			segments = append(segments, Segment{Value: s.String()})
++		}
++	}
++	return segments, t.verb, nil
++}
++
++func parse(tmpl string) (template, error) {
+ 	if !strings.HasPrefix(tmpl, "/") {
+ 		return template{}, InvalidTemplateError{tmpl: tmpl, msg: "no leading /"}
+ 	}
+diff --git a/internal/httprule/parse_test.go b/internal/httprule/parse_test.go
+index 7bf11a3..91d54f9 100644
+--- a/internal/httprule/parse_test.go
++++ b/internal/httprule/parse_test.go
+@@ -436,3 +436,62 @@ func TestParseSegmentsWithErrors(t *testing.T) {
+ 		}
+ 	}
+ }
++
++func TestSplitTemplate(t *testing.T) {
++	for _, spec := range []struct {
++		tmpl     string
++		segments []Segment
++		verb     string
++	}{
++		{
++			tmpl: "/",
++		},
++		{
++			tmpl: "/:verb",
++			verb: "verb",
++		},
++		{
++			tmpl: "/v1/a:b:verb",
++			segments: []Segment{
++				{Value: "v1"},
++				{Value: "a:b"},
++			},
++			verb: "verb",
++		},
++		{
++			tmpl: "/v1/*/**",
++			segments: []Segment{
++				{Value: "v1"},
++				{Value: "*"},
++				{Value: "**"},
++			},
++		},
++		{
++			tmpl: "/v1/{name}/{parent.name=projects/*/topics/**}:verb:with:colons",
++			segments: []Segment{
++				{Value: "v1"},
++				{FieldPath: "name", Value: "*"},
++				{FieldPath: "parent.name", Value: "projects/*/topics/**"},
++			},
++			verb: "verb:with:colons",
++		},
++	} {
++		segments, verb, err := SplitTemplate(spec.tmpl)
++		if err != nil {
++			t.Errorf("SplitTemplate(%q) failed with %v; want success", spec.tmpl, err)
++			continue
++		}
++		if !reflect.DeepEqual(segments, spec.segments) {
++			t.Errorf("SplitTemplate(%q) segments = %#v; want %#v", spec.tmpl, segments, spec.segments)
++		}
++		if verb != spec.verb {
++			t.Errorf("SplitTemplate(%q) verb = %q; want %q", spec.tmpl, verb, spec.verb)
++		}
++	}
++
++	for _, tmpl := range []string{"", "v1", "/v1/", "/v1/:verb", "/v1/{name"} {
++		if _, _, err := SplitTemplate(tmpl); err == nil {
++			t.Errorf("SplitTemplate(%q) succeeded; want an error", tmpl)
++		}
++	}
++}
+diff --git a/protoc-gen-openapiv2/internal/genopenapi/BUILD.bazel b/protoc-gen-openapiv2/internal/genopenapi/BUILD.bazel
+index cef5f80..e323bdf 100644
+--- a/protoc-gen-openapiv2/internal/genopenapi/BUILD.bazel
++++ b/protoc-gen-openapiv2/internal/genopenapi/BUILD.bazel
+@@ -19,6 +19,7 @@ go_library(
+         "//internal/casing",
+         "//internal/descriptor",
+         "//internal/generator",
++        "//internal/httprule",
+         "//protoc-gen-openapiv2/options",
+         "@in_yaml_go_yaml_v3//:yaml",
+         "@org_golang_google_genproto_googleapis_api//annotations",
+diff --git a/protoc-gen-openapiv2/internal/genopenapi/template.go b/protoc-gen-openapiv2/internal/genopenapi/template.go
+index 08133ed..9e0c52c 100644
+--- a/protoc-gen-openapiv2/internal/genopenapi/template.go
++++ b/protoc-gen-openapiv2/internal/genopenapi/template.go
+@@ -21,6 +21,7 @@ import (
+ 
+ 	"github.com/grpc-ecosystem/grpc-gateway/v2/internal/casing"
+ 	"github.com/grpc-ecosystem/grpc-gateway/v2/internal/descriptor"
++	"github.com/grpc-ecosystem/grpc-gateway/v2/internal/httprule"
+ 	openapi_options "github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2/options"
+ 	"google.golang.org/genproto/googleapis/api/annotations"
+ 	"google.golang.org/genproto/googleapis/api/visibility"
+@@ -1293,6 +1294,8 @@ func resolveFullyQualifiedNameToOpenAPINames(messages []string, namingStrategy s
+ var canRegexp = regexp.MustCompile("{([a-zA-Z][a-zA-Z0-9_.-]*)([^}]*)}")
+ 
+ // templateToParts splits a URL template into path segments for use by `partsToOpenAPIPath` and `partsToRegexpMap`.
++// The template is parsed with the same parser that protoc-gen-grpc-gateway uses, so both generators agree on
++// how a template is split into segments and verb.
+ //
+ // Parameters:
+ //   - path:	The URL template as defined by https://github.com/googleapis/googleapis/blob/master/google/api/http.proto
+@@ -1302,103 +1305,42 @@ var canRegexp = regexp.MustCompile("{([a-zA-Z][a-zA-Z0-9_.-]*)([^}]*)}")
+ //
+ // Returns:
+ //
+-//	The path segments of the URL template.
++//	The path segments of the URL template. The first part is always empty (the leading "/"), and if the
++//	template has a verb, the last part is the verb prefixed with ":".
+ func templateToParts(path string, reg *descriptor.Registry, fields []*descriptor.Field, msgs []*descriptor.Message) []string {
+-	// It seems like the right thing to do here is to just use
+-	// strings.Split(path, "/") but that breaks badly when you hit a url like
+-	// /{my_field=prefix/*}/ and end up with 2 sections representing my_field.
+-	// Instead do the right thing and write a small pushdown (counter) automata
+-	// for it.
+-	var parts []string
+-	depth := 0
+-	buffer := ""
+-	for i, char := range path {
+-		switch char {
+-		case '{':
+-			// Push on the stack
+-			depth++
+-			buffer += string(char)
+-		case '}':
+-			if depth == 0 {
+-				panic("Encountered } without matching { before it.")
+-			}
+-			// Pop from the stack
+-			depth--
+-			if !reg.GetUseJSONNamesForFields() {
+-				buffer += string(char)
+-				continue
+-			}
+-			paramNameProto := strings.SplitN(buffer[1:], "=", 2)[0]
+-			paramNameCamelCase := lowerCamelCase(paramNameProto, fields, msgs)
+-			buffer = strings.Join([]string{"{", paramNameCamelCase, buffer[len(paramNameProto)+1:], "}"}, "")
+-		case '/':
+-			if depth == 0 {
+-				parts = append(parts, buffer)
+-				buffer = ""
+-				// Since the stack was empty when we hit the '/' we are done with this
+-				// section.
+-				continue
+-			}
+-			buffer += string(char)
+-		case ':':
+-			if depth == 0 {
+-				// Only treat this as a verb if we're at the end of the path or
+-				// if there are no more path segments (only more literals after the colon)
+-				remainingPath := path[i:]
+-				if !strings.Contains(remainingPath, "/") {
+-					parts = append(parts, buffer)
+-					verbSegment := remainingPath
+-					if reg.GetUseJSONNamesForFields() {
+-						verbSegment = processParametersInSegment(verbSegment, fields, msgs)
+-					}
+-					parts = append(parts, verbSegment)
+-					return parts
+-				}
+-			}
+-			buffer += string(char)
+-		default:
+-			buffer += string(char)
+-		}
++	segments, verb, err := httprule.SplitTemplate(path)
++	if err != nil {
++		// Path templates have already been validated with the same parser
++		// when the descriptor registry was loaded.
++		panic(fmt.Sprintf("invalid path template %q: %v", path, err))
+ 	}
+ 
+-	// Now append the last element to parts
+-	parts = append(parts, buffer)
+-
+-	return parts
+-}
+-
+-// processParametersInSegment processes a path segment (like ":verb/{param}") to convert
+-// parameter names to camelCase while preserving the overall structure
+-func processParametersInSegment(segment string, fields []*descriptor.Field, msgs []*descriptor.Message) string {
+-	result := segment
+-	depth := 0
+-	var paramStart int
+-	for i, char := range segment {
+-		switch char {
+-		case '{':
+-			if depth == 0 {
+-				paramStart = i
+-			}
+-			depth++
+-		case '}':
+-			depth--
+-			if depth == 0 {
+-				paramContent := segment[paramStart+1 : i]
+-				paramNameProto := strings.SplitN(paramContent, "=", 2)[0]
+-				paramNameCamelCase := lowerCamelCase(paramNameProto, fields, msgs)
+-
+-				oldParam := "{" + paramContent + "}"
+-				newParam := "{" + paramNameCamelCase
+-				if strings.Contains(paramContent, "=") {
+-					newParam += paramContent[len(paramNameProto):]
+-				}
+-				newParam += "}"
+-
+-				result = strings.Replace(result, oldParam, newParam, 1)
+-			}
++	parts := []string{""}
++	if len(segments) == 0 {
++		// The root path "/".
++		parts = append(parts, "")
++	}
++	for _, segment := range segments {
++		if segment.FieldPath == "" {
++			parts = append(parts, segment.Value)
++			continue
++		}
++		name := segment.FieldPath
++		if reg.GetUseJSONNamesForFields() {
++			name = lowerCamelCase(name, fields, msgs)
+ 		}
++		if segment.Value == "*" {
++			// "{name}" is equivalent to "{name=*}".
++			parts = append(parts, "{"+name+"}")
++			continue
++		}
++		parts = append(parts, "{"+name+"="+segment.Value+"}")
++	}
++	// A trailing ":" is parsed as an empty verb; keep it in the path.
++	if verb != "" || strings.HasSuffix(path, ":") {
++		parts = append(parts, ":"+verb)
+ 	}
+-	return result
++	return parts
+ }
+ 
+ // partsToOpenAPIPath converts each path part of the form /path/{string_value=strprefix/*} which is defined in
+diff --git a/protoc-gen-openapiv2/internal/genopenapi/template_test.go b/protoc-gen-openapiv2/internal/genopenapi/template_test.go
+index 3047253..bf4ff66 100644
+--- a/protoc-gen-openapiv2/internal/genopenapi/template_test.go
++++ b/protoc-gen-openapiv2/internal/genopenapi/template_test.go
+@@ -5063,12 +5063,12 @@ func TestTemplateWithJsonCamelCase(t *testing.T) {
+ 		{"/test1/{test1_id1_id2}", "/test1/{test1Id1Id2}"},
+ 		{"/test1/{test1_id1_id2}/test2/{test2_id3_id4}", "/test1/{test1Id1Id2}/test2/{test2Id3Id4}"},
+ 		{"/test1/test2/{test1_id1_id2}/{test2_id3_id4}", "/test1/test2/{test1Id1Id2}/{test2Id3Id4}"},
+-		{"test/{a}", "test/{a}"},
+-		{"test/{ab}", "test/{ab}"},
+-		{"test/{a_a}", "test/{aA}"},
+-		{"test/{ab_c}", "test/{abC}"},
+-		{"test/{json_name}", "test/{jsonNAME}"},
+-		{"test/{field_abc.field_newName}", "test/{fieldAbc.RESERVEDJSONNAME}"},
++		{"/test/{a}", "/test/{a}"},
++		{"/test/{ab}", "/test/{ab}"},
++		{"/test/{a_a}", "/test/{aA}"},
++		{"/test/{ab_c}", "/test/{abC}"},
++		{"/test/{json_name}", "/test/{jsonNAME}"},
++		{"/test/{field_abc.field_newName}", "/test/{fieldAbc.RESERVEDJSONNAME}"},
+ 		{"/item/search:item/{item_no_query}", "/item/search:item/{itemNoQuery}"},
+ 	}
+ 	reg := descriptor.NewRegistry()
+@@ -5093,11 +5093,11 @@ func TestTemplateWithoutJsonCamelCase(t *testing.T) {
+ 		{"/test1/{test1_id1_id2}", "/test1/{test1_id1_id2}"},
+ 		{"/test1/{test1_id1_id2}/test2/{test2_id3_id4}", "/test1/{test1_id1_id2}/test2/{test2_id3_id4}"},
+ 		{"/test1/test2/{test1_id1_id2}/{test2_id3_id4}", "/test1/test2/{test1_id1_id2}/{test2_id3_id4}"},
+-		{"test/{a}", "test/{a}"},
+-		{"test/{ab}", "test/{ab}"},
+-		{"test/{a_a}", "test/{a_a}"},
+-		{"test/{json_name}", "test/{json_name}"},
+-		{"test/{field_abc.field_newName}", "test/{field_abc.field_newName}"},
++		{"/test/{a}", "/test/{a}"},
++		{"/test/{ab}", "/test/{ab}"},
++		{"/test/{a_a}", "/test/{a_a}"},
++		{"/test/{json_name}", "/test/{json_name}"},
++		{"/test/{field_abc.field_newName}", "/test/{field_abc.field_newName}"},
+ 	}
+ 	reg := descriptor.NewRegistry()
+ 	reg.SetUseJSONNamesForFields(false)
+@@ -5127,7 +5127,6 @@ func TestTemplateToOpenAPIPath(t *testing.T) {
+ 		{"/{test=prefix/*}", "/{test}"},
+ 		{"/{test=prefix/that/has/multiple/parts/to/it/*}", "/{test}"},
+ 		{"/{test1}/{test2}", "/{test1}/{test2}"},
+-		{"/{test1}/{test2}/", "/{test1}/{test2}/"},
+ 		{"/{name=prefix/*}", "/{name}"},
+ 		{"/{name=prefix1/*/prefix2/*}", "/{name}"},
+ 		{"/{user.name=prefix/*}", "/{user.name}"},
+@@ -5138,8 +5137,10 @@ func TestTemplateToOpenAPIPath(t *testing.T) {
+ 		{"/{user.name=prefix/*}:customMethod", "/{user.name}:customMethod"},
+ 		{"/{user.name=prefix1/*/prefix2/*}:customMethod", "/{user.name}:customMethod"},
+ 		{"/{parent=prefix/*}/children:customMethod", "/{parent}/children:customMethod"},
+-		{"/{name=prefix/*}/:customMethod", "/{name}/:customMethod"},
+-		{"/foo/:bar", "/foo/:bar"},
++		{"/", "/"},
++		{"/:customMethod", "/:customMethod"},
++		{"/v1/a:b:customMethod", "/v1/a:b:customMethod"},
++		{"/v1/{name=**}", "/v1/{name}"},
+ 	}
+ 	reg := descriptor.NewRegistry()
+ 	reg.SetUseJSONNamesForFields(false)
+@@ -5198,12 +5199,11 @@ func TestTemplateToOpenAPIPathExpandSlashed(t *testing.T) {
+ 	}{
+ 		{"/v1/{name=projects/*/documents/*}:exportResults", "/v1/projects/{project}/documents/{document}:exportResults", getParameters([]string{"name"}), []string{"project", "document"}, true},
+ 		{"/test/{name=*}", "/test/{name}", getParameters([]string{"name"}), []string{"name"}, true},
+-		{"/test/{name=*}/", "/test/{name}/", getParameters([]string{"name"}), []string{"name"}, true},
+-		{"/test/{name=test_cases/*}/", "/test/test_cases/{testCase}/", getParameters([]string{"name"}), []string{"testCase"}, true},
+-		{"/test/{name=test_cases/*}/", "/test/test_cases/{test_case}/", getParameters([]string{"name"}), []string{"test_case"}, false},
+-		{"/test/{name=test-cases/*}/", "/test/test-cases/{test-case}/", getParameters([]string{"name"}), []string{"test-case"}, false},
+-		{"/test/{test_type.name=test_cases/*}/", "/test/test_cases/{testCase}/", getParameters([]string{"test_type.name"}), []string{"testCase"}, true},
+-		{"/test/{test_type.name=test_cases/*}/", "/test/test_cases/{test_case}/", getParameters([]string{"test_type.name"}), []string{"test_case"}, false},
++		{"/test/{name=test_cases/*}", "/test/test_cases/{testCase}", getParameters([]string{"name"}), []string{"testCase"}, true},
++		{"/test/{name=test_cases/*}", "/test/test_cases/{test_case}", getParameters([]string{"name"}), []string{"test_case"}, false},
++		{"/test/{name=test-cases/*}", "/test/test-cases/{test-case}", getParameters([]string{"name"}), []string{"test-case"}, false},
++		{"/test/{test_type.name=test_cases/*}", "/test/test_cases/{testCase}", getParameters([]string{"test_type.name"}), []string{"testCase"}, true},
++		{"/test/{test_type.name=test_cases/*}", "/test/test_cases/{test_case}", getParameters([]string{"test_type.name"}), []string{"test_case"}, false},
+ 	}
+ 	reg := descriptor.NewRegistry()
+ 	reg.SetExpandSlashedPathPatterns(true)
+@@ -5227,7 +5227,7 @@ func TestExpandedPathParametersStringType(t *testing.T) {
+ 	tests := []struct {
+ 		input string
+ 	}{
+-		{"/test/{name=test_cases/*}/"}, {"/v1/{name=projects/*/documents/*}:exportResults"},
++		{"/test/{name=test_cases/*}"}, {"/v1/{name=projects/*/documents/*}:exportResults"},
+ 	}
+ 	reg := descriptor.NewRegistry()
+ 	reg.SetExpandSlashedPathPatterns(true)
+@@ -5373,6 +5373,7 @@ func TestFQMNToRegexpMap(t *testing.T) {
+ 	}{
+ 		{"/test", map[string]string{}},
+ 		{"/{test}", map[string]string{}},
++		{"/{test=*}", map[string]string{}},
+ 		{"/{test" + pathParamUniqueSuffixDeliminator + "1=prefix/*}", map[string]string{"test" + pathParamUniqueSuffixDeliminator + "1": "prefix/[^/]+"}},
+ 		{"/{test=prefix/that/has/multiple/parts/to/it/**}", map[string]string{"test": "prefix/that/has/multiple/parts/to/it/.+"}},
+ 		{"/{test1=organizations/*}/{test2=divisions/*}", map[string]string{
+@@ -5400,7 +5401,6 @@ func TestFQMNtoOpenAPIName(t *testing.T) {
+ 		{"/{test=prefix/*}", "/{test}"},
+ 		{"/{test=prefix/that/has/multiple/parts/to/it/*}", "/{test}"},
+ 		{"/{test1}/{test2}", "/{test1}/{test2}"},
+-		{"/{test1}/{test2}/", "/{test1}/{test2}/"},
+ 		{"/v1/{name=tests/*}/tests", "/v1/{name}/tests"},
+ 	}
+ 	reg := descriptor.NewRegistry()
+-- 
+2.43.0
+

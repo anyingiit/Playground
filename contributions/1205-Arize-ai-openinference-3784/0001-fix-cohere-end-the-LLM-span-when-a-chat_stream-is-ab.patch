@@ -1,0 +1,196 @@
+From 9b2335b69f35e24f483ac804720ac8b05505f0f3 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:27:58 +0000
+Subject: [PATCH] fix(cohere): end the LLM span when a chat_stream is abandoned
+ or closed early
+
+The chat_stream proxy only ended its span on exhaustion, error, or context
+manager exit. A stream that was dropped (never iterated or partially
+consumed) or closed with close()/aclose() left the span open forever, so
+the call never showed up in traces.
+
+Mirror the Ollama instrumentation: add close()/aclose() overrides and a
+__del__ that ends the span with an UNSET status (keeping any partial
+output), and let _finish accept an optional status.
+
+Closes #3784
+---
+ .../instrumentation/cohere/_stream.py         | 32 +++++-
+ .../cohere/test_instrumentor.py               | 98 +++++++++++++++++++
+ 2 files changed, 127 insertions(+), 3 deletions(-)
+
+diff --git a/python/instrumentation/openinference-instrumentation-cohere/src/openinference/instrumentation/cohere/_stream.py b/python/instrumentation/openinference-instrumentation-cohere/src/openinference/instrumentation/cohere/_stream.py
+index 6ac1f13..eb582df 100644
+--- a/python/instrumentation/openinference-instrumentation-cohere/src/openinference/instrumentation/cohere/_stream.py
++++ b/python/instrumentation/openinference-instrumentation-cohere/src/openinference/instrumentation/cohere/_stream.py
+@@ -135,8 +135,9 @@ class _Stream(ObjectProxy):  # type: ignore[misc,type-arg,unused-ignore]
+     """Wraps a ``chat_stream`` iterator so the span ends when the stream is consumed.
+ 
+     The span must not be finished when ``chat_stream`` returns, because none of the
+-    response has arrived yet; it is finished once iteration completes, errors, or the
+-    stream's context manager exits.
++    response has arrived yet; it is finished once iteration completes, errors, the
++    stream's context manager exits, the stream is closed, or the stream is garbage
++    collected without having been fully consumed.
+     """
+ 
+     __slots__ = ("_self_with_span", "_self_accumulator", "_self_response_extractor")
+@@ -200,6 +201,31 @@ class _Stream(ObjectProxy):  # type: ignore[misc,type-arg,unused-ignore]
+         self._finish(trace_api.Status(status_code=trace_api.StatusCode.OK))
+         return result
+ 
++    def close(self) -> None:
++        try:
++            close = getattr(self.__wrapped__, "close", None)
++            if callable(close):
++                close()
++        finally:
++            # Closed before exhaustion: leave the span status UNSET to
++            # distinguish a truncated stream from a completed one.
++            self._finish(None)
++
++    async def aclose(self) -> None:
++        try:
++            aclose = getattr(self.__wrapped__, "aclose", None)
++            if callable(aclose):
++                await aclose()
++        finally:
++            self._finish(None)
++
++    def __del__(self) -> None:
++        # Abandoned (possibly never iterated): the span must still be ended.
++        try:
++            self._finish(None)
++        except BaseException:
++            pass
++
+     def _finish_error(self, exception: BaseException) -> None:
+         self._self_with_span.record_exception(exception)
+         self._finish(
+@@ -209,7 +235,7 @@ class _Stream(ObjectProxy):  # type: ignore[misc,type-arg,unused-ignore]
+             )
+         )
+ 
+-    def _finish(self, status: trace_api.Status) -> None:
++    def _finish(self, status: Optional[trace_api.Status]) -> None:
+         if self._self_with_span.is_finished:
+             return
+         attributes: Optional[Dict[str, AttributeValue]] = None
+diff --git a/python/instrumentation/openinference-instrumentation-cohere/tests/openinference/instrumentation/cohere/test_instrumentor.py b/python/instrumentation/openinference-instrumentation-cohere/tests/openinference/instrumentation/cohere/test_instrumentor.py
+index 92287cb..d86e46d 100644
+--- a/python/instrumentation/openinference-instrumentation-cohere/tests/openinference/instrumentation/cohere/test_instrumentor.py
++++ b/python/instrumentation/openinference-instrumentation-cohere/tests/openinference/instrumentation/cohere/test_instrumentor.py
+@@ -1,5 +1,6 @@
+ import asyncio
+ import base64
++import gc
+ import json
+ import struct
+ from contextlib import asynccontextmanager, contextmanager
+@@ -845,6 +846,103 @@ def test_chat_stream_error_ends_span(
+     assert span.status.status_code == StatusCode.ERROR
+ 
+ 
++def test_chat_stream_abandoned_before_iteration_ends_span(
++    in_memory_span_exporter: InMemorySpanExporter,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    """A stream that is dropped without ever being iterated must still end its span."""
++    monkeypatch.setattr(RawV2Client, "chat_stream", _raw_stream(_stream_events()))
++
++    stream = _client().chat_stream(
++        model="command-a-03-2025",
++        messages=[_user_message("Why is the sky blue?")],
++    )
++    assert in_memory_span_exporter.get_finished_spans() == ()
++    del stream
++    gc.collect()
++
++    spans = in_memory_span_exporter.get_finished_spans()
++    assert len(spans) == 1
++    span = spans[0]
++    assert span.name == "ClientV2.chat_stream"
++    # UNSET distinguishes an abandoned stream from one that completed.
++    assert span.status.status_code == StatusCode.UNSET
++
++
++def test_chat_stream_abandoned_mid_iteration_keeps_partial_output(
++    in_memory_span_exporter: InMemorySpanExporter,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    """Dropping a partially consumed stream ends the span with the output received so far."""
++    monkeypatch.setattr(RawV2Client, "chat_stream", _raw_stream(_stream_events()))
++
++    stream = _client().chat_stream(
++        model="command-a-03-2025",
++        messages=[_user_message("Why is the sky blue?")],
++    )
++    for event in stream:
++        if event.type == "content-delta":
++            break
++    assert in_memory_span_exporter.get_finished_spans() == ()
++    del stream, event
++    gc.collect()
++
++    spans = in_memory_span_exporter.get_finished_spans()
++    assert len(spans) == 1
++    span = spans[0]
++    attrs = dict(span.attributes or {})
++    assert span.status.status_code == StatusCode.UNSET
++    assert attrs[SpanAttributes.OUTPUT_VALUE] == "The sky is blue "
++
++
++def test_chat_stream_close_ends_span(
++    in_memory_span_exporter: InMemorySpanExporter,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    """Closing a stream early ends the span exactly once, while the stream is still referenced."""
++    monkeypatch.setattr(RawV2Client, "chat_stream", _raw_stream(_stream_events()))
++
++    # Typed as an ``Iterator`` by the SDK; at runtime it is a generator with ``close()``.
++    stream: Any = _client().chat_stream(
++        model="command-a-03-2025",
++        messages=[_user_message("Why is the sky blue?")],
++    )
++    next(iter(stream))
++    stream.close()
++
++    spans = in_memory_span_exporter.get_finished_spans()
++    assert len(spans) == 1
++    assert spans[0].status.status_code == StatusCode.UNSET
++
++    stream.close()
++    del stream
++    gc.collect()
++    assert len(in_memory_span_exporter.get_finished_spans()) == 1
++
++
++async def test_async_chat_stream_aclose_ends_span(
++    in_memory_span_exporter: InMemorySpanExporter,
++    monkeypatch: pytest.MonkeyPatch,
++) -> None:
++    """Closing an async stream early with ``aclose()`` ends the span."""
++    monkeypatch.setattr(AsyncRawV2Client, "chat_stream", _raw_async_stream(_stream_events()))
++
++    client = cohere.AsyncClientV2(api_key="fake-key")
++    # Typed as an ``AsyncIterator`` by the SDK; at runtime it has ``aclose()``.
++    stream: Any = client.chat_stream(
++        model="command-a-03-2025",
++        messages=[_user_message("Why is the sky blue?")],
++    )
++    await stream.__anext__()
++    assert in_memory_span_exporter.get_finished_spans() == ()
++    await stream.aclose()
++
++    spans = in_memory_span_exporter.get_finished_spans()
++    assert len(spans) == 1
++    assert spans[0].name == "AsyncClientV2.chat_stream"
++    assert spans[0].status.status_code == StatusCode.UNSET
++
++
+ async def test_async_chat_stream(
+     in_memory_span_exporter: InMemorySpanExporter,
+     monkeypatch: pytest.MonkeyPatch,
+-- 
+2.43.0
+

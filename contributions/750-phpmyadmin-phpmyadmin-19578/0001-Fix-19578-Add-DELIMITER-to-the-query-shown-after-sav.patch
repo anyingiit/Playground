@@ -1,0 +1,173 @@
+From e91b72f903a9bebeb867196e97831ebceaef79d7 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:36:38 +0000
+Subject: [PATCH] Fix #19578 - Add DELIMITER to the query shown after saving a
+ routine, event or trigger
+
+After a procedure, function, event or trigger is created or edited, the
+success message shows the executed CREATE statement without a DELIMITER.
+When the body contains ";", that query cannot be run again from the SQL
+tab, the "Edit" links or the mysql client.
+
+Wrap the displayed CREATE statement in "DELIMITER $$ ... $$ DELIMITER ;",
+like the routine and trigger export already does. In edit mode the DROP
+statement stays before the DELIMITER line. The query sent to the server
+is unchanged.
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ ChangeLog                               |  1 +
+ libraries/classes/Database/Events.php   |  4 ++--
+ libraries/classes/Database/Routines.php |  4 ++--
+ libraries/classes/Database/Triggers.php |  4 ++--
+ libraries/classes/Util.php              | 12 ++++++++++++
+ test/classes/UtilTest.php               | 25 +++++++++++++++++++++++++
+ 6 files changed, 44 insertions(+), 6 deletions(-)
+
+diff --git a/ChangeLog b/ChangeLog
+index 29fafb1..c01523c 100644
+--- a/ChangeLog
++++ b/ChangeLog
+@@ -2,6 +2,7 @@ phpMyAdmin - ChangeLog
+ ======================
+ 
+ 5.2.4 (not yet released)
++- issue #19578 Fix missing DELIMITER in the query shown after creating or editing a routine, event or trigger
+ - issue #19976 Fix Bootstrap theme icons are not visible on bigger screens
+ - issue #19339 Re-apply JSON syntax highlighting after AJAX updates
+ - issue        Improve table list access error messages when available
+diff --git a/libraries/classes/Database/Events.php b/libraries/classes/Database/Events.php
+index 935de62..14127e1 100644
+--- a/libraries/classes/Database/Events.php
++++ b/libraries/classes/Database/Events.php
+@@ -128,7 +128,7 @@ public function handleEditor(): void
+                             $message->addParam(
+                                 Util::backquote($_POST['item_name'])
+                             );
+-                            $sql_query = $drop_item . $item_query;
++                            $sql_query = $drop_item . Util::getQueryWithDelimiter($item_query);
+                         }
+                     }
+                 } else {
+@@ -148,7 +148,7 @@ public function handleEditor(): void
+                         $message->addParam(
+                             Util::backquote($_POST['item_name'])
+                         );
+-                        $sql_query = $item_query;
++                        $sql_query = Util::getQueryWithDelimiter($item_query);
+                     }
+                 }
+             }
+diff --git a/libraries/classes/Database/Routines.php b/libraries/classes/Database/Routines.php
+index 51ae75f..31c41bf 100644
+--- a/libraries/classes/Database/Routines.php
++++ b/libraries/classes/Database/Routines.php
+@@ -230,7 +230,7 @@ public function handleRequestCreateOrEdit(array $errors, $db)
+                     } else {
+                         [$newErrors, $message] = $this->create($routine_query, $create_routine, $privilegesBackup);
+                         if (empty($newErrors)) {
+-                            $sql_query = $drop_routine . $routine_query;
++                            $sql_query = $drop_routine . Util::getQueryWithDelimiter($routine_query);
+                         } else {
+                             $errors = array_merge($errors, $newErrors);
+                         }
+@@ -255,7 +255,7 @@ public function handleRequestCreateOrEdit(array $errors, $db)
+                     $message->addParam(
+                         Util::backquote($_POST['item_name'])
+                     );
+-                    $sql_query = $routine_query;
++                    $sql_query = Util::getQueryWithDelimiter($routine_query);
+                 }
+             }
+         }
+diff --git a/libraries/classes/Database/Triggers.php b/libraries/classes/Database/Triggers.php
+index f3e03e3..d8743a1 100644
+--- a/libraries/classes/Database/Triggers.php
++++ b/libraries/classes/Database/Triggers.php
+@@ -142,7 +142,7 @@ public function handleEditor(): void
+                             $message->addParam(
+                                 Util::backquote($_POST['item_name'])
+                             );
+-                            $sql_query = $drop_item . $item_query;
++                            $sql_query = $drop_item . Util::getQueryWithDelimiter($item_query);
+                         }
+                     }
+                 } else {
+@@ -162,7 +162,7 @@ public function handleEditor(): void
+                         $message->addParam(
+                             Util::backquote($_POST['item_name'])
+                         );
+-                        $sql_query = $item_query;
++                        $sql_query = Util::getQueryWithDelimiter($item_query);
+                     }
+                 }
+             }
+diff --git a/libraries/classes/Util.php b/libraries/classes/Util.php
+index eb84efd..774c581 100644
+--- a/libraries/classes/Util.php
++++ b/libraries/classes/Util.php
+@@ -376,6 +376,18 @@ public static function getTableList($db): array
+ 
+     /* ----------------------- Set of misc functions ----------------------- */
+ 
++    /**
++     * Wraps a compound statement (CREATE PROCEDURE, EVENT, TRIGGER, ...) in
++     * DELIMITER $$ ... $$ DELIMITER ; so that the query can be run again
++     * from the SQL tab or the mysql client, even when its body contains ";".
++     *
++     * @param string $query the statement to wrap
++     */
++    public static function getQueryWithDelimiter(string $query): string
++    {
++        return "DELIMITER $$\n" . $query . "$$\nDELIMITER ;\n";
++    }
++
+     /**
+      * Adds backquotes on both sides of a database, table or field name.
+      * and escapes backquotes inside the name with another backquote
+diff --git a/test/classes/UtilTest.php b/test/classes/UtilTest.php
+index d8427bf..0de7e05 100644
+--- a/test/classes/UtilTest.php
++++ b/test/classes/UtilTest.php
+@@ -10,6 +10,9 @@
+ use PhpMyAdmin\MoTranslator\Loader;
+ use PhpMyAdmin\ResponseRenderer;
+ use PhpMyAdmin\SqlParser\Context;
++use PhpMyAdmin\SqlParser\Parser;
++use PhpMyAdmin\SqlParser\Statements\CreateStatement;
++use PhpMyAdmin\SqlParser\Statements\DropStatement;
+ use PhpMyAdmin\SqlParser\Token;
+ use PhpMyAdmin\Util;
+ use PhpMyAdmin\Utils\SessionCache;
+@@ -1851,6 +1854,28 @@ public static function providerUnQuoteSelectedChar(): array
+         ];
+     }
+ 
++    public function testGetQueryWithDelimiter(): void
++    {
++        $query = 'CREATE PROCEDURE `p`() BEGIN SELECT 1; SELECT 2; END';
++
++        $delimited = Util::getQueryWithDelimiter($query);
++
++        self::assertSame("DELIMITER $$\n" . $query . "$$\nDELIMITER ;\n", $delimited);
++
++        // The procedure body contains ";", the result must still be parsed as one statement.
++        $parser = new Parser($delimited);
++        self::assertCount(0, $parser->errors);
++        self::assertCount(1, $parser->statements);
++        self::assertInstanceOf(CreateStatement::class, $parser->statements[0]);
++
++        // When editing, the DROP statement is shown before the DELIMITER line.
++        $parser = new Parser("DROP PROCEDURE `p`;\n" . $delimited);
++        self::assertCount(0, $parser->errors);
++        self::assertCount(2, $parser->statements);
++        self::assertInstanceOf(DropStatement::class, $parser->statements[0]);
++        self::assertInstanceOf(CreateStatement::class, $parser->statements[1]);
++    }
++
+     /**
+      * @dataProvider providerForTestBackquote
+      */
+-- 
+2.43.0
+

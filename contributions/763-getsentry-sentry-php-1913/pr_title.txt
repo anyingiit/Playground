@@ -1,0 +1,1 @@
+feat(tracing): add trace_ignore_status_codes option

@@ -1,0 +1,1 @@
+plugins: LinExp: fix audio-rate params mixed with scalar/kr

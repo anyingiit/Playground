@@ -1,0 +1,1 @@
+fix: handle circular objects passed to done()

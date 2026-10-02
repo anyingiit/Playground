@@ -1,0 +1,44 @@
+From ed73561b5c5767ec4bb9839ea46e586594699140 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:24:04 +0000
+Subject: [PATCH] Add unit tests for fmt_count (#285)
+
+Cover the thousands-separator helper used in the progress summary:
+zero, values just below and at each grouping boundary, and usize::MAX
+on 64-bit targets.
+
+Closes #285
+---
+ src/runner/mod.rs | 18 ++++++++++++++++++
+ 1 file changed, 18 insertions(+)
+
+diff --git a/src/runner/mod.rs b/src/runner/mod.rs
+index bb558d2..c235fc9 100644
+--- a/src/runner/mod.rs
++++ b/src/runner/mod.rs
+@@ -1596,4 +1596,22 @@ mod tests {
+         assert_eq!(scoped.lock().unwrap().as_slice(), ["example.com/shop"]);
+         assert_eq!(host_only.lock().unwrap().as_slice(), ["example.com"]);
+     }
++
++    #[test]
++    fn test_fmt_count_inserts_thousands_separators() {
++        assert_eq!(fmt_count(0), "0");
++        assert_eq!(fmt_count(7), "7");
++        assert_eq!(fmt_count(999), "999");
++        assert_eq!(fmt_count(1000), "1,000");
++        assert_eq!(fmt_count(12345), "12,345");
++        assert_eq!(fmt_count(999_999), "999,999");
++        assert_eq!(fmt_count(1_000_000), "1,000,000");
++        assert_eq!(fmt_count(1_234_567), "1,234,567");
++    }
++
++    #[test]
++    #[cfg(target_pointer_width = "64")]
++    fn test_fmt_count_handles_usize_max() {
++        assert_eq!(fmt_count(usize::MAX), "18,446,744,073,709,551,615");
++    }
+ }
+-- 
+2.43.0
+

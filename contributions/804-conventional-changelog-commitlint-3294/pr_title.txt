@@ -1,0 +1,1 @@
+fix(ensure): allow periods and numbers in start-case words

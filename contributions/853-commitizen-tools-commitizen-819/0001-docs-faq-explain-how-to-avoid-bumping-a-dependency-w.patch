@@ -1,0 +1,112 @@
+From 8df74fc1906f384fec83e367d860879b21785fde Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:25:38 +0000
+Subject: [PATCH] docs(faq): explain how to avoid bumping a dependency with the
+ same version
+
+When a dependency is pinned to the same version as the project, a
+version_files entry such as "pyproject.toml:version" also bumps the
+dependency. Document the two ways to avoid it: use a version provider,
+or anchor the pattern with "^". Add a test covering the anchored pattern.
+
+Closes #819
+---
+ docs/faq.md                                | 43 ++++++++++++++++++++++
+ tests/test_bump_update_version_in_files.py | 33 +++++++++++++++++
+ 2 files changed, 76 insertions(+)
+
+diff --git a/docs/faq.md b/docs/faq.md
+index 568ec2f..00a93e0 100644
+--- a/docs/faq.md
++++ b/docs/faq.md
+@@ -89,3 +89,46 @@ ignored_tag_formats = [
+     "v${major}.${minor}",
+ ]
+ ```
++
++## How to avoid bumping a dependency that has the same version as my project?
++
++Each entry in [`version_files`](config/bump.md#version_files) is checked line by line:
++on every line that matches the entry's pattern, all occurrences of the current version are replaced.
++Without a pattern, every line containing the current version matches.
++
++So with `version_files = ["pyproject.toml:version"]`, a dependency pinned to the same version as your project
++is bumped as well, because its line also contains `version`:
++
++```toml
++[tool.poetry]
++version = "1.2.3"
++
++[tool.poetry.dependencies]
++foo = { version = "1.2.3", extras = ["bar"] }  # also changed to the new version
++```
++
++There are two ways to avoid this.
++
++**Use a [version provider](config/version_provider.md) (recommended).**
++If the version lives in a file that has a provider (e.g. `pep621`, `poetry`, `uv`, `cargo`, `npm` or `composer`),
++let the provider update it and remove that file from `version_files`.
++The provider only writes the project's own version field.
++
++```toml
++[tool.commitizen]
++version_provider = "poetry"
++```
++
++**Anchor the pattern.**
++The pattern is a regular expression matched against each line, so `^` anchors it to the start of the line:
++
++```toml
++[tool.commitizen]
++version_files = ["pyproject.toml:^version"]
++```
++
++Only lines starting with `version` are updated now.
++A line such as `version = "1.2.3"` inside a dependency table (e.g. `[tool.poetry.dependencies.foo]`) still matches,
++so make the pattern more specific if your file contains one.
++
++See [#496](https://github.com/commitizen-tools/commitizen/issues/496) for the original discussion.
+diff --git a/tests/test_bump_update_version_in_files.py b/tests/test_bump_update_version_in_files.py
+index d52725b..6e8ee0f 100644
+--- a/tests/test_bump_update_version_in_files.py
++++ b/tests/test_bump_update_version_in_files.py
+@@ -398,3 +398,36 @@ def test_update_version_in_files_return_value_partial_update(tmp_path):
+     # Verify file2 was not changed
+     content2 = file2.read_text(encoding="utf-8")
+     assert content2 == "some other content\n"
++
++
++@pytest.mark.parametrize(
++    ("regex", "dependency_bumped"),
++    [
++        ("version", True),
++        ("^version", False),
++    ],
++)
++def test_anchored_regex_skips_dependency_with_same_version(
++    tmp_path, regex, dependency_bumped
++):
++    pyproject = tmp_path / "pyproject.toml"
++    pyproject.write_text(
++        '[tool.poetry]\nversion = "1.2.3"\n\n'
++        '[tool.poetry.dependencies]\nfoo = { version = "1.2.3", extras = ["bar"] }\n',
++        encoding="utf-8",
++    )
++
++    bump.update_version_in_files(
++        "1.2.3",
++        "2.0.0",
++        [f"{pyproject}:{regex}"],
++        check_consistency=False,
++        encoding="utf-8",
++    )
++
++    dependency_version = "2.0.0" if dependency_bumped else "1.2.3"
++    assert pyproject.read_text(encoding="utf-8") == (
++        '[tool.poetry]\nversion = "2.0.0"\n\n'
++        "[tool.poetry.dependencies]\n"
++        f'foo = {{ version = "{dependency_version}", extras = ["bar"] }}\n'
++    )
+-- 
+2.43.0
+

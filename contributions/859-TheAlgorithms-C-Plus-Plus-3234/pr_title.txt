@@ -1,0 +1,1 @@
+docs: enable JAVADOC_BANNER so banner-style comments are rendered

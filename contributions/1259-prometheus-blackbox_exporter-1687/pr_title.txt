@@ -1,0 +1,1 @@
+config: check referenced local files with --config.check

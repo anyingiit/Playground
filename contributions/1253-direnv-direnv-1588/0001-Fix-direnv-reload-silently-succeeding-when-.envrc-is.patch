@@ -1,0 +1,116 @@
+From 44f5799ed76fa6965091df08116546444f61b183 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:13:49 +0000
+Subject: [PATCH] Fix `direnv reload` silently succeeding when .envrc is not
+ allowed
+
+`direnv reload` only returned an error when the .envrc had been
+explicitly denied. For an .envrc that was never allowed (or whose
+content changed since it was allowed) it just touched the file and
+exited 0, so the user had no indication that nothing would be loaded.
+
+Return the same "is blocked. Run `direnv allow`" error for every
+status other than Allowed, and add unit tests covering the not
+allowed, denied and allowed cases.
+
+Fixes #1588
+---
+ internal/cmd/cmd_reload.go      |  2 +-
+ internal/cmd/cmd_reload_test.go | 72 +++++++++++++++++++++++++++++++++
+ 2 files changed, 73 insertions(+), 1 deletion(-)
+ create mode 100644 internal/cmd/cmd_reload_test.go
+
+diff --git a/internal/cmd/cmd_reload.go b/internal/cmd/cmd_reload.go
+index 5d0a5e8..bf6abf5 100644
+--- a/internal/cmd/cmd_reload.go
++++ b/internal/cmd/cmd_reload.go
+@@ -17,7 +17,7 @@ var CmdReload = &Cmd{
+ 			return fmt.Errorf(".envrc not found")
+ 		}
+ 
+-		if foundRC.Allowed() == Denied {
++		if foundRC.Allowed() != Allowed {
+ 			return fmt.Errorf(notAllowed, foundRC.Path())
+ 		}
+ 
+diff --git a/internal/cmd/cmd_reload_test.go b/internal/cmd/cmd_reload_test.go
+new file mode 100644
+index 0000000..41a5495
+--- /dev/null
++++ b/internal/cmd/cmd_reload_test.go
+@@ -0,0 +1,72 @@
++package cmd
++
++import (
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++)
++
++func newReloadTestConfig(t *testing.T) (*Config, string) {
++	t.Helper()
++	dir := t.TempDir()
++	workDir := filepath.Join(dir, "project")
++	if err := os.Mkdir(workDir, 0o755); err != nil {
++		t.Fatal(err)
++	}
++	rcPath := filepath.Join(workDir, ".envrc")
++	if err := os.WriteFile(rcPath, []byte("export FOO=bar\n"), 0o644); err != nil {
++		t.Fatal(err)
++	}
++	config := &Config{
++		Env:            Env{},
++		WorkDir:        workDir,
++		DataDir:        filepath.Join(dir, "data"),
++		WhitelistExact: map[string]bool{},
++	}
++	return config, rcPath
++}
++
++func TestReloadNotAllowed(t *testing.T) {
++	config, rcPath := newReloadTestConfig(t)
++
++	err := CmdReload.Action.Call(Env{}, nil, config)
++	if err == nil {
++		t.Fatal("expected direnv reload to fail for a .envrc that was never allowed")
++	}
++	if !strings.Contains(err.Error(), rcPath) || !strings.Contains(err.Error(), "direnv allow") {
++		t.Fatalf("unexpected error message: %v", err)
++	}
++}
++
++func TestReloadDenied(t *testing.T) {
++	config, _ := newReloadTestConfig(t)
++
++	rc, err := config.FindRC()
++	if err != nil || rc == nil {
++		t.Fatalf("FindRC() = %v, %v", rc, err)
++	}
++	if err := rc.Deny(); err != nil {
++		t.Fatal(err)
++	}
++
++	if err := CmdReload.Action.Call(Env{}, nil, config); err == nil {
++		t.Fatal("expected direnv reload to fail for a denied .envrc")
++	}
++}
++
++func TestReloadAllowed(t *testing.T) {
++	config, _ := newReloadTestConfig(t)
++
++	rc, err := config.FindRC()
++	if err != nil || rc == nil {
++		t.Fatalf("FindRC() = %v, %v", rc, err)
++	}
++	if err := rc.Allow(); err != nil {
++		t.Fatal(err)
++	}
++
++	if err := CmdReload.Action.Call(Env{}, nil, config); err != nil {
++		t.Fatalf("expected direnv reload to succeed for an allowed .envrc, got %v", err)
++	}
++}
+-- 
+2.43.0
+

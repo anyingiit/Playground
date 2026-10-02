@@ -1,0 +1,1 @@
+docs(faq): explain how to avoid bumping a dependency with the same version

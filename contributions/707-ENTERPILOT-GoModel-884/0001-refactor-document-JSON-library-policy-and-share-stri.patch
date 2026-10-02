@@ -1,0 +1,354 @@
+From 1cfb3959a837e08d15a12fdbec0a64b17852857f Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:40:23 +0000
+Subject: [PATCH] refactor: document JSON library policy and share []string
+ column helpers
+
+---
+ AGENTS.md                                |  1 +
+ docs/adr/0014-json-libraries.md          | 53 ++++++++++++++++++++++
+ internal/server/messages_native.go       |  8 +++-
+ internal/storage/sqlutil/sqlutil.go      | 31 +++++++++++++
+ internal/storage/sqlutil/sqlutil_test.go | 56 ++++++++++++++++++++++++
+ internal/users/store_sql.go              | 34 ++------------
+ internal/virtualmodels/store.go          | 25 -----------
+ internal/virtualmodels/store_sql.go      |  8 ++--
+ 8 files changed, 155 insertions(+), 61 deletions(-)
+ create mode 100644 docs/adr/0014-json-libraries.md
+
+diff --git a/AGENTS.md b/AGENTS.md
+index 6944752..c1c1a88 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -56,6 +56,7 @@ When editing code:
+ - Use idiomatic Go.
+ - Prefer clear names, small interfaces, simple structs, and table-driven tests.
+ - Avoid hidden global state, unnecessary reflection, and premature optimization.
++- Pick JSON libraries by `docs/adr/0014-json-libraries.md`: goccy by default, gjson for read-only extraction, `encoding/json` only with a comment saying which stdlib semantics the site needs.
+ - Add or update tests for behavior changes.
+ 
+ Tests should cover request translation, response normalization, error handling, default configuration, and provider-specific parameter mapping.
+diff --git a/docs/adr/0014-json-libraries.md b/docs/adr/0014-json-libraries.md
+new file mode 100644
+index 0000000..887f992
+--- /dev/null
++++ b/docs/adr/0014-json-libraries.md
+@@ -0,0 +1,53 @@
++# ADR-0014: JSON Library Policy
++
++## Status
++
++Accepted
++
++## Context
++
++GoModel uses three JSON libraries and one YAML library. Each does a different
++job, but the rule for choosing between them was written nowhere, so new code
++copied whatever the neighbouring file did. That already produced three copies
++of the same `[]string` column helper split across two JSON libraries, and a
++stdlib import justified by a reason that does not hold.
++
++| Library | Job |
++|---------|-----|
++| `github.com/goccy/go-json` | Default marshal/unmarshal, including echo's response serializer (`internal/server/json_serializer.go`) |
++| `github.com/tidwall/gjson` | Read-only path queries over raw bytes, without unmarshalling |
++| `encoding/json` | Sites that need the standard library's exact semantics |
++| `gopkg.in/yaml.v3` | `config.yaml` |
++
++## Decision
++
++1. **goccy by default.** Import `github.com/goccy/go-json` as `json` for
++   marshal, unmarshal, encoders and decoders. It is on the hot path and the
++   pre-commit `make perf-check` guard measures it.
++2. **gjson for read-only extraction.** When code only needs a few values from
++   raw bytes (selector peek, session detection, cache keys, upstream error
++   bodies), use `gjson` instead of decoding into a struct or map. goccy has no
++   equivalent API.
++3. **`encoding/json` only where its exact semantics are required**, and the
++   import says which semantics and why, in a comment next to it. Current
++   reasons:
++   - `pluginapi` must depend on the standard library only (`TestStdlibOnly`).
++   - echo's binder (`DefaultJSONSerializer.Deserialize`) is stdlib.
++   - `config/merge.go` uses the stdlib streaming decoder to reject unknown
++     fields and trailing data in JSON env vars.
++   - `internal/server/messages_native.go` splices bytes using the stdlib
++     decoder's documented `RawMessage` and `InputOffset` behaviour.
++   - `internal/auditlog/body.go` uses stdlib `Valid`, a strict allocation-free
++     scan, where goccy's `Valid` decodes the document.
++4. **`yaml.v3` only for YAML config.**
++5. **Shared column helpers live in `internal/storage/sqlutil`.** A JSON
++   `[]string` column uses `EncodeJSONStrings`/`DecodeJSONStrings` (`NOT NULL`,
++   errors returned) or `NullableJSONStrings`/`StringsFromJSON` (nullable,
++   malformed rows logged and skipped) instead of a store-local copy.
++
++## Consequences
++
++- New code has one rule to follow, and reviewers have one place to point to.
++- Older `encoding/json` imports that do not state a reason predate this ADR.
++  When touching one, add the reason or switch it to goccy.
++- No dependency is added or removed.
+diff --git a/internal/server/messages_native.go b/internal/server/messages_native.go
+index d451a93..3b6c229 100644
+--- a/internal/server/messages_native.go
++++ b/internal/server/messages_native.go
+@@ -3,8 +3,12 @@ package server
+ import (
+ 	"bytes"
+ 	"context"
+-	// encoding/json rather than goccy: replaceTopLevelMember needs the
+-	// decoder's InputOffset to splice a value in place.
++	// encoding/json rather than goccy: replaceTopLevelMember splices bytes
++	// using the stdlib decoder's documented behaviour, where Decode into a
++	// RawMessage keeps the value's exact source bytes and InputOffset points
++	// just past them. goccy also has Token and InputOffset, but the splice
++	// is only verified against stdlib, and this path is not hot enough for
++	// a switch to pay off.
+ 	"encoding/json"
+ 	"errors"
+ 	"io"
+diff --git a/internal/storage/sqlutil/sqlutil.go b/internal/storage/sqlutil/sqlutil.go
+index 7de6258..01ac690 100644
+--- a/internal/storage/sqlutil/sqlutil.go
++++ b/internal/storage/sqlutil/sqlutil.go
+@@ -98,6 +98,37 @@ func NullableString(value string) any {
+ 	return value
+ }
+ 
++// EncodeJSONStrings marshals values to a JSON array for a NOT NULL JSON
++// column; nil and empty both encode as "[]". Unlike NullableJSONStrings it
++// returns the error so the write fails instead of storing NULL.
++func EncodeJSONStrings(values []string) (string, error) {
++	if values == nil {
++		values = []string{}
++	}
++	data, err := json.Marshal(values)
++	if err != nil {
++		return "", err
++	}
++	return string(data), nil
++}
++
++// DecodeJSONStrings parses a JSON array column written by EncodeJSONStrings.
++// Empty input and an empty array both decode as nil. Unlike StringsFromJSON
++// it returns malformed values as an error instead of logging and dropping them.
++func DecodeJSONStrings(raw []byte) ([]string, error) {
++	if len(raw) == 0 {
++		return nil, nil
++	}
++	var values []string
++	if err := json.Unmarshal(raw, &values); err != nil {
++		return nil, err
++	}
++	if len(values) == 0 {
++		return nil, nil
++	}
++	return values, nil
++}
++
+ // NullableJSONStrings marshals values to a JSON array for binding to a JSON
+ // column. Returns nil (SQL NULL) when values is empty or marshaling fails;
+ // failures are logged with ref identifying the row.
+diff --git a/internal/storage/sqlutil/sqlutil_test.go b/internal/storage/sqlutil/sqlutil_test.go
+index d3c4895..2ffcc46 100644
+--- a/internal/storage/sqlutil/sqlutil_test.go
++++ b/internal/storage/sqlutil/sqlutil_test.go
+@@ -47,6 +47,62 @@ func TestStringsFromJSON(t *testing.T) {
+ 	}
+ }
+ 
++func TestEncodeJSONStrings(t *testing.T) {
++	tests := []struct {
++		name   string
++		values []string
++		want   string
++	}{
++		{name: "nil encodes as empty array", values: nil, want: "[]"},
++		{name: "empty encodes as empty array", values: []string{}, want: "[]"},
++		{name: "values marshal to a JSON array", values: []string{"openai/*", "/team"}, want: `["openai/*","/team"]`},
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			got, err := EncodeJSONStrings(tt.values)
++			require.NoError(t, err)
++			assert.Equal(t, tt.want, got)
++		})
++	}
++}
++
++func TestDecodeJSONStrings(t *testing.T) {
++	tests := []struct {
++		name    string
++		raw     string
++		want    []string
++		wantErr bool
++	}{
++		{name: "empty column yields nil", raw: "", want: nil},
++		{name: "empty array yields nil", raw: "[]", want: nil},
++		{name: "array parses", raw: `["openai/*","/team"]`, want: []string{"openai/*", "/team"}},
++		{name: "malformed value is an error", raw: "{not-json", wantErr: true},
++		{name: "wrong JSON type is an error", raw: `{"a":1}`, wantErr: true},
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			got, err := DecodeJSONStrings([]byte(tt.raw))
++			if tt.wantErr {
++				require.Error(t, err)
++				assert.Nil(t, got)
++				return
++			}
++			require.NoError(t, err)
++			assert.Equal(t, tt.want, got)
++		})
++	}
++}
++
++func TestJSONStringsRoundTrip(t *testing.T) {
++	for _, values := range [][]string{nil, {"a"}, {"openai/gpt-4o", "anthropic/*"}} {
++		encoded, err := EncodeJSONStrings(values)
++		require.NoError(t, err)
++		decoded, err := DecodeJSONStrings([]byte(encoded))
++		require.NoError(t, err)
++		assert.Equal(t, values, decoded)
++	}
++}
++
+ func TestTimeFromUnix(t *testing.T) {
+ 	tests := []struct {
+ 		name  string
+diff --git a/internal/users/store_sql.go b/internal/users/store_sql.go
+index c978e27..e745ff0 100644
+--- a/internal/users/store_sql.go
++++ b/internal/users/store_sql.go
+@@ -2,7 +2,6 @@ package users
+ 
+ import (
+ 	"context"
+-	"encoding/json"
+ 	"fmt"
+ 
+ 	"github.com/enterpilot/gomodel/internal/storage/sqlutil"
+@@ -52,8 +51,8 @@ func (s *SQLStore) List(ctx context.Context) ([]User, error) {
+ 		if err := rows.Scan(&user.UserPath, &allowedJSON, &user.Description, &createdAt, &updatedAt); err != nil {
+ 			return nil, fmt.Errorf("scan user: %w", err)
+ 		}
+-		if user.AllowedModels, err = decodeAllowedModels(allowedJSON); err != nil {
+-			return nil, err
++		if user.AllowedModels, err = sqlutil.DecodeJSONStrings([]byte(allowedJSON)); err != nil {
++			return nil, fmt.Errorf("decode allowed_models: %w", err)
+ 		}
+ 		user.CreatedAt = sqlutil.TimeFromUnix(createdAt)
+ 		user.UpdatedAt = sqlutil.TimeFromUnix(updatedAt)
+@@ -66,9 +65,9 @@ func (s *SQLStore) List(ctx context.Context) ([]User, error) {
+ }
+ 
+ func (s *SQLStore) Upsert(ctx context.Context, user User) error {
+-	allowedJSON, err := encodeAllowedModels(user.AllowedModels)
++	allowedJSON, err := sqlutil.EncodeJSONStrings(user.AllowedModels)
+ 	if err != nil {
+-		return err
++		return fmt.Errorf("encode allowed_models: %w", err)
+ 	}
+ 	_, err = s.db.Exec(ctx, `
+ 		INSERT INTO users (user_path, allowed_models, description, created_at, updated_at)
+@@ -98,28 +97,3 @@ func (s *SQLStore) Delete(ctx context.Context, userPath string) error {
+ func (s *SQLStore) Close() error {
+ 	return nil
+ }
+-
+-func encodeAllowedModels(values []string) (string, error) {
+-	if values == nil {
+-		values = []string{}
+-	}
+-	data, err := json.Marshal(values)
+-	if err != nil {
+-		return "", fmt.Errorf("encode allowed_models: %w", err)
+-	}
+-	return string(data), nil
+-}
+-
+-func decodeAllowedModels(raw string) ([]string, error) {
+-	if raw == "" {
+-		return nil, nil
+-	}
+-	var values []string
+-	if err := json.Unmarshal([]byte(raw), &values); err != nil {
+-		return nil, fmt.Errorf("decode allowed_models: %w", err)
+-	}
+-	if len(values) == 0 {
+-		return nil, nil
+-	}
+-	return values, nil
+-}
+diff --git a/internal/virtualmodels/store.go b/internal/virtualmodels/store.go
+index 185464f..78bbb79 100644
+--- a/internal/virtualmodels/store.go
++++ b/internal/virtualmodels/store.go
+@@ -32,17 +32,6 @@ func encodeTargets(targets []Target) (string, error) {
+ 	return string(data), nil
+ }
+ 
+-func encodeUserPaths(paths []string) (string, error) {
+-	if paths == nil {
+-		paths = []string{}
+-	}
+-	data, err := json.Marshal(paths)
+-	if err != nil {
+-		return "", fmt.Errorf("encode user_paths: %w", err)
+-	}
+-	return string(data), nil
+-}
+-
+ // encodeStrategyConfig stores a strategy config as a JSON object; nil and
+ // empty both persist as "{}".
+ func encodeStrategyConfig(config map[string]any) (string, error) {
+@@ -86,20 +75,6 @@ func decodeTargets(data []byte) ([]Target, error) {
+ 	return targets, nil
+ }
+ 
+-func decodeUserPaths(data []byte) ([]string, error) {
+-	if len(data) == 0 {
+-		return nil, nil
+-	}
+-	var paths []string
+-	if err := json.Unmarshal(data, &paths); err != nil {
+-		return nil, fmt.Errorf("decode user_paths: %w", err)
+-	}
+-	if len(paths) == 0 {
+-		return nil, nil
+-	}
+-	return paths, nil
+-}
+-
+ // stampUpsert sets CreatedAt on insert and UpdatedAt on every write.
+ func stampUpsert(vm *VirtualModel) {
+ 	now := time.Now().UTC()
+diff --git a/internal/virtualmodels/store_sql.go b/internal/virtualmodels/store_sql.go
+index 565ce93..785a5df 100644
+--- a/internal/virtualmodels/store_sql.go
++++ b/internal/virtualmodels/store_sql.go
+@@ -155,9 +155,9 @@ func virtualModelUpsertArgs(vm VirtualModel) ([]any, error) {
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	pathsJSON, err := encodeUserPaths(vm.UserPaths)
++	pathsJSON, err := sqlutil.EncodeJSONStrings(vm.UserPaths)
+ 	if err != nil {
+-		return nil, err
++		return nil, fmt.Errorf("encode user_paths: %w", err)
+ 	}
+ 	configJSON, err := encodeStrategyConfig(vm.StrategyConfig)
+ 	if err != nil {
+@@ -210,8 +210,8 @@ func scanSQLVirtualModel(scanner sqlx.Row) (VirtualModel, error) {
+ 	if vm.Targets, err = decodeTargets(targets); err != nil {
+ 		return VirtualModel{}, err
+ 	}
+-	if vm.UserPaths, err = decodeUserPaths(userPaths); err != nil {
+-		return VirtualModel{}, err
++	if vm.UserPaths, err = sqlutil.DecodeJSONStrings(userPaths); err != nil {
++		return VirtualModel{}, fmt.Errorf("decode user_paths: %w", err)
+ 	}
+ 	if vm.StrategyConfig, err = decodeStrategyConfig(strategyConfig); err != nil {
+ 		return VirtualModel{}, err
+-- 
+2.43.0
+

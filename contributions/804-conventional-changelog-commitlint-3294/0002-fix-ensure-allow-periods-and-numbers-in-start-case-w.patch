@@ -1,0 +1,71 @@
+From c3ca87d5331fa0ef10cb9e7c00a53297ebc8e20d Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:35:47 +0000
+Subject: [PATCH 2/2] fix(ensure): allow periods and numbers in start-case
+ words
+
+start-case compared the subject with es-toolkit's startCase(), which also
+splits words on periods and digits. Subjects such as "Add Module 1.0.0" or
+"Add Core.js" were therefore rejected.
+
+Check start-case per space separated word instead. A word still passes when
+startCase() leaves it unchanged. A word containing periods or digits also
+passes when the part before the first period or digit is start case (or the
+word starts with a digit) and the rest only holds letters, digits and
+periods. Words with "_" or "-", lowercase words and camel case words are
+still rejected, and other target cases are unchanged.
+
+Fixes #3294
+---
+ @commitlint/ensure/src/case.ts | 31 +++++++++++++++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+
+diff --git a/@commitlint/ensure/src/case.ts b/@commitlint/ensure/src/case.ts
+index 5c99553..4f4b2ec 100644
+--- a/@commitlint/ensure/src/case.ts
++++ b/@commitlint/ensure/src/case.ts
+@@ -1,4 +1,5 @@
+ import type { TargetCaseType } from "@commitlint/types";
++import { startCase } from "es-toolkit/compat";
+ 
+ import toCase from "./to-case.js";
+ 
+@@ -17,5 +18,35 @@ function ensureCase(raw: string = "", target: TargetCaseType = "lowercase"): boo
+ 		return true;
+ 	}
+ 
++	if (target === "start-case") {
++		return input.split(" ").every(isStartCaseWord);
++	}
++
+ 	return transformed === input;
+ }
++
++// Check a single space separated word for start case. startCase() also splits
++// words on periods and digits, so version numbers and names such as `1.0.0`,
++// `Core.js` or `V2` would never pass. Allow them as long as the part before the
++// first period or digit is start case and the rest only holds letters, digits
++// and periods.
++function isStartCaseWord(word: string): boolean {
++	// An empty word comes from consecutive spaces, which startCase() collapses.
++	if (word === "") {
++		return false;
++	}
++
++	if (startCase(word) === word) {
++		return true;
++	}
++
++	const match = /^(\p{L}*)[\d.][\p{L}\d.]*$/u.exec(word);
++
++	if (!match) {
++		return false;
++	}
++
++	const [, head] = match;
++
++	return head === "" ? /^\d/.test(word) : startCase(head) === head;
++}
+-- 
+2.43.0
+

@@ -1,0 +1,234 @@
+From d59753b958254640cde149b7e367b346871a0790 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:35:32 +0000
+Subject: [PATCH] fix(scss, stylus) highlight `from`/`to` keyframe selectors
+
+CSS and Less scope the `from` / `to` keyframe selectors as
+`selector-tag`, SCSS and Stylus left them plain (see the shared
+css_consistency test). Add a shared KEYFRAME_POSITION mode to
+lib/css-shared.js and use it in both grammars.
+
+The mode only matches `from` / `to` as a whole word followed by `{`,
+`,` or the end of the line, so `@for $i from 1 through 3`,
+`linear-gradient(to right, ...)` and BEM/transition selectors such as
+`&-leave-to {}` are not affected. Stylus indentation syntax (a bare
+`from` / `to` line) is covered too.
+
+Part of #4489
+
+Assisted-by: Claude Code
+---
+ CHANGES.md                                    |  5 +++++
+ src/languages/lib/css-shared.js               | 10 ++++++++++
+ src/languages/scss.js                         |  1 +
+ src/languages/stylus.js                       |  3 +++
+ test/markup/scss/css_consistency.expect.txt   |  4 ++--
+ test/markup/scss/keyframes.expect.txt         | 16 ++++++++++++++++
+ test/markup/scss/keyframes.txt                | 16 ++++++++++++++++
+ test/markup/stylus/css_consistency.expect.txt |  4 ++--
+ test/markup/stylus/keyframes.expect.txt       | 19 +++++++++++++++++++
+ test/markup/stylus/keyframes.txt              | 19 +++++++++++++++++++
+ 10 files changed, 93 insertions(+), 4 deletions(-)
+ create mode 100644 test/markup/scss/keyframes.expect.txt
+ create mode 100644 test/markup/scss/keyframes.txt
+ create mode 100644 test/markup/stylus/keyframes.expect.txt
+ create mode 100644 test/markup/stylus/keyframes.txt
+
+diff --git a/CHANGES.md b/CHANGES.md
+index 39b21c4..c083520 100644
+--- a/CHANGES.md
++++ b/CHANGES.md
+@@ -1,5 +1,9 @@
+ ## Version 11.12.1
+ 
++Core Grammars:
++
++- fix(scss, stylus) highlight `from`/`to` keyframe selectors like CSS does, issue #4489 [anyingiit][]
++
+ Documentation:
+ 
+ - docs: switch the Sphinx docs theme from ReadTheDocs to Shibuya [Haowei Hsu][]
+@@ -8,6 +12,7 @@ Documentation:
+ CONTRIBUTORS
+ 
+ [Haowei Hsu]: https://github.com/hwhsu1231
++[anyingiit]: https://github.com/anyingiit
+ 
+ ## Version 11.12.0
+ 
+diff --git a/src/languages/lib/css-shared.js b/src/languages/lib/css-shared.js
+index d7e105f..a3abca4 100644
+--- a/src/languages/lib/css-shared.js
++++ b/src/languages/lib/css-shared.js
+@@ -43,6 +43,16 @@ export const MODES = (hljs) => {
+     CSS_VARIABLE: {
+       className: "attr",
+       begin: /--[A-Za-z_][A-Za-z0-9_-]*/
++    },
++    // `from` / `to` keyframe selectors (scoped like CSS does it), only as a
++    // whole word followed by `{`, `,` or the end of the line, so things like
++    // `to right`, `@for $i from 1 through 3` or `&-leave-to {}` are left alone
++    KEYFRAME_POSITION: {
++      match: [
++        /(?:^|[\s,{}])/,
++        /(?:from|to)(?=\s*(?:[{,]|$))/
++      ],
++      scope: { 2: 'selector-tag' }
+     }
+   };
+ };
+diff --git a/src/languages/scss.js b/src/languages/scss.js
+index 5c16c4d..eb1cdce 100644
+--- a/src/languages/scss.js
++++ b/src/languages/scss.js
+@@ -50,6 +50,7 @@ export default function(hljs) {
+         // was there, before, but why?
+         relevance: 0
+       },
++      modes.KEYFRAME_POSITION,
+       {
+         className: 'selector-pseudo',
+         begin: ':(' + PSEUDO_CLASSES.join('|') + ')'
+diff --git a/src/languages/stylus.js b/src/languages/stylus.js
+index 3474770..9e2fbdc 100644
+--- a/src/languages/stylus.js
++++ b/src/languages/stylus.js
+@@ -89,6 +89,9 @@ export default function(hljs) {
+         className: 'selector-tag'
+       },
+ 
++      // keyframe positions
++      modes.KEYFRAME_POSITION,
++
+       // psuedo selectors
+       {
+         className: 'selector-pseudo',
+diff --git a/test/markup/scss/css_consistency.expect.txt b/test/markup/scss/css_consistency.expect.txt
+index aba7671..2475b9b 100644
+--- a/test/markup/scss/css_consistency.expect.txt
++++ b/test/markup/scss/css_consistency.expect.txt
+@@ -61,9 +61,9 @@
+ }
+ 
+ <span class="hljs-keyword">@keyframes</span> important1 {
+-  from { <span class="hljs-attribute">margin-top</span>: <span class="hljs-number">50px</span>; }
++  <span class="hljs-selector-tag">from</span> { <span class="hljs-attribute">margin-top</span>: <span class="hljs-number">50px</span>; }
+   <span class="hljs-number">50%</span>  { <span class="hljs-attribute">margin-top</span>: <span class="hljs-number">60px</span> <span class="hljs-meta">!important</span>; }
+-  to   { <span class="hljs-attribute">margin-top</span>: <span class="hljs-number">100px</span>; }
++  <span class="hljs-selector-tag">to</span>   { <span class="hljs-attribute">margin-top</span>: <span class="hljs-number">100px</span>; }
+ }
+ 
+ <span class="hljs-selector-tag">main</span> {
+diff --git a/test/markup/scss/keyframes.expect.txt b/test/markup/scss/keyframes.expect.txt
+new file mode 100644
+index 0000000..675749c
+--- /dev/null
++++ b/test/markup/scss/keyframes.expect.txt
+@@ -0,0 +1,16 @@
++<span class="hljs-keyword">@keyframes</span> fade {
++  <span class="hljs-selector-tag">from</span>, <span class="hljs-number">50%</span> { <span class="hljs-attribute">opacity</span>: <span class="hljs-number">0</span>; }
++  <span class="hljs-selector-tag">to</span> { <span class="hljs-attribute">opacity</span>: <span class="hljs-number">1</span>; }
++}
++
++<span class="hljs-keyword">@for</span> <span class="hljs-variable">$i</span> from <span class="hljs-number">1</span> through <span class="hljs-number">3</span> {
++  <span class="hljs-selector-class">.item-</span>#{<span class="hljs-variable">$i</span>} { <span class="hljs-attribute">width</span>: <span class="hljs-number">2em</span> * <span class="hljs-variable">$i</span>; }
++}
++
++<span class="hljs-selector-class">.banner</span> {
++  <span class="hljs-attribute">background</span>: <span class="hljs-built_in">linear-gradient</span>(to right, red, blue);
++}
++
++<span class="hljs-selector-class">.fade</span> {
++  &amp;-enter-from, &amp;-leave-to { <span class="hljs-attribute">opacity</span>: <span class="hljs-number">0</span>; }
++}
+diff --git a/test/markup/scss/keyframes.txt b/test/markup/scss/keyframes.txt
+new file mode 100644
+index 0000000..8ec45b5
+--- /dev/null
++++ b/test/markup/scss/keyframes.txt
+@@ -0,0 +1,16 @@
++@keyframes fade {
++  from, 50% { opacity: 0; }
++  to { opacity: 1; }
++}
++
++@for $i from 1 through 3 {
++  .item-#{$i} { width: 2em * $i; }
++}
++
++.banner {
++  background: linear-gradient(to right, red, blue);
++}
++
++.fade {
++  &-enter-from, &-leave-to { opacity: 0; }
++}
+diff --git a/test/markup/stylus/css_consistency.expect.txt b/test/markup/stylus/css_consistency.expect.txt
+index 5c9b437..1eeb8f4 100644
+--- a/test/markup/stylus/css_consistency.expect.txt
++++ b/test/markup/stylus/css_consistency.expect.txt
+@@ -61,9 +61,9 @@
+ }
+ 
+ <span class="hljs-keyword">@keyframes</span> important1 {
+-  from { <span class="hljs-attribute">margin-top</span>: <span class="hljs-number">50px</span>; }
++  <span class="hljs-selector-tag">from</span> { <span class="hljs-attribute">margin-top</span>: <span class="hljs-number">50px</span>; }
+   <span class="hljs-number">50%</span>  { <span class="hljs-attribute">margin-top</span>: <span class="hljs-number">60px</span> <span class="hljs-meta">!important</span>; }
+-  to   { <span class="hljs-attribute">margin-top</span>: <span class="hljs-number">100px</span>; }
++  <span class="hljs-selector-tag">to</span>   { <span class="hljs-attribute">margin-top</span>: <span class="hljs-number">100px</span>; }
+ }
+ 
+ <span class="hljs-selector-tag">main</span> {
+diff --git a/test/markup/stylus/keyframes.expect.txt b/test/markup/stylus/keyframes.expect.txt
+new file mode 100644
+index 0000000..53a2a11
+--- /dev/null
++++ b/test/markup/stylus/keyframes.expect.txt
+@@ -0,0 +1,19 @@
++<span class="hljs-keyword">@keyframes</span> fade
++  <span class="hljs-selector-tag">from</span>
++    <span class="hljs-attribute">opacity</span> <span class="hljs-number">0</span>
++  <span class="hljs-number">50%</span>
++    <span class="hljs-attribute">opacity</span> <span class="hljs-number">0.5</span>
++  <span class="hljs-selector-tag">to</span>
++    <span class="hljs-attribute">opacity</span> <span class="hljs-number">1</span>
++
++<span class="hljs-keyword">@keyframes</span> slide {
++  <span class="hljs-selector-tag">from</span>, <span class="hljs-number">50%</span> { <span class="hljs-attribute">left</span>: <span class="hljs-number">0</span>; }
++  <span class="hljs-selector-tag">to</span> { <span class="hljs-attribute">left</span>: <span class="hljs-number">100px</span>; }
++}
++
++<span class="hljs-selector-class">.banner</span>
++  <span class="hljs-attribute">background</span> <span class="hljs-built_in">linear-gradient</span>(to right, red, blue)
++
++<span class="hljs-selector-class">.fade</span>
++  &amp;-enter-from, &amp;-leave-to
++    <span class="hljs-attribute">opacity</span> <span class="hljs-number">0</span>
+diff --git a/test/markup/stylus/keyframes.txt b/test/markup/stylus/keyframes.txt
+new file mode 100644
+index 0000000..847081d
+--- /dev/null
++++ b/test/markup/stylus/keyframes.txt
+@@ -0,0 +1,19 @@
++@keyframes fade
++  from
++    opacity 0
++  50%
++    opacity 0.5
++  to
++    opacity 1
++
++@keyframes slide {
++  from, 50% { left: 0; }
++  to { left: 100px; }
++}
++
++.banner
++  background linear-gradient(to right, red, blue)
++
++.fade
++  &-enter-from, &-leave-to
++    opacity 0
+-- 
+2.43.0
+

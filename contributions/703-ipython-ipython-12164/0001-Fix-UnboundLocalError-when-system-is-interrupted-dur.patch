@@ -1,0 +1,87 @@
+From 710828051319f9461cd4d2b78dd2eef385d87b82 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:23:39 +0000
+Subject: [PATCH] =?UTF-8?q?Fix=20UnboundLocalError=20when=20system()=20is?=
+ =?UTF-8?q?=20interrupted=20during=20spawn=20=F0=9F=A4=96=F0=9F=A4=96?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+If ^C arrives while pexpect is still spawning the child, `child` is never
+bound and the KeyboardInterrupt handler in ProcessHandler.system() crashed
+with UnboundLocalError. Initialise `child` to None and, when there is no
+child yet, print ^C and return -SIGINT like an interrupted command.
+
+Closes #12164
+---
+ IPython/utils/_process_posix.py |  9 +++++++++
+ tests/test_process.py           | 19 +++++++++++++++++++
+ 2 files changed, 28 insertions(+)
+
+diff --git a/IPython/utils/_process_posix.py b/IPython/utils/_process_posix.py
+index 38fd2ac..f79c6b9 100644
+--- a/IPython/utils/_process_posix.py
++++ b/IPython/utils/_process_posix.py
+@@ -11,6 +11,7 @@
+ # Stdlib
+ import errno
+ import os
++import signal
+ import sys
+ 
+ # Our own
+@@ -113,6 +114,9 @@ def system(self, cmd: str) -> int:
+         # content from the buffer.
+         out_size = 0
+         assert self.sh is not None
++        # Stays None if ^C arrives before pexpect has finished spawning the
++        # child, so the interrupt handler below knows there is nothing to stop.
++        child = None
+         try:
+             # Since we're not really searching the buffer for text patterns, we
+             # can set pexpect's search window to be tiny and it won't matter.
+@@ -135,6 +139,11 @@ def system(self, cmd: str) -> int:
+                 # Update the pointer to what we've already printed
+                 out_size = len(child.before)
+         except KeyboardInterrupt:
++            if child is None:
++                # Interrupted while spawning: there is no child process to
++                # forward ^C to, so report it as killed by SIGINT.
++                print("^C", file=sys.stderr, end="")
++                return -signal.SIGINT
+             # We need to send ^C to the process.  The ascii code for '^C' is 3
+             # (the character is known as ETX for 'End of Text', see
+             # curses.ascii.ETX).
+diff --git a/tests/test_process.py b/tests/test_process.py
+index f61f577..6dbb1ec 100644
+--- a/tests/test_process.py
++++ b/tests/test_process.py
+@@ -204,6 +204,25 @@ def command():
+     assert status != 0, f"The process wasn't interrupted. Status: {status}"
+ 
+ 
++@dec.skip_win32
++def test_system_interrupt_during_spawn(monkeypatch):
++    """A ^C that arrives while the child is still being spawned must not crash.
++
++    Regression test for https://github.com/ipython/ipython/issues/12164
++    """
++    import pexpect
++    from IPython.utils._process_posix import ProcessHandler
++
++    def interrupted_spawn(*args, **kwargs):
++        raise KeyboardInterrupt
++
++    monkeypatch.delattr(pexpect, "spawnb", raising=False)
++    monkeypatch.setattr(pexpect, "spawn", interrupted_spawn)
++
++    status = ProcessHandler().system("true")
++    assert status == -signal.SIGINT
++
++
+ def test_getoutput(subprocess_tmpfile):
+     out = getoutput(f'{python} "{subprocess_tmpfile}"')
+     assert out in ("on stderron stdout", "on stdouton stderr")
+-- 
+2.43.0
+

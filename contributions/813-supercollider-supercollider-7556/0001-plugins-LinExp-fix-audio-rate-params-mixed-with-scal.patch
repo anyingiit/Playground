@@ -1,0 +1,153 @@
+From 8180bab393150ff35343bc9c37d863589eb83eca Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:57:54 +0000
+Subject: [PATCH] plugins: LinExp: fix audio-rate params mixed with scalar/kr
+
+LinExp_SetCalc selects the _aa, _ak or _ka calc function as soon as
+one input of the srclo/srchi or dstlo/dsthi pair is audio rate. These
+functions then advanced both inputs of the pair once per sample, so a
+scalar or control-rate partner (which only has a single sample) was
+read past the end of its buffer, producing garbage output, e.g. for
+LinExp.ar(DC.ar(0.5), -1, 1, 1, DC.ar(2)).
+
+Only advance inputs that are actually audio rate and read the others
+as constants. Add a UnitTest that checks LinExp.ar against
+SimpleNumber:linexp for every combination of scalar, control and
+audio rate srclo, srchi, dstlo and dsthi.
+
+Fixes #7556
+---
+ server/plugins/LFUGens.cpp              | 43 ++++++++++++++++---------
+ testsuite/classlibrary/TestCoreUGens.sc | 39 ++++++++++++++++++++++
+ 2 files changed, 67 insertions(+), 15 deletions(-)
+
+diff --git a/server/plugins/LFUGens.cpp b/server/plugins/LFUGens.cpp
+index f05d491..7d28afa 100644
+--- a/server/plugins/LFUGens.cpp
++++ b/server/plugins/LFUGens.cpp
+@@ -2273,30 +2273,41 @@ void LinExp_next_kk(LinExp* unit, int inNumSamples) {
+     LOOP1(inNumSamples, ZXP(out) = dstlo * pow(dstratio, ZXP(in) * rsrcrange + rrminuslo););
+ }
+ 
++// The _aa, _ak and _ka variants are selected when at least one input of a pair is audio rate,
++// but the other input of the pair may still be scalar or control rate. Those inputs only have a
++// single sample, so only audio-rate inputs may be advanced per sample.
++static inline int LinExp_inputStep(LinExp* unit, int index) { return INRATE(index) == calc_FullRate ? 1 : 0; }
++
+ void LinExp_next_aa(LinExp* unit, int inNumSamples) {
+     float* out = ZOUT(0);
+     float* in = ZIN(0);
+-    float* srclo = ZIN(1);
+-    float* srchi = ZIN(2);
+-    float* dstlo = ZIN(3);
+-    float* dsthi = ZIN(4);
+-
+-
+-    LOOP1(inNumSamples, float zdsthi = ZXP(dsthi); float zdstlo = ZXP(dstlo); float zsrchi = ZXP(srchi);
+-          float zsrclo = ZXP(srclo); float dstratio = zdsthi / zdstlo; float rsrcrange = sc_reciprocal(zsrchi - zsrclo);
++    const float* srclo = IN(1);
++    const float* srchi = IN(2);
++    const float* dstlo = IN(3);
++    const float* dsthi = IN(4);
++    const int srcloStep = LinExp_inputStep(unit, 1);
++    const int srchiStep = LinExp_inputStep(unit, 2);
++    const int dstloStep = LinExp_inputStep(unit, 3);
++    const int dsthiStep = LinExp_inputStep(unit, 4);
++
++    LOOP1(inNumSamples, float zdsthi = *dsthi; float zdstlo = *dstlo; float zsrchi = *srchi; float zsrclo = *srclo;
++          dsthi += dsthiStep; dstlo += dstloStep; srchi += srchiStep; srclo += srcloStep;
++          float dstratio = zdsthi / zdstlo; float rsrcrange = sc_reciprocal(zsrchi - zsrclo);
+           float rrminuslo = rsrcrange * -zsrclo; ZXP(out) = zdstlo * pow(dstratio, ZXP(in) * rsrcrange + rrminuslo););
+ }
+ 
+ void LinExp_next_ak(LinExp* unit, int inNumSamples) {
+     float* out = ZOUT(0);
+     float* in = ZIN(0);
+-    float* srclo = ZIN(1);
+-    float* srchi = ZIN(2);
++    const float* srclo = IN(1);
++    const float* srchi = IN(2);
++    const int srcloStep = LinExp_inputStep(unit, 1);
++    const int srchiStep = LinExp_inputStep(unit, 2);
+     float dstlo = ZIN0(3);
+     float dsthi = ZIN0(4);
+     float dstratio = dsthi / dstlo;
+ 
+-    LOOP1(inNumSamples, float zsrchi = ZXP(srchi); float zsrclo = ZXP(srclo);
++    LOOP1(inNumSamples, float zsrchi = *srchi; float zsrclo = *srclo; srchi += srchiStep; srclo += srcloStep;
+ 
+           float rsrcrange = sc_reciprocal(zsrchi - zsrclo); float rrminuslo = rsrcrange * -zsrclo;
+           ZXP(out) = dstlo * pow(dstratio, ZXP(in) * rsrcrange + rrminuslo););
+@@ -2307,13 +2318,15 @@ void LinExp_next_ka(LinExp* unit, int inNumSamples) {
+     float* in = ZIN(0);
+     float srclo = ZIN0(1);
+     float srchi = ZIN0(2);
+-    float* dstlo = ZIN(3);
+-    float* dsthi = ZIN(4);
++    const float* dstlo = IN(3);
++    const float* dsthi = IN(4);
++    const int dstloStep = LinExp_inputStep(unit, 3);
++    const int dsthiStep = LinExp_inputStep(unit, 4);
+     float rsrcrange = sc_reciprocal(srchi - srclo);
+     float rrminuslo = rsrcrange * -srclo;
+ 
+-    LOOP1(inNumSamples, float zdsthi = ZXP(dsthi); float zdstlo = ZXP(dstlo); float dstratio = zdsthi / zdstlo;
+-          ZXP(out) = zdstlo * pow(dstratio, ZXP(in) * rsrcrange + rrminuslo););
++    LOOP1(inNumSamples, float zdsthi = *dsthi; float zdstlo = *dstlo; dsthi += dsthiStep; dstlo += dstloStep;
++          float dstratio = zdsthi / zdstlo; ZXP(out) = zdstlo * pow(dstratio, ZXP(in) * rsrcrange + rrminuslo););
+ }
+ 
+ 
+diff --git a/testsuite/classlibrary/TestCoreUGens.sc b/testsuite/classlibrary/TestCoreUGens.sc
+index 289604b..567d8e8 100644
+--- a/testsuite/classlibrary/TestCoreUGens.sc
++++ b/testsuite/classlibrary/TestCoreUGens.sc
+@@ -873,6 +873,45 @@ TestCoreUGens : UnitTest {
+ 		};
+ 	}
+ 
++	// LinExp.ar must handle any mix of scalar, control and audio rate range inputs (#7556)
++	test_linexp_mixedRateInputs {
++		var cond = CondVar();
++		var completed = 0;
++		var testDur, testsFinished;
++		var in = 0.5, params = [-1, 1, 1, 2]; // srclo, srchi, dstlo, dsthi
++		var expected = in.linexp(*params);
++		var rates = [\scalar, \control, \audio];
++		var wrap = { |val, rate|
++			switch(rate,
++				\scalar, { val },
++				\control, { DC.kr(val) },
++				\audio, { DC.ar(val) }
++			)
++		};
++		var combos = rates.dup(params.size).allTuples;
++
++		server.bootSync;
++		testDur = defaultNumBlocksToTest * server.options.blockSize / server.sampleRate;
++
++		combos.do { |paramRates|
++			{
++				LinExp.ar(DC.ar(in), *params.collect { |val, i| wrap.(val, paramRates[i]) })
++			}.loadToFloatArray(testDur, server, { |data|
++				this.assertArrayFloatEquals(data, expected,
++					"LinExp.ar(DC.ar(%), %) with srclo, srchi, dstlo, dsthi rates % should output %"
++					.format(in, params, paramRates, expected),
++					within: 1e-5, report: false
++				);
++				completed = completed + 1;
++				cond.signalOne;
++			});
++			server.sync;
++		};
++
++		testsFinished = cond.waitFor((1.5 * combos.size * testDur).max(minTimeOut), { completed == combos.size });
++		this.assert(testsFinished, "TIMEOUT: linexp_mixedRateInputs tests", report: false);
++	}
++
+ 	// Test for correct arrival time of Envs with numerous stages
+ 	test_env_endsOnTime {
+ 		var shapes = [\sin, \lin, \exp, \sqr, \cub, \welch, -2.2, \step, \hold];
+-- 
+2.43.0
+

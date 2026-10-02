@@ -1,0 +1,1 @@
+Fix `direnv reload` silently succeeding when .envrc is not allowed

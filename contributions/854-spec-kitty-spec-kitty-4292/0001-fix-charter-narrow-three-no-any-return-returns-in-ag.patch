@@ -1,0 +1,109 @@
+From 51f737a2f54f97747d2a0089f6cee3a8f7ab4927 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:46:28 +0000
+Subject: [PATCH] fix(charter): narrow three no-any-return returns in agent
+ profile repository (#4292)
+
+`mypy --strict src/charter/offering/agent_profiles/repository.py` reported
+three no-any-return errors on main. Under the `charter.*`
+follow_imports=skip override, `AgentProfile.routing_priority`,
+`built_in_dir(...)` and `profile_channel_reachable(...)` resolve as `Any`
+when the file is checked on its own, and each was returned straight from a
+function declared `-> float`, `-> Path` and `-> frozenset[str]`.
+
+Bind each value to an annotated local before returning it. No
+`# type: ignore` and no behaviour change.
+
+Add a mypy --strict gate test for the file, following the existing
+mission_step_contracts / _read_path_resolver gate tests.
+---
+ .../offering/agent_profiles/repository.py     |  9 ++--
+ .../test_repository_mypy_strict.py            | 42 +++++++++++++++++++
+ 2 files changed, 48 insertions(+), 3 deletions(-)
+ create mode 100644 tests/doctrine/agent_profiles/test_repository_mypy_strict.py
+
+diff --git a/src/charter/offering/agent_profiles/repository.py b/src/charter/offering/agent_profiles/repository.py
+index de93b792..110df8be 100644
+--- a/src/charter/offering/agent_profiles/repository.py
++++ b/src/charter/offering/agent_profiles/repository.py
+@@ -161,7 +161,8 @@ def _score_profile(
+         context.complexity or "medium",
+     )
+     # When no context signals match (base_score=0), routing_priority becomes dominant.
+-    return (base_score + profile.routing_priority / 100.0) * penalty * complexity_adj
++    routing_priority: int = profile.routing_priority
++    return (base_score + routing_priority / 100.0) * penalty * complexity_adj
+ 
+ 
+ # ── Profile inheritance helpers ───────────────────────────────────────────────
+@@ -267,7 +268,8 @@ class AgentProfileRepository:
+     @staticmethod
+     def _default_built_in_dir() -> Path:
+         """Return the shipped built-in profiles directory (``packs/built-in/agent_profiles/``)."""
+-        return built_in_dir(ArtifactKind.AGENT_PROFILE)
++        profiles_dir: Path = built_in_dir(ArtifactKind.AGENT_PROFILE)
++        return profiles_dir
+ 
+     @classmethod
+     def _default_drg(cls) -> DRGGraph:
+@@ -953,7 +955,8 @@ class AgentProfileRepository:
+         seed = _profile_urn(profile_id)
+         if seed not in agent_profile_seed_urns(self._drg):
+             return frozenset()
+-        return profile_channel_reachable(self._drg, {seed})
++        reached: frozenset[str] = profile_channel_reachable(self._drg, {seed})
++        return reached
+ 
+     def profile_channel_procedure_ids(self, profile_id: str) -> list[str]:
+         """Procedure ids a loaded *profile* delivers through the profile channel.
+diff --git a/tests/doctrine/agent_profiles/test_repository_mypy_strict.py b/tests/doctrine/agent_profiles/test_repository_mypy_strict.py
+new file mode 100644
+index 00000000..48ec6f3f
+--- /dev/null
++++ b/tests/doctrine/agent_profiles/test_repository_mypy_strict.py
+@@ -0,0 +1,42 @@
++"""Lock the mypy --strict invariant on charter.offering.agent_profiles.repository (#4292).
++
++Under the ``charter.*`` ``follow_imports = "skip"`` override in
++``pyproject.toml``, every cross-module charter import (``AgentProfile``,
++``built_in_dir``, ``profile_channel_reachable``) resolves as ``Any`` when the
++file is checked on its own. Returning those values directly from functions
++declared ``-> float`` / ``-> Path`` / ``-> frozenset[str]`` raised three
++``no-any-return`` errors; each return now goes through an annotated local.
++This test makes a regression of that fail at test time.
++
++Environment requirement: this test invokes mypy via ``sys.executable -m
++mypy``, which requires the ``lint`` extra to be installed in the test env
++(e.g. ``uv run --extra test --extra lint python -m pytest ...``).
++"""
++
++from __future__ import annotations
++
++import subprocess
++import sys
++from pathlib import Path
++
++import pytest
++
++pytestmark = [pytest.mark.integration]
++
++REPO_ROOT = Path(__file__).resolve().parents[3]
++TARGET = "src/charter/offering/agent_profiles/repository.py"
++
++
++@pytest.mark.slow  # mypy invocation is comparatively expensive
++def test_agent_profile_repository_is_mypy_strict_clean() -> None:
++    result = subprocess.run(
++        [sys.executable, "-m", "mypy", "--strict", TARGET],
++        cwd=REPO_ROOT,
++        check=False,
++        capture_output=True,
++        text=True,
++    )
++    assert result.returncode == 0, (
++        "mypy --strict failed on charter/offering/agent_profiles/repository.py.\nstdout:\n" + result.stdout + "\nstderr:\n" + result.stderr
++    )
++    assert "no-any-return" not in result.stdout, "A no-any-return error resurfaced in agent_profiles/repository.py:\n" + result.stdout
+-- 
+2.43.0
+

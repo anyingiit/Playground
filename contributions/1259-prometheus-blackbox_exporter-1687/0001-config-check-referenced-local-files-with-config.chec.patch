@@ -1,0 +1,267 @@
+From 9d50906a7096136efb9a9c7abfc49b7c93dcef14 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:37:33 +0000
+Subject: [PATCH] config: check referenced local files with --config.check
+
+Make --config.check also verify that the local files referenced by the
+configuration exist and are readable, so that a configuration that
+points to a missing body_file, TLS CA/certificate/key file or credential
+file fails the check instead of only failing later at probe time.
+
+The check covers http body_file, the HTTP client config of the http and
+websocket probers (basic_auth username/password files, authorization
+credentials_file, oauth2 client secret/key files and TLS files, and
+http_headers files), websocket header files, and the tls_config of the
+tcp, unix, dns and grpc probers. No network requests are made.
+
+Fixes #1687
+---
+ README.md                               |  2 +
+ config/config.go                        | 90 +++++++++++++++++++++++++
+ config/config_test.go                   | 31 +++++++++
+ config/testdata/check-files-good.yml    | 11 +++
+ config/testdata/check-files-missing.yml | 24 +++++++
+ config/testdata/files/body.txt          |  1 +
+ main.go                                 |  9 ++-
+ 7 files changed, 167 insertions(+), 1 deletion(-)
+ create mode 100644 config/testdata/check-files-good.yml
+ create mode 100644 config/testdata/check-files-missing.yml
+ create mode 100644 config/testdata/files/body.txt
+
+diff --git a/README.md b/README.md
+index 82ef9d2..2e08076 100644
+--- a/README.md
++++ b/README.md
+@@ -179,6 +179,8 @@ To view all available command-line flags, run `./blackbox_exporter -h`.
+ 
+ To specify which [configuration file](CONFIGURATION.md) to load, use the `--config.file` flag.
+ 
++To validate a configuration file without starting the exporter, use the `--config.check` flag. Besides parsing the configuration, this also checks that the local files it references (such as `body_file`, TLS `ca_file`/`cert_file`/`key_file`, and credential files) exist and are readable. No network requests are made.
++
+ Additionally, an [example configuration](example.yml) is also available.
+ 
+ HTTP, HTTPS (via the `http` prober), DNS, TCP socket, ICMP and gRPC (see permissions section) are currently supported.
+diff --git a/config/config.go b/config/config.go
+index 3524edd..c540f0c 100644
+--- a/config/config.go
++++ b/config/config.go
+@@ -180,6 +180,96 @@ func (sc *SafeConfig) ReloadConfig(confFile string, logger *slog.Logger) (err er
+ 	return nil
+ }
+ 
++// CheckFiles verifies that every local file referenced by the configuration
++// (for example body_file, TLS CA/certificate/key files and credential files)
++// exists and is readable. It does not perform any network operations.
++func (s *Config) CheckFiles() error {
++	names := make([]string, 0, len(s.Modules))
++	for name := range s.Modules {
++		names = append(names, name)
++	}
++	sort.Strings(names)
++
++	var errs []error
++	for _, name := range names {
++		module := s.Modules[name]
++		check := func(field, path string) {
++			if path == "" {
++				return
++			}
++			if err := checkFileReadable(path); err != nil {
++				errs = append(errs, fmt.Errorf("module %q: %s: %w", name, field, err))
++			}
++		}
++
++		check("http.body_file", module.HTTP.BodyFile)
++		checkHTTPClientConfigFiles(check, "http.", &module.HTTP.HTTPClientConfig)
++		checkTLSConfigFiles(check, "tcp.tls_config.", &module.TCP.TLSConfig)
++		checkTLSConfigFiles(check, "unix.tls_config.", &module.Unix.TLSConfig)
++		checkTLSConfigFiles(check, "dns.tls_config.", &module.DNS.TLSConfig)
++		checkTLSConfigFiles(check, "grpc.tls_config.", &module.GRPC.TLSConfig)
++		checkHTTPClientConfigFiles(check, "websocket.http_config.", &module.Websocket.HTTPClientConfig)
++		checkHeadersFiles(check, "websocket.headers.", &module.Websocket.Headers)
++	}
++	return errors.Join(errs...)
++}
++
++func checkHTTPClientConfigFiles(check func(field, path string), prefix string, c *config.HTTPClientConfig) {
++	if c.BasicAuth != nil {
++		check(prefix+"basic_auth.username_file", c.BasicAuth.UsernameFile)
++		check(prefix+"basic_auth.password_file", c.BasicAuth.PasswordFile)
++	}
++	if c.Authorization != nil {
++		check(prefix+"authorization.credentials_file", c.Authorization.CredentialsFile)
++	}
++	if c.OAuth2 != nil {
++		check(prefix+"oauth2.client_secret_file", c.OAuth2.ClientSecretFile)
++		check(prefix+"oauth2.client_certificate_key_file", c.OAuth2.ClientCertificateKeyFile)
++		checkTLSConfigFiles(check, prefix+"oauth2.tls_config.", &c.OAuth2.TLSConfig)
++	}
++	checkTLSConfigFiles(check, prefix+"tls_config.", &c.TLSConfig)
++	if c.HTTPHeaders != nil {
++		checkHeadersFiles(check, prefix+"http_headers.", c.HTTPHeaders)
++	}
++}
++
++func checkTLSConfigFiles(check func(field, path string), prefix string, c *config.TLSConfig) {
++	check(prefix+"ca_file", c.CAFile)
++	check(prefix+"cert_file", c.CertFile)
++	check(prefix+"key_file", c.KeyFile)
++}
++
++func checkHeadersFiles(check func(field, path string), prefix string, h *config.Headers) {
++	names := make([]string, 0, len(h.Headers))
++	for name := range h.Headers {
++		names = append(names, name)
++	}
++	sort.Strings(names)
++	for _, name := range names {
++		for _, path := range h.Headers[name].Files {
++			check(prefix+name+".files", path)
++		}
++	}
++}
++
++// checkFileReadable returns an error if path does not exist, is a directory
++// or cannot be opened for reading.
++func checkFileReadable(path string) error {
++	f, err := os.Open(path)
++	if err != nil {
++		return err
++	}
++	defer f.Close()
++	info, err := f.Stat()
++	if err != nil {
++		return err
++	}
++	if info.IsDir() {
++		return fmt.Errorf("%s is a directory", path)
++	}
++	return nil
++}
++
+ // CELProgram encapsulates a cel.Program and makes it YAML marshalable.
+ type CELProgram struct {
+ 	cel.Program
+diff --git a/config/config_test.go b/config/config_test.go
+index 0cfc4fb..e7dd5f6 100644
+--- a/config/config_test.go
++++ b/config/config_test.go
+@@ -313,3 +313,34 @@ modules:
+ 		t.Errorf("Expected username 'myuser', got '%s'", module.Websocket.HTTPClientConfig.BasicAuth.Username)
+ 	}
+ }
++
++func TestCheckFiles(t *testing.T) {
++	sc := NewSafeConfig(prometheus.NewRegistry())
++	if err := sc.ReloadConfig("testdata/check-files-good.yml", nil); err != nil {
++		t.Fatalf("Error loading config: %v", err)
++	}
++	if err := sc.C.CheckFiles(); err != nil {
++		t.Errorf("Expected no error for existing files, got: %v", err)
++	}
++
++	sc = NewSafeConfig(prometheus.NewRegistry())
++	if err := sc.ReloadConfig("testdata/check-files-missing.yml", nil); err != nil {
++		t.Fatalf("Error loading config: %v", err)
++	}
++	err := sc.C.CheckFiles()
++	if err == nil {
++		t.Fatal("Expected error for missing files, got none")
++	}
++	for _, want := range []string{
++		`module "http_post_body_file": http.body_file: open testdata/files/missing-body.txt: no such file or directory`,
++		`module "http_post_body_file": http.authorization.credentials_file: open testdata/files/missing-token: no such file or directory`,
++		`module "http_post_body_file": http.http_headers.X-Custom.files: open testdata/files/missing-header: no such file or directory`,
++		`module "tcp_tls": tcp.tls_config.cert_file: open testdata/files/missing.crt: no such file or directory`,
++		`module "tcp_tls": tcp.tls_config.key_file: open testdata/files/missing.key: no such file or directory`,
++		`module "websocket_auth": websocket.http_config.authorization.credentials_file: testdata/files is a directory`,
++	} {
++		if !strings.Contains(err.Error(), want) {
++			t.Errorf("Expected error to contain %q, got:\n%v", want, err)
++		}
++	}
++}
+diff --git a/config/testdata/check-files-good.yml b/config/testdata/check-files-good.yml
+new file mode 100644
+index 0000000..1719389
+--- /dev/null
++++ b/config/testdata/check-files-good.yml
+@@ -0,0 +1,11 @@
++modules:
++  http_post_body_file:
++    prober: http
++    http:
++      method: POST
++      body_file: "testdata/files/body.txt"
++      basic_auth:
++        username: "user"
++        password_file: "testdata/files/body.txt"
++      tls_config:
++        ca_file: "testdata/files/body.txt"
+diff --git a/config/testdata/check-files-missing.yml b/config/testdata/check-files-missing.yml
+new file mode 100644
+index 0000000..5e4b983
+--- /dev/null
++++ b/config/testdata/check-files-missing.yml
+@@ -0,0 +1,24 @@
++modules:
++  http_post_body_file:
++    prober: http
++    http:
++      method: POST
++      body_file: "testdata/files/missing-body.txt"
++      authorization:
++        credentials_file: "testdata/files/missing-token"
++      http_headers:
++        X-Custom:
++          files: ["testdata/files/missing-header"]
++  tcp_tls:
++    prober: tcp
++    tcp:
++      tls: true
++      tls_config:
++        cert_file: "testdata/files/missing.crt"
++        key_file: "testdata/files/missing.key"
++  websocket_auth:
++    prober: websocket
++    websocket:
++      http_config:
++        authorization:
++          credentials_file: "testdata/files"
+diff --git a/config/testdata/files/body.txt b/config/testdata/files/body.txt
+new file mode 100644
+index 0000000..a3b036b
+--- /dev/null
++++ b/config/testdata/files/body.txt
+@@ -0,0 +1 @@
++test body
+diff --git a/main.go b/main.go
+index 97959fa..0fb2c54 100644
+--- a/main.go
++++ b/main.go
+@@ -51,7 +51,7 @@ var (
+ 
+ 	configFile         = kingpin.Flag("config.file", "Blackbox exporter configuration file.").Default("blackbox.yml").String()
+ 	timeoutOffset      = kingpin.Flag("timeout-offset", "Offset to subtract from timeout in seconds.").Default("0.5").Float64()
+-	configCheck        = kingpin.Flag("config.check", "If true validate the config file and then exit.").Default().Bool()
++	configCheck        = kingpin.Flag("config.check", "If true validate the config file and the local files it references, and then exit.").Default().Bool()
+ 	logLevelProber     = kingpin.Flag("log.prober", "Log level for probe request logs. One of: [debug, info, warn, error]. Please see the section `Controlling log level for probe logs` in the project README for more information.").Default("info").String()
+ 	enableAutoReload   = kingpin.Flag("config.enable-auto-reload", "When enabled, Blackbox exporter will automatically reload its configuration file at a specified interval. The interval is defined by the `--config.auto-reload-interval` flag, which defaults to `30s`").Default().Bool()
+ 	autoReloadInterval = kingpin.Flag("config.auto-reload-interval", "Specifies the interval in seconds for checking and automatically reloading configuration file upon detecting changes.").Default("30").Uint()
+@@ -105,6 +105,13 @@ func run() int {
+ 	}
+ 
+ 	if *configCheck {
++		sc.RLock()
++		err := sc.C.CheckFiles()
++		sc.RUnlock()
++		if err != nil {
++			logger.Error("Error checking files referenced in config", "err", err)
++			return 1
++		}
+ 		logger.Info("Config file is ok exiting...")
+ 		return 0
+ 	}
+-- 
+2.43.0
+

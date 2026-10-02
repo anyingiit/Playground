@@ -1,0 +1,214 @@
+From c683251a6b3ef164b65ae673c87b9f616640d7bf Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 22:57:00 +0000
+Subject: [PATCH] Find parenthesized and single-line slice blocks when adding
+ routes
+
+`hanami generate action --slice=main` looked up the slice block in
+config/routes.rb with /slice[[:space:]]*:main/, which does not match
+slices declared with parentheses, e.g. `slice(:main, at: "/") do`,
+and failed with a "cannot find" error.
+
+Allow an optional opening parenthesis before the slice name. Since a
+route cannot be appended to a single-line block such as
+`slice(:main, at: "/") { root to: "home.show" }`, expand such a block
+into a multi-line `do ... end` block containing the new route.
+
+Fixes hanami/hanami#1284
+---
+ CHANGELOG.md                                  |   1 +
+ lib/hanami/cli/generators/app/action.rb       |  36 +++++-
+ .../cli/commands/app/generate/action_spec.rb  | 105 ++++++++++++++++++
+ 3 files changed, 141 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 48a97ae..7539c32 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -26,6 +26,7 @@ and this project adheres to [Break Versioning](https://www.taoensso.com/break-ve
+ 
+     For example, `hanami generate action books.index` in an app named `Books` generates `Books::Actions::Books::Index`, whose `Books::Action` superclass previously resolved to the nested `Books::Actions::Books` module rather than the top-level app class. The superclass is now written as `::Books::Action` so it resolves correctly. 
+ - Avoid loading user config when running Postgres CLI commands, to ensure command output is in the expected format. (@mddelk in #437)
++- Fix `generate action --slice` failing to find the slice in `config/routes.rb` when the slice is declared with parentheses, such as `slice(:main, at: "/") do`, or as a single-line block, such as `slice(:main, at: "/") { root to: "home.show" }`. Single-line slice blocks are expanded into `do ... end` blocks so the new route can be added. (@anyingiit, hanami/hanami#1284)
+ 
+ ### Security
+ 
+diff --git a/lib/hanami/cli/generators/app/action.rb b/lib/hanami/cli/generators/app/action.rb
+index 41d635d..ae3adbe 100644
+--- a/lib/hanami/cli/generators/app/action.rb
++++ b/lib/hanami/cli/generators/app/action.rb
+@@ -76,6 +76,16 @@ module Hanami
+           PATH_SEPARATOR = "/"
+           private_constant :PATH_SEPARATOR
+ 
++          # Matches a block written on a single line with braces, such as
++          # `slice(:main, at: "/") { root to: "home.show" }`.
++          SINGLE_LINE_BLOCK = /
++            \A(?<indent>[[:blank:]]*)
++            (?<call>.*?\))[[:blank:]]*
++            \{[[:blank:]]*(?<body>.*?)[[:blank:]]*\}
++            [[:blank:]]*\z
++          /x
++          private_constant :SINGLE_LINE_BLOCK
++
+           attr_reader :fs, :inflector, :out, :view_generator
+ 
+           # @api private
+@@ -200,13 +210,37 @@ module Hanami
+           end
+ 
+           def add_route_to_block(file:, namespace:, route:)
+-            slice_matcher = /slice[[:space:]]*:#{namespace}/
++            slice_matcher = /slice[[:space:]]*\(?[[:space:]]*:#{namespace}/
+             if fs.block_contains?(file, slice_matcher, route)
+               out.puts "Route (#{route}) already exists, skipping..."
++            elsif (content = expand_single_line_block(fs.read(file), slice_matcher, route))
++              fs.write(file, content)
+             else
+               fs.inject_line_at_block_bottom(file, slice_matcher, route)
+             end
+           end
++
++          # Routes cannot be appended to a single-line block like `slice(:main, at: "/") { ... }`,
++          # so rewrite it as a multi-line `do ... end` block that includes the new route.
++          #
++          # Returns nil if the block matching the given matcher is not a single-line block.
++          def expand_single_line_block(content, matcher, route)
++            lines = content.lines
++            index = lines.index { |line| line.match?(matcher) }
++            return unless index
++
++            match = SINGLE_LINE_BLOCK.match(lines[index].chomp)
++            return unless match
++
++            indent = match[:indent]
++            block = ["#{indent}#{match[:call]} do\n"]
++            block << "#{indent}  #{match[:body]}\n" unless match[:body].empty?
++            block << "#{indent}  #{route}\n"
++            block << "#{indent}end\n"
++
++            lines[index] = block.join
++            lines.join
++          end
+         end
+       end
+     end
+diff --git a/spec/unit/hanami/cli/commands/app/generate/action_spec.rb b/spec/unit/hanami/cli/commands/app/generate/action_spec.rb
+index c191350..69275b0 100644
+--- a/spec/unit/hanami/cli/commands/app/generate/action_spec.rb
++++ b/spec/unit/hanami/cli/commands/app/generate/action_spec.rb
+@@ -1320,6 +1320,111 @@ RSpec.describe Hanami::CLI::Commands::App::Generate::Action, :app do
+         end
+       end
+ 
++      it "appends routes within the proper slice block when slice arguments use parentheses" do
++        within_application_directory do
++          prepare_slice!
++          fs.mkdir("slices/api")
++
++          routes_contents = <<~CODE
++            # frozen_string_literal: true
++
++            require "hanami/routes"
++
++            module #{app}
++              class Routes < Hanami::Routes
++                root { "Hello from Hanami" }
++
++                slice(:#{slice}, at: "/#{slice}") do
++                  root to: "home.index"
++                end
++
++                slice( :api, at: "/api" ) do
++                  root to: "home.index"
++                end
++              end
++            end
++          CODE
++          fs.write("config/routes.rb", routes_contents)
++
++          expected = <<~CODE
++            # frozen_string_literal: true
++
++            require "hanami/routes"
++
++            module #{app}
++              class Routes < Hanami::Routes
++                root { "Hello from Hanami" }
++
++                slice(:#{slice}, at: "/#{slice}") do
++                  root to: "home.index"
++                  get "/users", to: "users.index"
++                end
++
++                slice( :api, at: "/api" ) do
++                  root to: "home.index"
++                  get "/users/:id", to: "users.show"
++                end
++              end
++            end
++          CODE
++
++          subject.call(slice: slice, name: "users.index")
++          subject.call(slice: "api", name: "users.show")
++
++          expect(fs.read("config/routes.rb")).to eq(expected)
++        end
++      end
++
++      it "expands single-line slice blocks to append routes" do
++        within_application_directory do
++          prepare_slice!
++          fs.mkdir("slices/api")
++
++          routes_contents = <<~CODE
++            # frozen_string_literal: true
++
++            require "hanami/routes"
++
++            module #{app}
++              class Routes < Hanami::Routes
++                root { "Hello from Hanami" }
++
++                slice(:api, at: "/api") { root to: "home.index" }
++                slice(:#{slice}, at: "/") { root to: "home.show" }
++              end
++            end
++          CODE
++          fs.write("config/routes.rb", routes_contents)
++
++          expected = <<~CODE
++            # frozen_string_literal: true
++
++            require "hanami/routes"
++
++            module #{app}
++              class Routes < Hanami::Routes
++                root { "Hello from Hanami" }
++
++                slice(:api, at: "/api") do
++                  root to: "home.index"
++                  get "/users/:id", to: "users.show"
++                end
++                slice(:#{slice}, at: "/") do
++                  root to: "home.show"
++                  post "/subscribe", to: "home.subscribe"
++                end
++              end
++            end
++          CODE
++
++          subject.call(slice: slice, name: "home.subscribe", url_path: "/subscribe", http_method: "post")
++          subject.call(slice: "api", name: "users.show")
++
++          expect(fs.read("config/routes.rb")).to eq(expected)
++          expect(output).to include("Updated config/routes.rb")
++        end
++      end
++
+       it "does not add a duplicate route to the slice block" do
+         within_application_directory do
+           prepare_slice!
+-- 
+2.43.0
+

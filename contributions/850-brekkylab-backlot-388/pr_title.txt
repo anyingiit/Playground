@@ -1,0 +1,1 @@
+hubspot: archived reads only true as true, so archived=1 and archived=yes serve the active records

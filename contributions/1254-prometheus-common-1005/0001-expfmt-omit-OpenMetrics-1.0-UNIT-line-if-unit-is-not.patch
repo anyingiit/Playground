@@ -1,0 +1,197 @@
+From 1f606ff945ccb6dbea0becca8144b7f12ea6f83c Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:18:11 +0000
+Subject: [PATCH] expfmt: omit OpenMetrics 1.0 UNIT line if unit is not a name
+ suffix
+
+OpenMetrics 1.0 requires the unit of a metric family to be a suffix of
+its name. Since #877 the name is no longer adjusted to the unit, so
+MetricFamilyToOpenMetrics could write e.g. `# UNIT request_duration
+seconds`, which the Prometheus OpenMetrics parser rejects, failing the
+whole scrape.
+
+Write the `# UNIT` line only if the unit is a `_<unit>` suffix of the
+(compliant) metric family name, analogous to how counters without a
+`_total` suffix are exposed as `unknown`. The OpenMetrics 2.0 encoder is
+unchanged.
+
+Fixes #1005
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ expfmt/encode_test.go             |  6 +--
+ expfmt/openmetrics_create.go      | 12 ++++-
+ expfmt/openmetrics_create_test.go | 78 ++++++++++++++++++++++++++++++-
+ 3 files changed, 89 insertions(+), 7 deletions(-)
+
+diff --git a/expfmt/encode_test.go b/expfmt/encode_test.go
+index 3c8bc22..608378f 100644
+--- a/expfmt/encode_test.go
++++ b/expfmt/encode_test.go
+@@ -398,12 +398,12 @@ func TestEncode(t *testing.T) {
+ foo_metric 1.234
+ `,
+ 		},
+-		// 5: Untyped FmtOpenMetrics_0_0_1
++		// 5: Untyped FmtOpenMetrics_0_0_1. The unit is not a suffix of the
++		// name, so no UNIT line is written for OpenMetrics 1.0.
+ 		{
+ 			metric: metric1,
+ 			format: FmtOpenMetrics_0_0_1,
+ 			expOut: `# TYPE foo_metric unknown
+-# UNIT foo_metric seconds
+ foo_metric 1.234
+ `,
+ 		},
+@@ -412,7 +412,6 @@ foo_metric 1.234
+ 			metric: metric1,
+ 			format: FmtOpenMetrics_1_0_0,
+ 			expOut: `# TYPE foo_metric unknown
+-# UNIT foo_metric seconds
+ foo_metric 1.234
+ `,
+ 		},
+@@ -421,7 +420,6 @@ foo_metric 1.234
+ 			metric: metric1,
+ 			format: FmtOpenMetrics_1_0_0,
+ 			expOut: `# TYPE foo_metric unknown
+-# UNIT foo_metric seconds
+ foo_metric 1.234
+ `,
+ 		},
+diff --git a/expfmt/openmetrics_create.go b/expfmt/openmetrics_create.go
+index 0480e7a..830547a 100644
+--- a/expfmt/openmetrics_create.go
++++ b/expfmt/openmetrics_create.go
+@@ -87,6 +87,12 @@ func WithCreatedLines() EncoderOption {
+ //     its type will be set to `unknown` in that case to avoid invalid OpenMetrics
+ //     output.
+ //
++//   - The unit is expected to be a suffix of the metric name (after truncating
++//     the `_total` suffix of counters), e.g. `request_duration_seconds` for the
++//     unit `seconds`. The metric name is not changed. If the unit is not a
++//     suffix of the name, the `# UNIT` line is omitted to avoid invalid
++//     OpenMetrics output.
++//
+ //   - No support for the following (optional) features: info type,
+ //     stateset type, gaugehistogram type.
+ //
+@@ -193,7 +199,11 @@ func MetricFamilyToOpenMetrics(out io.Writer, in *dto.MetricFamily, options ...E
+ 	if err != nil {
+ 		return written, err
+ 	}
+-	if in.Unit != nil {
++	// OpenMetrics 1.0 requires the unit to be a suffix of the metric family
++	// name (e.g. `foo_seconds` for unit `seconds`). Parsers (including
++	// Prometheus) reject the whole exposition otherwise, so the `# UNIT` line
++	// is omitted if the unit is not a suffix of the name.
++	if in.Unit != nil && (*in.Unit == "" || strings.HasSuffix(compliantName, "_"+*in.Unit)) {
+ 		n, err = w.WriteString("# UNIT ")
+ 		written += n
+ 		if err != nil {
+diff --git a/expfmt/openmetrics_create_test.go b/expfmt/openmetrics_create_test.go
+index 8419a69..a83002c 100644
+--- a/expfmt/openmetrics_create_test.go
++++ b/expfmt/openmetrics_create_test.go
+@@ -668,7 +668,8 @@ request_duration_microseconds_sum 1.7560473e+06
+ request_duration_microseconds_count 2693
+ `,
+ 		},
+-		// 16: Counter, timestamp given, unit given, _total suffix.
++		// 16: Counter, timestamp given, unit given, _total suffix. The unit
++		// is not a suffix of the name, so no UNIT line is written.
+ 		{
+ 			in: &dto.MetricFamily{
+ 				Name: proto.String("some_measure_total"),
+@@ -711,7 +712,6 @@ request_duration_microseconds_count 2693
+ 			},
+ 			out: `# HELP some_measure some testing measurement
+ # TYPE some_measure counter
+-# UNIT some_measure seconds
+ some_measure_total{labelname="val1",basename="basevalue"} 42.0
+ some_measure_total{labelname="val2",basename="basevalue"} 0.23 1.23456789e+06
+ `,
+@@ -758,6 +758,80 @@ name_bucket{le="172.8"} 1524
+ name_bucket{le="+Inf"} 2693
+ name_sum 1.7560473e+06
+ name_count 2693
++`,
++		},
++		// 18: Gauge with a unit that is not a suffix of the name.
++		{
++			in: &dto.MetricFamily{
++				Name: proto.String("request_duration"),
++				Type: dto.MetricType_GAUGE.Enum(),
++				Unit: proto.String("seconds"),
++				Metric: []*dto.Metric{
++					{
++						Gauge: &dto.Gauge{
++							Value: proto.Float64(1.5),
++						},
++					},
++				},
++			},
++			out: `# TYPE request_duration gauge
++request_duration 1.5
++`,
++		},
++		// 19: Unit matches the end of the name, but not as a separate suffix.
++		{
++			in: &dto.MetricFamily{
++				Name: proto.String("request_durationseconds"),
++				Type: dto.MetricType_GAUGE.Enum(),
++				Unit: proto.String("seconds"),
++				Metric: []*dto.Metric{
++					{
++						Gauge: &dto.Gauge{
++							Value: proto.Float64(1.5),
++						},
++					},
++				},
++			},
++			out: `# TYPE request_durationseconds gauge
++request_durationseconds 1.5
++`,
++		},
++		// 20: Gauge with a unit that is a suffix of the name.
++		{
++			in: &dto.MetricFamily{
++				Name: proto.String("request_duration_seconds"),
++				Type: dto.MetricType_GAUGE.Enum(),
++				Unit: proto.String("seconds"),
++				Metric: []*dto.Metric{
++					{
++						Gauge: &dto.Gauge{
++							Value: proto.Float64(1.5),
++						},
++					},
++				},
++			},
++			out: `# TYPE request_duration_seconds gauge
++# UNIT request_duration_seconds seconds
++request_duration_seconds 1.5
++`,
++		},
++		// 21: Counter without _total suffix, unit is a suffix of the name.
++		{
++			in: &dto.MetricFamily{
++				Name: proto.String("request_duration_seconds"),
++				Type: dto.MetricType_COUNTER.Enum(),
++				Unit: proto.String("seconds"),
++				Metric: []*dto.Metric{
++					{
++						Counter: &dto.Counter{
++							Value: proto.Float64(1.5),
++						},
++					},
++				},
++			},
++			out: `# TYPE request_duration_seconds unknown
++# UNIT request_duration_seconds seconds
++request_duration_seconds 1.5
+ `,
+ 		},
+ 	}
+-- 
+2.43.0
+

@@ -1,0 +1,314 @@
+From 6daed827d971d8460b1714702a119e2ba8af6652 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:58:50 +0000
+Subject: [PATCH] Refactor constant notation in Entrance.h and NewsItem.h
+
+Part of #21432
+---
+ src/openrct2-ui/windows/News.cpp                     |  4 ++--
+ .../actions/park/ParkEntrancePlaceAction.cpp         |  4 ++--
+ .../actions/ride/RideEntranceExitPlaceAction.cpp     | 10 +++++-----
+ src/openrct2/interface/InteractiveConsole.cpp        |  2 +-
+ src/openrct2/management/NewsItem.cpp                 | 12 ++++++------
+ src/openrct2/management/NewsItem.h                   | 12 ++++++------
+ src/openrct2/rct2/S6Importer.cpp                     |  2 +-
+ src/openrct2/scripting/bindings/world/ScPark.cpp     | 12 ++++++------
+ .../scripting/bindings/world/ScParkMessage.cpp       |  2 +-
+ src/openrct2/world/Entrance.h                        |  8 ++++----
+ 10 files changed, 34 insertions(+), 34 deletions(-)
+
+diff --git a/src/openrct2-ui/windows/News.cpp b/src/openrct2-ui/windows/News.cpp
+index c7b5761..2180a59 100644
+--- a/src/openrct2-ui/windows/News.cpp
++++ b/src/openrct2-ui/windows/News.cpp
+@@ -512,7 +512,7 @@ namespace OpenRCT2::Ui::Windows
+                     auto borderStyle = Rectangle::BorderStyle::outset;
+                     if (_pressedNewsItemIndex != -1)
+                     {
+-                        News::IsValidIndex(_pressedNewsItemIndex + News::ItemHistoryStart);
++                        News::IsValidIndex(_pressedNewsItemIndex + News::kItemHistoryStart);
+                         if (i == _pressedNewsItemIndex && _pressedButtonIndex == 1)
+                         {
+                             borderStyle = Rectangle::BorderStyle::inset;
+@@ -594,7 +594,7 @@ namespace OpenRCT2::Ui::Windows
+                     auto borderStyle = Rectangle::BorderStyle::outset;
+                     if (_pressedNewsItemIndex != -1)
+                     {
+-                        News::IsValidIndex(_pressedNewsItemIndex + News::ItemHistoryStart);
++                        News::IsValidIndex(_pressedNewsItemIndex + News::kItemHistoryStart);
+                         if (i == _pressedNewsItemIndex && _pressedButtonIndex == 2)
+                             borderStyle = Rectangle::BorderStyle::inset;
+                     }
+diff --git a/src/openrct2/actions/park/ParkEntrancePlaceAction.cpp b/src/openrct2/actions/park/ParkEntrancePlaceAction.cpp
+index a3292a3..4ef186f 100644
+--- a/src/openrct2/actions/park/ParkEntrancePlaceAction.cpp
++++ b/src/openrct2/actions/park/ParkEntrancePlaceAction.cpp
+@@ -88,7 +88,7 @@ namespace OpenRCT2::GameActions
+         }
+ 
+         auto zLow = _loc.z;
+-        auto zHigh = zLow + ParkEntranceHeight;
++        auto zHigh = zLow + kParkEntranceHeight;
+         CoordsXYZ entranceLoc = _loc;
+         for (uint8_t index = 0; index < 3; index++)
+         {
+@@ -130,7 +130,7 @@ namespace OpenRCT2::GameActions
+         park.entrances.push_back(_loc);
+ 
+         auto zLow = _loc.z;
+-        auto zHigh = zLow + ParkEntranceHeight;
++        auto zHigh = zLow + kParkEntranceHeight;
+         CoordsXY entranceLoc = { _loc.x, _loc.y };
+ 
+         constexpr auto kEntranceSequences = std::to_array(
+diff --git a/src/openrct2/actions/ride/RideEntranceExitPlaceAction.cpp b/src/openrct2/actions/ride/RideEntranceExitPlaceAction.cpp
+index 5071c12..407a866 100644
+--- a/src/openrct2/actions/ride/RideEntranceExitPlaceAction.cpp
++++ b/src/openrct2/actions/ride/RideEntranceExitPlaceAction.cpp
+@@ -117,7 +117,7 @@ namespace OpenRCT2::GameActions
+         {
+             return Result(Status::noFreeElements, errorTitle, STR_TILE_ELEMENT_LIMIT_REACHED);
+         }
+-        auto clear_z = z + (_isExit ? RideExitHeight : RideEntranceHeight);
++        auto clear_z = z + (_isExit ? kRideExitHeight : kRideEntranceHeight);
+         auto canBuild = MapCanConstructWithClearAt(
+             { _loc, z, clear_z }, MapPlaceNonSceneryClearFunc, { 0b1111, 0 }, GetFlags());
+         if (canBuild.error != Status::ok)
+@@ -132,7 +132,7 @@ namespace OpenRCT2::GameActions
+             return Result(Status::disallowed, errorTitle, STR_RIDE_CANT_BUILD_THIS_UNDERWATER);
+         }
+ 
+-        if (z > MaxRideEntranceOrExitHeight)
++        if (z > kMaxRideEntranceOrExitHeight)
+         {
+             return Result(Status::disallowed, errorTitle, STR_TOO_HIGH);
+         }
+@@ -186,7 +186,7 @@ namespace OpenRCT2::GameActions
+             WallRemoveAtZ({ _loc, z });
+         }
+ 
+-        auto clear_z = z + (_isExit ? RideExitHeight : RideEntranceHeight);
++        auto clear_z = z + (_isExit ? kRideExitHeight : kRideEntranceHeight);
+         auto canBuild = MapCanConstructWithClearAt(
+             { _loc, z, clear_z }, MapPlaceNonSceneryClearFunc, { 0b1111, 0 }, GetFlags().with(CommandFlag::apply));
+         if (canBuild.error != Status::ok)
+@@ -253,7 +253,7 @@ namespace OpenRCT2::GameActions
+             return Result(Status::noFreeElements, errorTitle, STR_TILE_ELEMENT_LIMIT_REACHED);
+         }
+         int16_t baseZ = loc.z;
+-        int16_t clearZ = baseZ + (isExit ? RideExitHeight : RideEntranceHeight);
++        int16_t clearZ = baseZ + (isExit ? kRideExitHeight : kRideEntranceHeight);
+         auto canBuild = MapCanConstructWithClearAt({ loc, baseZ, clearZ }, MapPlaceNonSceneryClearFunc, { 0b1111, 0 }, {});
+         if (canBuild.error != Status::ok)
+         {
+@@ -267,7 +267,7 @@ namespace OpenRCT2::GameActions
+             return Result(Status::disallowed, errorTitle, STR_RIDE_CANT_BUILD_THIS_UNDERWATER);
+         }
+ 
+-        if (baseZ > MaxRideEntranceOrExitHeight)
++        if (baseZ > kMaxRideEntranceOrExitHeight)
+         {
+             return Result(Status::disallowed, errorTitle, STR_TOO_HIGH);
+         }
+diff --git a/src/openrct2/interface/InteractiveConsole.cpp b/src/openrct2/interface/InteractiveConsole.cpp
+index 47f0274..3e02012 100644
+--- a/src/openrct2/interface/InteractiveConsole.cpp
++++ b/src/openrct2/interface/InteractiveConsole.cpp
+@@ -1623,7 +1623,7 @@ static void ConsoleCommandAddNewsItem([[maybe_unused]] InteractiveConsole& conso
+     if (argv.size() < 2)
+     {
+         console.WriteLineWarning("Too few arguments");
+-        static_assert(News::ItemTypeCount == 11, "News::ItemType::count changed, update console command!");
++        static_assert(News::kItemTypeCount == 11, "News::ItemType::count changed, update console command!");
+         console.WriteLine("add_news_item <type> <message> [assoc]");
+         console.WriteLine("type is one of:");
+         console.WriteLine("    0 (News::ItemType::null)");
+diff --git a/src/openrct2/management/NewsItem.cpp b/src/openrct2/management/NewsItem.cpp
+index 507fb06..858cfc3 100644
+--- a/src/openrct2/management/NewsItem.cpp
++++ b/src/openrct2/management/NewsItem.cpp
+@@ -44,7 +44,7 @@ const News::Item& News::ItemQueues::current() const
+ 
+ bool News::IsValidIndex(int32_t index)
+ {
+-    if (index >= MaxItems)
++    if (index >= kMaxItems)
+     {
+         LOG_ERROR("Tried to get news item past MAX_NEWS.");
+         return false;
+@@ -471,7 +471,7 @@ void News::AddItemToQueue(Item* newNewsItem)
+ 
+ void News::RemoveItem(int32_t index)
+ {
+-    if (index < 0 || index >= MaxItems)
++    if (index < 0 || index >= kMaxItems)
+         return;
+ 
+     auto& gameState = getGameState();
+@@ -479,7 +479,7 @@ void News::RemoveItem(int32_t index)
+     if (gameState.newsItems[index].type == ItemType::null)
+         return;
+ 
+-    size_t newsBoundary = index < ItemHistoryStart ? ItemHistoryStart : MaxItems;
++    size_t newsBoundary = index < kItemHistoryStart ? kItemHistoryStart : kMaxItems;
+     for (size_t i = index; i < newsBoundary - 1; i++)
+     {
+         gameState.newsItems[i] = gameState.newsItems[i + 1];
+@@ -491,12 +491,12 @@ void News::importNewsItems(GameState_t& gameState, const std::span<const Item> r
+ {
+     gameState.newsItems.clear();
+ 
+-    for (size_t i = 0; i < std::min<size_t>(recent.size(), ItemHistoryStart); i++)
++    for (size_t i = 0; i < std::min<size_t>(recent.size(), kItemHistoryStart); i++)
+     {
+         gameState.newsItems[i] = recent[i];
+     }
+-    for (size_t i = 0; i < std::min<size_t>(archived.size(), MaxItemsArchive); i++)
++    for (size_t i = 0; i < std::min<size_t>(archived.size(), kMaxItemsArchive); i++)
+     {
+-        gameState.newsItems[ItemHistoryStart + i] = archived[i];
++        gameState.newsItems[kItemHistoryStart + i] = archived[i];
+     }
+ }
+diff --git a/src/openrct2/management/NewsItem.h b/src/openrct2/management/NewsItem.h
+index d33fe73..deb6f77 100644
+--- a/src/openrct2/management/NewsItem.h
++++ b/src/openrct2/management/NewsItem.h
+@@ -46,7 +46,7 @@ namespace OpenRCT2::News
+         count
+     };
+ 
+-    constexpr size_t ItemTypeCount = static_cast<size_t>(ItemType::count);
++    constexpr size_t kItemTypeCount = static_cast<size_t>(ItemType::count);
+ 
+     enum ItemTypeProperty : uint8_t
+     {
+@@ -122,9 +122,9 @@ namespace OpenRCT2::News
+         }
+     };
+ 
+-    constexpr int32_t ItemHistoryStart = 11;
+-    constexpr int32_t MaxItemsArchive = 50;
+-    constexpr int32_t MaxItems = ItemHistoryStart + MaxItemsArchive;
++    constexpr int32_t kItemHistoryStart = 11;
++    constexpr int32_t kMaxItemsArchive = 50;
++    constexpr int32_t kMaxItems = kItemHistoryStart + kMaxItemsArchive;
+ 
+     template<std::size_t N>
+     class ItemQueue
+@@ -292,8 +292,8 @@ namespace OpenRCT2::News
+     private:
+         int32_t removeTime() const;
+ 
+-        ItemQueue<ItemHistoryStart> _recent;
+-        ItemQueue<MaxItemsArchive> _archived;
++        ItemQueue<kItemHistoryStart> _recent;
++        ItemQueue<kMaxItemsArchive> _archived;
+     };
+ 
+     void InitQueue(GameState_t& gameState);
+diff --git a/src/openrct2/rct2/S6Importer.cpp b/src/openrct2/rct2/S6Importer.cpp
+index d20c022..d83f601 100644
+--- a/src/openrct2/rct2/S6Importer.cpp
++++ b/src/openrct2/rct2/S6Importer.cpp
+@@ -315,7 +315,7 @@ namespace OpenRCT2::RCT2
+                 if (src.Type == 0)
+                     break;
+ 
+-                if (src.Type >= News::ItemTypeCount)
++                if (src.Type >= News::kItemTypeCount)
+                 {
+                     LOG_ERROR("Invalid news type 0x%x for news item %d, ignoring remaining news items", src.Type, index);
+                     break;
+diff --git a/src/openrct2/scripting/bindings/world/ScPark.cpp b/src/openrct2/scripting/bindings/world/ScPark.cpp
+index ac3a4c8..b736ec2 100644
+--- a/src/openrct2/scripting/bindings/world/ScPark.cpp
++++ b/src/openrct2/scripting/bindings/world/ScPark.cpp
+@@ -363,7 +363,7 @@ namespace OpenRCT2::Scripting
+         }
+         for (size_t i = 0, newsSize = gameState.newsItems.getArchived().size(); i < newsSize; i++)
+         {
+-            auto offset = i + News::ItemHistoryStart;
++            auto offset = i + News::kItemHistoryStart;
+             JS_SetPropertyInt64(ctx, result, resultIdx++, gScParkMessage.New(ctx, offset));
+         }
+         return result;
+@@ -372,14 +372,14 @@ namespace OpenRCT2::Scripting
+     JSValue ScPark::messages_set(JSContext* ctx, JSValue thisVal, JSValue value)
+     {
+         int32_t index = 0;
+-        int32_t archiveIndex = News::ItemHistoryStart;
++        int32_t archiveIndex = News::kItemHistoryStart;
+         auto& gameState = getGameState();
+         JSIterateArray(ctx, value, [&index, &archiveIndex, &gameState](JSContext* ctx2, JSValue item) {
+             auto isArchived = AsOrDefault(ctx2, item, "isArchived", false);
+             auto newsItem = NewsItemFromJS(ctx2, item);
+             if (isArchived)
+             {
+-                if (archiveIndex < News::MaxItems)
++                if (archiveIndex < News::kMaxItems)
+                 {
+                     gameState.newsItems[archiveIndex] = newsItem;
+                     archiveIndex++;
+@@ -387,7 +387,7 @@ namespace OpenRCT2::Scripting
+             }
+             else
+             {
+-                if (index < News::ItemHistoryStart)
++                if (index < News::kItemHistoryStart)
+                 {
+                     gameState.newsItems[index] = newsItem;
+                     index++;
+@@ -396,11 +396,11 @@ namespace OpenRCT2::Scripting
+         });
+ 
+         // End the lists by setting next item to null
+-        if (index < News::ItemHistoryStart)
++        if (index < News::kItemHistoryStart)
+         {
+             gameState.newsItems[index].type = News::ItemType::null;
+         }
+-        if (archiveIndex < News::MaxItems)
++        if (archiveIndex < News::kMaxItems)
+         {
+             gameState.newsItems[archiveIndex].type = News::ItemType::null;
+         }
+diff --git a/src/openrct2/scripting/bindings/world/ScParkMessage.cpp b/src/openrct2/scripting/bindings/world/ScParkMessage.cpp
+index 04be0db..3728663 100644
+--- a/src/openrct2/scripting/bindings/world/ScParkMessage.cpp
++++ b/src/openrct2/scripting/bindings/world/ScParkMessage.cpp
+@@ -29,7 +29,7 @@ namespace OpenRCT2::Scripting
+     JSValue ScParkMessage::isArchived_get(JSContext* ctx, JSValue thisVal)
+     {
+         auto index = gScParkMessage.GetOpaque<OpaqueParkMessageData*>(thisVal)->index;
+-        return JS_NewBool(ctx, index >= News::ItemHistoryStart);
++        return JS_NewBool(ctx, index >= News::kItemHistoryStart);
+     }
+ 
+     JSValue ScParkMessage::month_get(JSContext* ctx, JSValue thisVal)
+diff --git a/src/openrct2/world/Entrance.h b/src/openrct2/world/Entrance.h
+index 64addd0..5ee0b98 100644
+--- a/src/openrct2/world/Entrance.h
++++ b/src/openrct2/world/Entrance.h
+@@ -16,14 +16,14 @@ struct CoordsXYE;
+ struct CoordsXYZ;
+ struct CoordsXYZD;
+ 
+-constexpr uint8_t ParkEntranceHeight = 12 * kCoordsZStep;
+-constexpr uint8_t RideEntranceHeight = 7 * kCoordsZStep;
+-constexpr uint8_t RideExitHeight = 5 * kCoordsZStep;
++constexpr uint8_t kParkEntranceHeight = 12 * kCoordsZStep;
++constexpr uint8_t kRideEntranceHeight = 7 * kCoordsZStep;
++constexpr uint8_t kRideExitHeight = 5 * kCoordsZStep;
+ 
+ extern bool gParkEntranceGhostExists;
+ extern CoordsXYZD gParkEntranceGhostPosition;
+ 
+-constexpr int32_t MaxRideEntranceOrExitHeight = 244 * kCoordsZStep;
++constexpr int32_t kMaxRideEntranceOrExitHeight = 244 * kCoordsZStep;
+ 
+ extern CoordsXYZD gRideEntranceExitGhostPosition;
+ extern StationIndex gRideEntranceExitGhostStationIndex;
+-- 
+2.43.0
+

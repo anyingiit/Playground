@@ -1,0 +1,1 @@
+fix(capsule): return dedicated AlreadyRegistered errors for duplicate registrations

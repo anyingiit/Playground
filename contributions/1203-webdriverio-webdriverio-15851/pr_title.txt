@@ -1,0 +1,1 @@
+fix(webdriverio): return multi-remote results from custom$, react$ and shadow$

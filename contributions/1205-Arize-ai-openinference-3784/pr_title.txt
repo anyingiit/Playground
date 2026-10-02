@@ -1,0 +1,1 @@
+fix(cohere): end the LLM span when a chat_stream is abandoned or closed early

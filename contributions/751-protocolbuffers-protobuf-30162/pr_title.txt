@@ -1,0 +1,1 @@
+Document that protobuf_generate import dirs belong in IMPORT_DIRS

@@ -1,0 +1,88 @@
+From d415c8295e317e655cb0fb038bff4b1d064b6cb8 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 20:39:29 +0000
+Subject: [PATCH] [ENH] unconditional second test parameter set for
+ SupervisedIntervals, remove test skip
+
+Add a second get_test_params set for SupervisedIntervals that does not
+use numba-based feature functions, so get_test_params returns at least
+two parameter sets even when numba is not installed. Remove the
+test_get_test_params_coverage skip tag and the entry in
+EXCLUDE_SOFT_DEPS.
+
+Part of #10652 (task 1, see also #3429).
+---
+ sktime/tests/_config.py                       |  1 -
+ .../transformations/supervised_intervals.py   | 24 +++++++++++--------
+ 2 files changed, 14 insertions(+), 11 deletions(-)
+
+diff --git a/sktime/tests/_config.py b/sktime/tests/_config.py
+index 95d7cc2..e9bbcae 100644
+--- a/sktime/tests/_config.py
++++ b/sktime/tests/_config.py
+@@ -54,7 +54,6 @@ EXCLUDE_SOFT_DEPS = [
+     "PluginParamsForecaster",
+     "PluginParamsTransformer",
+     "RegressorPipeline",
+-    "SupervisedIntervals",
+     "TSBootstrapAdapter",
+     "ThetaModularForecaster",
+     "WeightedEnsembleClassifier",
+diff --git a/sktime/transformations/supervised_intervals.py b/sktime/transformations/supervised_intervals.py
+index add0227..f576e41 100644
+--- a/sktime/transformations/supervised_intervals.py
++++ b/sktime/transformations/supervised_intervals.py
+@@ -118,11 +118,6 @@ class SupervisedIntervals(BaseTransformer):
+         "capability:categorical_in_X": False,
+         "capability:random_state": True,
+         "property:randomness": "derandomized",
+-        # CI and test flags
+-        # -----------------
+-        "tests:skip_by_name": [
+-            "test_get_test_params_coverage",
+-        ],
+     }
+ 
+     def __init__(
+@@ -541,6 +536,16 @@ class SupervisedIntervals(BaseTransformer):
+ 
+         params0 = {}
+ 
++        # second parameter set that does not use numba feature functions,
++        # so get_test_params returns at least two sets even without numba
++        params1 = {
++            "n_intervals": 2,
++            "min_interval_length": 4,
++            "randomised_split_point": False,
++        }
++
++        params = [params0, params1]
++
+         if _check_soft_dependencies("numba", severity="none"):
+             from sktime.utils.numba.stats import (
+                 row_mean,
+@@ -549,17 +554,16 @@ class SupervisedIntervals(BaseTransformer):
+                 row_numba_min,
+             )
+ 
+-            params1 = {
++            params2 = {
+                 "n_intervals": 1,
+                 "features": [row_mean, row_numba_min, row_numba_max],
+                 "min_interval_length": 4,
+             }
+-            params2 = {
++            params3 = {
+                 "n_intervals": 2,
+                 "randomised_split_point": False,
+                 "features": row_median,
+             }
+-            return [params0, params1, params2]
++            params = params + [params2, params3]
+ 
+-        else:
+-            return params0
++        return params
+-- 
+2.43.0
+

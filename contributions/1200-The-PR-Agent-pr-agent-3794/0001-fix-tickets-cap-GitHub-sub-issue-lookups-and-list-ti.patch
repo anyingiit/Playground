@@ -1,0 +1,123 @@
+From 122f068ec429ebbb93978993528652f4f999f4c4 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:08:48 +0000
+Subject: [PATCH] fix(tickets): cap GitHub sub-issue lookups and list tickets
+ before sub-issues
+
+Since #3746 raised the sub-issue query to 100, ticket extraction made one
+get_issue REST call per direct sub-issue with no cap. Look up at most
+MAX_GITHUB_SUB_ISSUES (10, the old limit) per ticket.
+
+Also store each linked ticket before its sub-issues in related_tickets.
+The related-ticket budget keeps a prefix, so a ticket placed after its
+children was the first thing dropped when the prompt was trimmed.
+
+Closes #3794
+---
+ pr_agent/tools/ticket_pr_compliance_check.py  | 15 ++++++++----
+ .../unittest/test_ticket_extraction_async.py  | 23 ++++++++++++++++---
+ 2 files changed, 31 insertions(+), 7 deletions(-)
+
+diff --git a/pr_agent/tools/ticket_pr_compliance_check.py b/pr_agent/tools/ticket_pr_compliance_check.py
+index aa825dd..e4ba6c4 100644
+--- a/pr_agent/tools/ticket_pr_compliance_check.py
++++ b/pr_agent/tools/ticket_pr_compliance_check.py
+@@ -1,5 +1,6 @@
+ import asyncio
+ import copy
++import itertools
+ import math
+ import re
+ import traceback
+@@ -358,6 +359,9 @@ MAX_ASANA_REQUEST_TIMEOUT = 60
+ MAX_ASANA_TICKETS = 3
+ MAX_GITHUB_TICKETS = 3
+ MAX_GITHUB_TICKET_LOOKUPS = 30
++# Upper bound on direct sub-issues looked up per GitHub ticket. Each one costs a REST call and
++# adds a ticket to the prompt, so a large parent issue must not fan out unbounded (#3794).
++MAX_GITHUB_SUB_ISSUES = 10
+ MAX_GITLAB_TICKETS = 3
+ GITLAB_TICKET_PATTERN = re.compile(
+     r"(?P<url>https?://[^\s<>(),;]+)"
+@@ -928,7 +932,10 @@ async def extract_tickets(git_provider):
+                     sub_issues_content = []
+                     try:
+                         sub_issues = git_provider.fetch_sub_issues(ticket)
+-                        for sub_issue_url in sub_issues:
++                        if len(sub_issues) > MAX_GITHUB_SUB_ISSUES:
++                            get_logger().info(f"Too many sub-issues for {ticket!r}: {len(sub_issues)}, "
++                                              f"looking up the first {MAX_GITHUB_SUB_ISSUES}")
++                        for sub_issue_url in itertools.islice(sub_issues, MAX_GITHUB_SUB_ISSUES):
+                             try:
+                                 sub_repo, sub_issue_number = git_provider._parse_issue_url(sub_issue_url)
+                                 sub_repo_obj = _get_repo_obj_for_ticket(git_provider, sub_issue_url, sub_repo,
+@@ -1087,14 +1094,14 @@ async def extract_and_cache_pr_tickets(git_provider, vars):
+         tickets_content = await extract_tickets(git_provider)
+ 
+         if tickets_content:
+-            # Store sub-issues along with main issues
++            # Store each ticket ahead of its sub-issues: the prompt is clipped from the end, so a
++            # linked ticket must not sit behind its children, where it would be dropped first.
+             for ticket in tickets_content:
++                related_tickets.append(ticket)
+                 if "sub_issues" in ticket and ticket["sub_issues"]:
+                     for sub_issue in ticket["sub_issues"]:
+                         related_tickets.append(sub_issue)  # Add sub-issues content
+ 
+-                related_tickets.append(ticket)
+-
+             get_logger().info("Extracted tickets and sub-issues from PR description",
+                               artifact={"tickets": related_tickets})
+ 
+diff --git a/tests/unittest/test_ticket_extraction_async.py b/tests/unittest/test_ticket_extraction_async.py
+index 9a8def7..1530fd7 100644
+--- a/tests/unittest/test_ticket_extraction_async.py
++++ b/tests/unittest/test_ticket_extraction_async.py
+@@ -608,6 +608,23 @@ class TestSubIssues:
+         subs = result[0]["sub_issues"]
+         assert [s["ticket_url"] for s in subs] == [sub_good]
+ 
++    def test_sub_issue_lookups_are_capped_per_ticket(self, settings_snapshot):
++        sub_numbers = range(100, 100 + tpc.MAX_GITHUB_SUB_ISSUES + 5)
++        issues = {number: _FakeIssue(number) for number in [1, *sub_numbers]}
++        repo_obj = MagicMock()
++        repo_obj.get_issue.side_effect = issues.__getitem__
++        sub_urls = [f"https://github.com/org/repo/issues/{number}" for number in sub_numbers]
++        provider = _make_github_provider(
++            user_description="Fixes #1",
++            repo_obj=repo_obj,
++            sub_issues_map={"https://github.com/org/repo/issues/1": sub_urls},
++        )
++        result = asyncio.run(extract_tickets(provider))
++        subs = result[0]["sub_issues"]
++        assert [s["ticket_url"] for s in subs] == sub_urls[:tpc.MAX_GITHUB_SUB_ISSUES]
++        # One REST lookup for the ticket itself plus one per kept sub-issue.
++        assert repo_obj.get_issue.call_count == 1 + tpc.MAX_GITHUB_SUB_ISSUES
++
+ 
+ # ---------------------------------------------------------------------------
+ # Scenario 6: labels — supports both object-style and string-style
+@@ -830,7 +847,7 @@ class TestExtractAndCachePrTickets:
+         asyncio.run(extract_and_cache_pr_tickets(object(), vars_))
+         assert vars_["related_tickets"] == cached
+ 
+-    def test_stores_sub_issues_before_main_issue_in_related_tickets(
++    def test_stores_main_issue_before_its_sub_issues_in_related_tickets(
+         self, settings_snapshot, monkeypatch
+     ):
+         settings_snapshot.set("pr_reviewer.require_ticket_analysis_review", True)
+@@ -855,9 +872,9 @@ class TestExtractAndCachePrTickets:
+         vars_ = {}
+         asyncio.run(extract_and_cache_pr_tickets(object(), vars_))
+ 
+-        # Per current production order: sub-issues are appended first, then main.
++        # Each ticket precedes its sub-issues, so trimming the prompt tail drops children first.
+         stored = vars_["related_tickets"]
+-        assert stored == [sub_a, sub_b, main_ticket]
++        assert stored == [main_ticket, sub_a, sub_b]
+         # Settings cache is also populated
+         assert get_settings().get("related_tickets") == stored
+ 
+-- 
+2.43.0
+

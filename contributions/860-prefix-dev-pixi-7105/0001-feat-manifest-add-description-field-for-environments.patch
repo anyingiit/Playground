@@ -1,0 +1,584 @@
+From aef9042a2157f37d212f187a14d4f480140bac8f Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 20:07:11 +0000
+Subject: [PATCH] feat(manifest): add `description` field for environments
+
+Environments in the `[environments]` table can now carry an optional
+`description`, which is shown by `pixi info` (and included in
+`pixi info --json`). The JSON schema and the manifest reference docs are
+updated accordingly.
+---
+ crates/pixi_cli/src/info.rs                   | 10 +++
+ crates/pixi_core/src/workspace/environment.rs |  6 ++
+ crates/pixi_manifest/src/environment.rs       |  3 +
+ .../pixi_manifest/src/manifests/workspace.rs  | 86 +++++++++++++++++++
+ crates/pixi_manifest/src/toml/environment.rs  | 32 ++++++-
+ crates/pixi_manifest/src/toml/manifest.rs     | 67 ++++++++-------
+ ...ment__test__parse_invalid_environment.snap |  4 +-
+ ...ment__test__parse_invalid_solve_group.snap |  4 +-
+ docs/reference/pixi_manifest.md               |  3 +-
+ schema/examples/valid/full.toml               |  2 +-
+ schema/model.py                               |  4 +
+ schema/pyproject/partial-pixi.json            |  6 ++
+ schema/pyproject/schema.json                  |  6 ++
+ schema/schema.json                            |  6 ++
+ tests/integration_python/test_main_cli.py     | 33 +++++++
+ 15 files changed, 236 insertions(+), 36 deletions(-)
+
+diff --git a/crates/pixi_cli/src/info.rs b/crates/pixi_cli/src/info.rs
+index 9aa8112..582b4c2 100644
+--- a/crates/pixi_cli/src/info.rs
++++ b/crates/pixi_cli/src/info.rs
+@@ -125,6 +125,7 @@ fn format_platform(info: &PlatformInfo) -> String {
+ #[derive(Serialize)]
+ pub struct EnvironmentInfo {
+     name: EnvironmentName,
++    description: Option<String>,
+     features: Vec<FeatureName>,
+     solve_group: Option<String>,
+     environment_size: Option<String>,
+@@ -147,6 +148,14 @@ impl Display for EnvironmentInfo {
+             bold.apply_to("Environment"),
+             self.name.fancy_display().bold()
+         )?;
++        if let Some(description) = &self.description {
++            writeln!(
++                f,
++                "{:>WIDTH$}: {}",
++                bold.apply_to("Description"),
++                description
++            )?;
++        }
+         writeln!(
+             f,
+             "{:>WIDTH$}: {}",
+@@ -514,6 +523,7 @@ pub async fn execute(args: Args) -> miette::Result<()> {
+ 
+                     EnvironmentInfo {
+                         name: env.name().clone(),
++                        description: env.description().map(str::to_string),
+                         features: env
+                             .features()
+                             .map(|feature| feature.name.clone())
+diff --git a/crates/pixi_core/src/workspace/environment.rs b/crates/pixi_core/src/workspace/environment.rs
+index 0f3c32a..1dc275d 100644
+--- a/crates/pixi_core/src/workspace/environment.rs
++++ b/crates/pixi_core/src/workspace/environment.rs
+@@ -85,6 +85,12 @@ impl<'p> Environment<'p> {
+         &self.environment.name
+     }
+ 
++    /// Returns the description of this environment, if one was specified in
++    /// the manifest.
++    pub fn description(&self) -> Option<&'p str> {
++        self.environment.description.as_deref()
++    }
++
+     /// Returns the solve group to which this environment belongs, or `None` if
+     /// no solve group was specified.
+     pub fn solve_group(&self) -> Option<SolveGroup<'p>> {
+diff --git a/crates/pixi_manifest/src/environment.rs b/crates/pixi_manifest/src/environment.rs
+index 5d55276..588c638 100644
+--- a/crates/pixi_manifest/src/environment.rs
++++ b/crates/pixi_manifest/src/environment.rs
+@@ -215,6 +215,9 @@ pub struct Environment {
+ 
+     /// Whether to include the default feature in that environment
+     pub no_default_feature: bool,
++
++    /// An optional human readable description of the environment.
++    pub description: Option<String>,
+ }
+ 
+ #[cfg(test)]
+diff --git a/crates/pixi_manifest/src/manifests/workspace.rs b/crates/pixi_manifest/src/manifests/workspace.rs
+index 5d0734f..e292b47 100644
+--- a/crates/pixi_manifest/src/manifests/workspace.rs
++++ b/crates/pixi_manifest/src/manifests/workspace.rs
+@@ -709,6 +709,7 @@ impl WorkspaceManifestMut<'_> {
+                 .collect(),
+             solve_group: None,
+             no_default_feature,
++            description: None,
+         });
+ 
+         if let Some(solve_group) = solve_group {
+@@ -746,6 +747,7 @@ impl WorkspaceManifestMut<'_> {
+             .solve_group
+             .map(|idx| self.workspace.solve_groups[idx].name.clone());
+         let no_default_feature = environment.no_default_feature;
++        let description = environment.description.clone();
+ 
+         self.document.update_environment_features(
+             name.as_str(),
+@@ -761,6 +763,7 @@ impl WorkspaceManifestMut<'_> {
+             features,
+             solve_group: None,
+             no_default_feature,
++            description,
+         });
+ 
+         if let Some(solve_group) = solve_group {
+@@ -859,6 +862,7 @@ impl WorkspaceManifestMut<'_> {
+                 features: updated_features,
+                 solve_group: None,
+                 no_default_feature: env.no_default_feature,
++                description: env.description.clone(),
+             });
+ 
+             if let Some(solve_group) = solve_group {
+@@ -1436,6 +1440,7 @@ impl WorkspaceManifestMut<'_> {
+                     features: vec![feature_name.clone()],
+                     solve_group: None,
+                     no_default_feature: false,
++                    description: None,
+                 });
+             }
+             Some(environment) if !environment.features.contains(feature_name) => {
+@@ -4551,6 +4556,87 @@ channels = [
+         );
+     }
+ 
++    #[test]
++    fn test_environment_description() {
++        let file_contents = r#"
++            [workspace]
++            name = "foo"
++            channels = []
++            platforms = []
++
++            [feature.test.dependencies]
++            pytest = "*"
++
++            [environments]
++            test = { features = ["test"], description = "Run the test suite" }
++            docs = { description = "Build the documentation" }
++            lint = ["test"]
++        "#;
++        let manifest = parse_pixi_toml(file_contents).manifest;
++
++        assert_eq!(manifest.default_environment().description, None);
++
++        let test_env = manifest.environment("test").unwrap();
++        assert_eq!(test_env.features, vec!["test"]);
++        assert_eq!(test_env.description.as_deref(), Some("Run the test suite"));
++
++        // A description on its own is enough to define an environment that
++        // only uses the default feature.
++        let docs_env = manifest.environment("docs").unwrap();
++        assert!(docs_env.features.is_empty());
++        assert!(!docs_env.no_default_feature);
++        assert_eq!(
++            docs_env.description.as_deref(),
++            Some("Build the documentation")
++        );
++
++        let lint_env = manifest.environment("lint").unwrap();
++        assert_eq!(lint_env.description, None);
++    }
++
++    #[test]
++    fn test_editing_environment_features_keeps_description() {
++        let contents = r#"
++[workspace]
++name = "foo"
++channels = []
++platforms = ["linux-64"]
++
++[feature.shared.dependencies]
++some-package = "*"
++
++[feature.extra.dependencies]
++other-package = "*"
++
++[environments]
++dev = { features = ["shared"], description = "Development environment" }
++"#;
++
++        let mut manifest = parse_pixi_toml(contents);
++        let mut manifest = manifest.editable();
++
++        manifest
++            .remove_feature(&FeatureName::from_str("shared").unwrap())
++            .unwrap();
++        let env = manifest.workspace.environment("dev").unwrap();
++        assert_eq!(env.description.as_deref(), Some("Development environment"));
++
++        let environment_name = EnvironmentName::from_str("dev").unwrap();
++        manifest
++            .update_environment_features(&environment_name, vec![FeatureName::from("extra")])
++            .unwrap();
++        let env = manifest.workspace.environment("dev").unwrap();
++        assert_eq!(env.features, vec![FeatureName::from("extra")]);
++        assert_eq!(env.description.as_deref(), Some("Development environment"));
++
++        // The description is kept in the document as well.
++        let reparsed = parse_pixi_toml(&manifest.document.to_string()).manifest;
++        assert_eq!(
++            reparsed.environment("dev").unwrap().description.as_deref(),
++            Some("Development environment")
++        );
++    }
++
+     #[test]
+     fn test_feature_definition() {
+         let file_contents = r#"
+diff --git a/crates/pixi_manifest/src/toml/environment.rs b/crates/pixi_manifest/src/toml/environment.rs
+index b07fb01..b2a1e9f 100644
+--- a/crates/pixi_manifest/src/toml/environment.rs
++++ b/crates/pixi_manifest/src/toml/environment.rs
+@@ -26,6 +26,8 @@ pub struct TomlEnvironment {
+     pub features: Option<Spanned<Vec<Spanned<String>>>>,
+     pub solve_group: Option<String>,
+     pub no_default_feature: bool,
++    /// An optional human readable description of the environment.
++    pub description: Option<String>,
+     /// Feature content defined directly on the environment. This is turned into
+     /// an implicit feature that is prepended to the environment's features.
+     pub inline: TomlEnvironmentInline,
+@@ -158,6 +160,7 @@ impl<'de> toml_span::Deserialize<'de> for TomlEnvironment {
+         let features = th.optional_s("features");
+         let solve_group = th.optional("solve-group");
+         let no_default_feature = th.optional("no-default-feature");
++        let description = th.optional("description");
+ 
+         // Inline feature content. `host-dependencies`, `build-dependencies` and
+         // `system-requirements` are intentionally not accepted here and are
+@@ -215,7 +218,8 @@ impl<'de> toml_span::Deserialize<'de> for TomlEnvironment {
+             warnings,
+         };
+ 
+-        if features.is_none() && solve_group.is_none() && inline.is_empty() {
++        if features.is_none() && solve_group.is_none() && description.is_none() && inline.is_empty()
++        {
+             return Err(DeserError::from(toml_span::Error {
+                 kind: toml_span::ErrorKind::MissingField("features"),
+                 span: value.span,
+@@ -227,6 +231,7 @@ impl<'de> toml_span::Deserialize<'de> for TomlEnvironment {
+             features,
+             solve_group,
+             no_default_feature: no_default_feature.unwrap_or_default(),
++            description,
+             inline,
+         })
+     }
+@@ -298,6 +303,31 @@ mod test {
+                 && map.no_default_feature);
+     }
+ 
++    #[test]
++    pub fn test_parse_environment_description() {
++        let input = r#"
++            env = { features = ["foo"], description = "An environment for foo" }
++        "#;
++
++        let toplevel = TopLevel::from_toml_str(input).unwrap();
++        assert_matches!(
++            toplevel.env,
++            TomlEnvironmentList::Map(map) if map.description.as_deref() == Some("An environment for foo"));
++    }
++
++    #[test]
++    pub fn test_parse_description_only_environment() {
++        let input = r#"
++            env = { description = "Only the default feature" }
++        "#;
++
++        let toplevel = TopLevel::from_toml_str(input).unwrap();
++        assert_matches!(
++            toplevel.env,
++            TomlEnvironmentList::Map(map) if map.features.is_none()
++                && map.description.as_deref() == Some("Only the default feature"));
++    }
++
+     #[test]
+     pub fn test_parse_invalid_environment() {
+         let input = r#"
+diff --git a/crates/pixi_manifest/src/toml/manifest.rs b/crates/pixi_manifest/src/toml/manifest.rs
+index 907dea3..a3768cc 100644
+--- a/crates/pixi_manifest/src/toml/manifest.rs
++++ b/crates/pixi_manifest/src/toml/manifest.rs
+@@ -380,31 +380,39 @@ impl TomlManifest {
+         let mut features_used_by_environments = HashSet::new();
+         for (name, env) in toml_environments {
+             // Decompose the TOML
+-            let (inline, included_features, features_span, solve_group, no_default_feature) =
+-                match env {
+-                    TomlEnvironmentList::Map(env) => {
+-                        let TomlEnvironment {
+-                            features,
+-                            solve_group,
+-                            no_default_feature,
+-                            inline,
+-                        } = *env;
+-                        let (features, features_span) = features.map_or_else(
+-                            || (Vec::new(), None),
+-                            |Spanned { value, span }| (value, Some(span)),
+-                        );
+-                        (
+-                            Some(inline),
+-                            features,
+-                            features_span,
+-                            solve_group,
+-                            no_default_feature,
+-                        )
+-                    }
+-                    TomlEnvironmentList::Seq(features) => {
+-                        (None, features.value, Some(features.span), None, false)
+-                    }
+-                };
++            let (
++                inline,
++                included_features,
++                features_span,
++                solve_group,
++                no_default_feature,
++                description,
++            ) = match env {
++                TomlEnvironmentList::Map(env) => {
++                    let TomlEnvironment {
++                        features,
++                        solve_group,
++                        no_default_feature,
++                        description,
++                        inline,
++                    } = *env;
++                    let (features, features_span) = features.map_or_else(
++                        || (Vec::new(), None),
++                        |Spanned { value, span }| (value, Some(span)),
++                    );
++                    (
++                        Some(inline),
++                        features,
++                        features_span,
++                        solve_group,
++                        no_default_feature,
++                        description,
++                    )
++                }
++                TomlEnvironmentList::Seq(features) => {
++                    (None, features.value, Some(features.span), None, false, None)
++                }
++            };
+ 
+             // Synthesize the implicit feature that carries the environment's
+             // inline content and prepend it to the environment's features.
+@@ -532,6 +540,7 @@ impl TomlManifest {
+                 features: feature_names,
+                 solve_group: solve_group.map(|sg| solve_groups.add(sg, environment_idx)),
+                 no_default_feature,
++                description,
+             }));
+         }
+ 
+@@ -3202,8 +3211,8 @@ mod test {
+         git = "*"
+         "#,
+         ), @r###"
+-          × Unexpected keys, expected only 'features', 'solve-group', 'no-default-feature', 'platforms', 'channels', 'channel-priority', 'solve-strategy', 'target', 'dependencies', 'pypi-dependencies',
+-          │ 'dev', 'constraints', 'activation', 'tasks', 'pypi-options'
++          × Unexpected keys, expected only 'features', 'solve-group', 'no-default-feature', 'description', 'platforms', 'channels', 'channel-priority', 'solve-strategy', 'target', 'dependencies', 'pypi-
++          │ dependencies', 'dev', 'constraints', 'activation', 'tasks', 'pypi-options'
+            ╭─[pixi.toml:7:27]
+          6 │
+          7 │         [environments.dev.host-dependencies]
+@@ -3261,8 +3270,8 @@ mod test {
+         cuda = "12"
+         "#,
+         ), @r###"
+-          × Unexpected keys, expected only 'features', 'solve-group', 'no-default-feature', 'platforms', 'channels', 'channel-priority', 'solve-strategy', 'target', 'dependencies', 'pypi-dependencies',
+-          │ 'dev', 'constraints', 'activation', 'tasks', 'pypi-options'
++          × Unexpected keys, expected only 'features', 'solve-group', 'no-default-feature', 'description', 'platforms', 'channels', 'channel-priority', 'solve-strategy', 'target', 'dependencies', 'pypi-
++          │ dependencies', 'dev', 'constraints', 'activation', 'tasks', 'pypi-options'
+             ╭─[pixi.toml:10:27]
+           9 │
+          10 │         [environments.dev.system-requirements]
+diff --git a/crates/pixi_manifest/src/toml/snapshots/pixi_manifest__toml__environment__test__parse_invalid_environment.snap b/crates/pixi_manifest/src/toml/snapshots/pixi_manifest__toml__environment__test__parse_invalid_environment.snap
+index e8b286d..12235ca 100644
+--- a/crates/pixi_manifest/src/toml/snapshots/pixi_manifest__toml__environment__test__parse_invalid_environment.snap
++++ b/crates/pixi_manifest/src/toml/snapshots/pixi_manifest__toml__environment__test__parse_invalid_environment.snap
+@@ -2,8 +2,8 @@
+ source: crates/pixi_manifest/src/toml/environment.rs
+ expression: "format_parse_error(input, TopLevel::from_toml_str(input).unwrap_err())"
+ ---
+-  × Unexpected keys, expected only 'features', 'solve-group', 'no-default-feature', 'platforms', 'channels', 'channel-priority', 'solve-strategy', 'target', 'dependencies', 'pypi-dependencies',
+-  │ 'dev', 'constraints', 'activation', 'tasks', 'pypi-options'
++  × Unexpected keys, expected only 'features', 'solve-group', 'no-default-feature', 'description', 'platforms', 'channels', 'channel-priority', 'solve-strategy', 'target', 'dependencies', 'pypi-
++  │ dependencies', 'dev', 'constraints', 'activation', 'tasks', 'pypi-options'
+    ╭─[pixi.toml:2:21]
+  1 │
+  2 │             env = { feat = ["foo", "bar"] }
+diff --git a/crates/pixi_manifest/src/toml/snapshots/pixi_manifest__toml__environment__test__parse_invalid_solve_group.snap b/crates/pixi_manifest/src/toml/snapshots/pixi_manifest__toml__environment__test__parse_invalid_solve_group.snap
+index 8d8451b..b6ca897 100644
+--- a/crates/pixi_manifest/src/toml/snapshots/pixi_manifest__toml__environment__test__parse_invalid_solve_group.snap
++++ b/crates/pixi_manifest/src/toml/snapshots/pixi_manifest__toml__environment__test__parse_invalid_solve_group.snap
+@@ -2,8 +2,8 @@
+ source: crates/pixi_manifest/src/toml/environment.rs
+ expression: "format_parse_error(input, TopLevel::from_toml_str(input).unwrap_err())"
+ ---
+-  × Unexpected keys, expected only 'features', 'solve-group', 'no-default-feature', 'platforms', 'channels', 'channel-priority', 'solve-strategy', 'target', 'dependencies', 'pypi-dependencies',
+-  │ 'dev', 'constraints', 'activation', 'tasks', 'pypi-options'
++  × Unexpected keys, expected only 'features', 'solve-group', 'no-default-feature', 'description', 'platforms', 'channels', 'channel-priority', 'solve-strategy', 'target', 'dependencies', 'pypi-
++  │ dependencies', 'dev', 'constraints', 'activation', 'tasks', 'pypi-options'
+    ╭─[pixi.toml:2:36]
+  1 │
+  2 │             env = { features = [], solve_groups = "group" }
+diff --git a/docs/reference/pixi_manifest.md b/docs/reference/pixi_manifest.md
+index e00dec1..dd6730d 100644
+--- a/docs/reference/pixi_manifest.md
++++ b/docs/reference/pixi_manifest.md
+@@ -1303,12 +1303,13 @@ The environments table is defined using the following fields:
+   These dependencies will then be the same version in all environments that have the same solve group.
+   But the different environments contain different subsets of the solve-groups dependencies set.
+ - `no-default-feature`: Whether to include the default feature in that environment. The default is `false`, to include the default feature.
++- `description`: An optional short description of the environment, e.g. what it is used for. It is shown by `pixi info`.
+ 
+ Additionally, most fields that a [feature](#the-feature-table) accepts - `dependencies`, `pypi-dependencies`, `tasks`, `activation`, `channels`, `platforms`, `constraints`, `target` and more - can be set directly on an environment. See [Defining dependencies directly on an environment](#defining-dependencies-directly-on-an-environment).
+ 
+ ```toml title="Full environments table specification"
+ [environments]
+-test = {features = ["test"], solve-group = "test"}
++test = {features = ["test"], solve-group = "test", description = "Run the test suite"}
+ prod = {features = ["prod"], solve-group = "test"}
+ lint = {features = ["lint"], no-default-feature = true}
+ ```
+diff --git a/schema/examples/valid/full.toml b/schema/examples/valid/full.toml
+index 80a50e1..f5ffa49 100644
+--- a/schema/examples/valid/full.toml
++++ b/schema/examples/valid/full.toml
+@@ -276,7 +276,7 @@ ribasim = {
+ ribasim2 = { path = "test/riba", subdirectory = "python/ribasim" }
+ 
+ [environments]
+-prod = { features = ["test2"], solve-group = "test" }
++prod = { features = ["test2"], solve-group = "test", description = "The production environment" }
+ test = { features = ["test"], solve-group = "test" }
+ 
+ [activation]
+diff --git a/schema/model.py b/schema/model.py
+index d84c0f7..d5424fa 100644
+--- a/schema/model.py
++++ b/schema/model.py
+@@ -906,6 +906,10 @@ class Environment(StrictBaseModel):
+         False,
+         description="Whether to add the default feature to this environment",
+     )
++    description: NonEmptyStr | None = Field(
++        None,
++        description="A short description of the environment",
++    )
+     # Inline feature content. Defining any of these synthesizes an implicit
+     # feature that is prepended to the environment's features. `host-dependencies`,
+     # `build-dependencies` and `system-requirements` are intentionally not allowed
+diff --git a/schema/pyproject/partial-pixi.json b/schema/pyproject/partial-pixi.json
+index e294dca..732ef47 100644
+--- a/schema/pyproject/partial-pixi.json
++++ b/schema/pyproject/partial-pixi.json
+@@ -880,6 +880,12 @@
+             "minLength": 1
+           }
+         },
++        "description": {
++          "title": "Description",
++          "description": "A short description of the environment",
++          "type": "string",
++          "minLength": 1
++        },
+         "dev": {
+           "title": "Dev",
+           "description": "Source packages whose dependencies should be installed without building the package itself. Useful for development environments.",
+diff --git a/schema/pyproject/schema.json b/schema/pyproject/schema.json
+index 44ffcc8..a7fc8e1 100644
+--- a/schema/pyproject/schema.json
++++ b/schema/pyproject/schema.json
+@@ -623,6 +623,12 @@
+             "minLength": 1
+           }
+         },
++        "description": {
++          "title": "Description",
++          "description": "A short description of the environment",
++          "type": "string",
++          "minLength": 1
++        },
+         "dev": {
+           "title": "Dev",
+           "description": "Source packages whose dependencies should be installed without building the package itself. Useful for development environments.",
+diff --git a/schema/schema.json b/schema/schema.json
+index 94441aa..401231b 100644
+--- a/schema/schema.json
++++ b/schema/schema.json
+@@ -904,6 +904,12 @@
+             "minLength": 1
+           }
+         },
++        "description": {
++          "title": "Description",
++          "description": "A short description of the environment",
++          "type": "string",
++          "minLength": 1
++        },
+         "dev": {
+           "title": "Dev",
+           "description": "Source packages whose dependencies should be installed without building the package itself. Useful for development environments.",
+diff --git a/tests/integration_python/test_main_cli.py b/tests/integration_python/test_main_cli.py
+index 4e5d208..d254848 100644
+--- a/tests/integration_python/test_main_cli.py
++++ b/tests/integration_python/test_main_cli.py
+@@ -1363,6 +1363,37 @@ def test_pixi_info_tasks(pixi: Path, tmp_pixi_workspace: Path) -> None:
+     verify_cli_command([pixi, "info", "--manifest-path", manifest], stdout_contains="foo, bar")
+ 
+ 
++def test_pixi_info_environment_description(pixi: Path, tmp_pixi_workspace: Path) -> None:
++    manifest = tmp_pixi_workspace.joinpath("pixi.toml")
++    toml = """
++        [workspace]
++        name = "test"
++        channels = []
++        platforms = ["linux-64", "win-64", "osx-64"]
++
++        [feature.test.tasks]
++        test = "echo test"
++
++        [environments]
++        test = { features = ["test"], description = "Environment for running the tests" }
++        docs = { description = "Environment for building the docs" }
++        """
++    manifest.write_text(toml)
++    verify_cli_command(
++        [pixi, "info", "--manifest-path", manifest],
++        stdout_contains=[
++            "Description: Environment for running the tests",
++            "Description: Environment for building the docs",
++        ],
++    )
++
++    result = verify_cli_command([pixi, "info", "--manifest-path", manifest, "--json"])
++    environments = {env["name"]: env for env in json.loads(result.stdout)["environments_info"]}
++    assert environments["default"]["description"] is None
++    assert environments["test"]["description"] == "Environment for running the tests"
++    assert environments["docs"]["description"] == "Environment for building the docs"
++
++
+ def test_pixi_task_list_platforms(pixi: Path, tmp_pixi_workspace: Path) -> None:
+     manifest = tmp_pixi_workspace.joinpath("pixi.toml")
+     toml = """
+@@ -1595,6 +1626,7 @@ def test_info_output_extended(pixi: Path, tmp_pixi_workspace: Path) -> None:
+             "environments_info": [
+                 {
+                     "name": "default",
++                    "description": None,
+                     "features": ["default"],
+                     "solve_group": None,
+                     "environment_size": IsStr,
+@@ -1609,6 +1641,7 @@ def test_info_output_extended(pixi: Path, tmp_pixi_workspace: Path) -> None:
+                 },
+                 {
+                     "name": "py312",
++                    "description": None,
+                     "features": ["py312", "default"],
+                     "solve_group": None,
+                     "environment_size": IsStr,
+-- 
+2.43.0
+

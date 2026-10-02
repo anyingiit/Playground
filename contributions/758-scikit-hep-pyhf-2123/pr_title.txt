@@ -1,0 +1,1 @@
+chore: Migrate tbump configuration to pyproject.toml

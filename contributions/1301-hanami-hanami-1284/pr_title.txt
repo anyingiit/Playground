@@ -1,0 +1,1 @@
+Fix `generate action --slice` for parenthesized and single-line slice blocks in routes

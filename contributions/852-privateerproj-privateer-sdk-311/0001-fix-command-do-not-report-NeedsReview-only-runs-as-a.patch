@@ -1,0 +1,261 @@
+From 8d31252c49199861b16a3b1826123fe8764fdd58 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:31:23 +0000
+Subject: [PATCH] fix(command): do not report NeedsReview-only runs as an
+ unexpected exit
+
+A plugin whose run ends with TestFail and no error (failed, needs-review
+or unknown results) was logged by closeClient as "Unexpected exit ...
+with no error or success", because runOne only marks TestPass as
+successful and closeClient had no branch for a clean non-pass exit.
+
+Record the plugin's exit code on PluginPkg and log a clean TestFail as
+"Plugin for <service> completed with non-passing results" at Warn. The
+fallback "Unexpected exit" message is kept for anything else and now
+includes the exit code.
+
+Also log a NeedsReview suite summary line at Warn instead of Error,
+matching the per-assessment lines. Failed and Unknown stay at Error.
+Exit codes are unchanged: NeedsReview still maps to TestFail.
+
+Refs #311
+---
+ command/run.go                     |  3 ++
+ command/types.go                   | 21 +++++++++---
+ command/types_test.go              | 54 ++++++++++++++++++++++++++++++
+ pluginkit/evaluation_suite.go      | 20 ++++++++---
+ pluginkit/evaluation_suite_test.go | 27 +++++++++++++++
+ 5 files changed, 115 insertions(+), 10 deletions(-)
+
+diff --git a/command/run.go b/command/run.go
+index 57acddf..ba716ea 100644
+--- a/command/run.go
++++ b/command/run.go
+@@ -247,12 +247,14 @@ func runOne(logger hclog.Logger, num int, pluginPkg *PluginPkg) (code int, fatal
+ 	rpcClient, err := client.Client()
+ 	if err != nil {
+ 		logger.Error(fmt.Sprintf("internal error while initializing %s RPC client: %s", serviceName, err))
++		pluginPkg.ExitCode = InternalError
+ 		pluginPkg.closeClient(serviceName, client, logger)
+ 		return InternalError, true
+ 	}
+ 	rawPlugin, err := rpcClient.Dispense(shared.PluginName)
+ 	if err != nil {
+ 		logger.Error(fmt.Sprintf("internal error while dispensing RPC client: %s", err.Error()))
++		pluginPkg.ExitCode = InternalError
+ 		pluginPkg.closeClient(serviceName, client, logger)
+ 		return InternalError, true
+ 	}
+@@ -263,6 +265,7 @@ func runOne(logger hclog.Logger, num int, pluginPkg *PluginPkg) (code int, fatal
+ 	if response != nil {
+ 		pluginPkg.Error = fmt.Errorf("plugin %s: %v", serviceName, response)
+ 	}
++	pluginPkg.ExitCode = pluginExitCode
+ 	pluginPkg.Successful = pluginExitCode == TestPass
+ 	pluginPkg.closeClient(serviceName, client, logger)
+ 	return pluginExitCode, false
+diff --git a/command/types.go b/command/types.go
+index 1c9656e..b1de08b 100644
+--- a/command/types.go
++++ b/command/types.go
+@@ -43,6 +43,7 @@ type PluginPkg struct {
+ 	Installed   bool
+ 	Requested   bool
+ 	Successful  bool
++	ExitCode    int // set by runOne: the plugin's exit code, or InternalError if it could not be started
+ 	Error       error
+ }
+ 
+@@ -86,14 +87,24 @@ func (p *PluginPkg) queueCmd() {
+ 
+ // closeClient logs the plugin result and kills the process.
+ func (p *PluginPkg) closeClient(serviceName string, client *hcplugin.Client, logger hclog.Logger) {
+-	if p.Successful {
++	p.logResult(serviceName, logger)
++	client.Kill()
++}
++
++// logResult logs how the plugin run ended. A clean TestFail (failed,
++// needs-review or unknown results, no error) is an ordinary outcome, not an
++// unexpected exit; the per-suite summary lines already say what did not pass.
++func (p *PluginPkg) logResult(serviceName string, logger hclog.Logger) {
++	switch {
++	case p.Successful:
+ 		logger.Info(fmt.Sprintf("Plugin for %s completed successfully", serviceName))
+-	} else if p.Error != nil {
++	case p.Error != nil:
+ 		logger.Error(fmt.Sprintf("Error from %s: %s", serviceName, p.Error))
+-	} else {
+-		logger.Warn(fmt.Sprintf("Unexpected exit from %s with no error or success", serviceName))
++	case p.ExitCode == TestFail:
++		logger.Warn(fmt.Sprintf("Plugin for %s completed with non-passing results", serviceName))
++	default:
++		logger.Warn(fmt.Sprintf("Unexpected exit from %s with no error or success (exit code %d)", serviceName, p.ExitCode))
+ 	}
+-	client.Kill()
+ }
+ 
+ // NewPluginPkg creates a new PluginPkg for the given plugin name, requested
+diff --git a/command/types_test.go b/command/types_test.go
+index a46c574..dcad684 100644
+--- a/command/types_test.go
++++ b/command/types_test.go
+@@ -1,9 +1,13 @@
+ package command
+ 
+ import (
++	"bytes"
++	"errors"
+ 	"path/filepath"
++	"strings"
+ 	"testing"
+ 
++	hclog "github.com/hashicorp/go-hclog"
+ 	"github.com/spf13/viper"
+ 
+ 	"github.com/privateerproj/privateer-sdk/internal/manifest"
+@@ -69,3 +73,53 @@ func TestQueueCmd_PassesBinariesPathToPlugin(t *testing.T) {
+ 		t.Fatalf("plugin env lacks PVTR_BINARIES_PATH: %v", p.Command.Env)
+ 	}
+ }
++
++// TestLogResult checks how a finished plugin run is reported. A clean
++// TestFail exit (failed or needs-review results, no error) is an ordinary
++// outcome and must not be reported as an unexpected exit (issue #311).
++func TestLogResult(t *testing.T) {
++	tests := []struct {
++		name    string
++		pkg     PluginPkg
++		want    string
++		wantNot string
++	}{
++		{
++			name:    "success",
++			pkg:     PluginPkg{Successful: true, ExitCode: TestPass},
++			want:    "[INFO]  Plugin for svc completed successfully",
++			wantNot: "Unexpected exit",
++		},
++		{
++			name:    "plugin error",
++			pkg:     PluginPkg{ExitCode: InternalError, Error: errors.New("boom")},
++			want:    "[ERROR] Error from svc: boom",
++			wantNot: "Unexpected exit",
++		},
++		{
++			name:    "clean TestFail (non-passing results)",
++			pkg:     PluginPkg{ExitCode: TestFail},
++			want:    "[WARN]  Plugin for svc completed with non-passing results",
++			wantNot: "Unexpected exit",
++		},
++		{
++			name: "host-level failure without a plugin error",
++			pkg:  PluginPkg{ExitCode: InternalError},
++			want: "[WARN]  Unexpected exit from svc with no error or success (exit code 3)",
++		},
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			var buf bytes.Buffer
++			logger := hclog.New(&hclog.LoggerOptions{Output: &buf, Level: hclog.Trace})
++			tt.pkg.logResult("svc", logger)
++			got := buf.String()
++			if !strings.Contains(got, tt.want) {
++				t.Errorf("log = %q, want it to contain %q", got, tt.want)
++			}
++			if tt.wantNot != "" && strings.Contains(got, tt.wantNot) {
++				t.Errorf("log = %q, must not contain %q", got, tt.wantNot)
++			}
++		})
++	}
++}
+diff --git a/pluginkit/evaluation_suite.go b/pluginkit/evaluation_suite.go
+index e7bea4a..ad38182 100644
+--- a/pluginkit/evaluation_suite.go
++++ b/pluginkit/evaluation_suite.go
+@@ -6,6 +6,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/gemaraproj/go-gemara"
++	hclog "github.com/hashicorp/go-hclog"
+ 	"github.com/privateerproj/privateer-sdk/config"
+ )
+ 
+@@ -137,15 +138,24 @@ func (e *EvaluationSuite) Evaluate(serviceName string) error {
+ 		}
+ 	}
+ 
+-	switch e.Result {
++	logSuiteSummary(e.config.Logger, e.Result, output)
++	return nil
++}
++
++// logSuiteSummary logs the per-suite summary line at a level matching the
++// suite result, mirroring the per-assessment lines: NeedsReview is a warning,
++// Failed and Unknown are errors.
++func logSuiteSummary(logger hclog.Logger, result gemara.Result, output string) {
++	switch result {
+ 	case gemara.Passed:
+-		e.config.Logger.Info(output)
++		logger.Info(output)
+ 	case gemara.NotRun:
+-		e.config.Logger.Trace(output)
++		logger.Trace(output)
++	case gemara.NeedsReview:
++		logger.Warn(output)
+ 	default:
+-		e.config.Logger.Error(output)
++		logger.Error(output)
+ 	}
+-	return nil
+ }
+ 
+ // restoreSteps restores benchmark-wrapped steps back to the original for stack tracing
+diff --git a/pluginkit/evaluation_suite_test.go b/pluginkit/evaluation_suite_test.go
+index bdecaf8..3ba462a 100644
+--- a/pluginkit/evaluation_suite_test.go
++++ b/pluginkit/evaluation_suite_test.go
+@@ -1,10 +1,12 @@
+ package pluginkit
+ 
+ import (
++	"bytes"
+ 	"strings"
+ 	"testing"
+ 
+ 	"github.com/gemaraproj/go-gemara"
++	hclog "github.com/hashicorp/go-hclog"
+ )
+ 
+ func BenchmarkEvaluate_Passing(b *testing.B) {
+@@ -458,3 +460,28 @@ func TestEvaluationSuiteIntegration(t *testing.T) {
+ 		}
+ 	})
+ }
++
++// TestLogSuiteSummary checks the level of the per-suite summary line: a
++// NeedsReview-only suite is a warning, not an error (issue #311).
++func TestLogSuiteSummary(t *testing.T) {
++	tests := []struct {
++		result gemara.Result
++		want   string
++	}{
++		{gemara.Passed, "[INFO]  summary"},
++		{gemara.NotRun, "[TRACE] summary"},
++		{gemara.NeedsReview, "[WARN]  summary"},
++		{gemara.Failed, "[ERROR] summary"},
++		{gemara.Unknown, "[ERROR] summary"},
++	}
++	for _, tt := range tests {
++		t.Run(tt.result.String(), func(t *testing.T) {
++			var buf bytes.Buffer
++			logger := hclog.New(&hclog.LoggerOptions{Output: &buf, Level: hclog.Trace})
++			logSuiteSummary(logger, tt.result, "summary")
++			if got := buf.String(); !strings.Contains(got, tt.want) {
++				t.Errorf("log = %q, want it to contain %q", got, tt.want)
++			}
++		})
++	}
++}
+-- 
+2.43.0
+

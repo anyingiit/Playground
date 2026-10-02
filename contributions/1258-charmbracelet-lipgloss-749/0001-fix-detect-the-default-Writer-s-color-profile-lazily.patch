@@ -1,0 +1,210 @@
+From dd024145275c72e07951d8c10778911072e4b395 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:31:26 +0000
+Subject: [PATCH] fix: detect the default Writer's color profile lazily
+
+Importing lipgloss used to run colorprofile.Detect at package init to
+build the default Writer. Inside tmux this spawns `tmux info` (with no
+timeout) on every program start, even when the program never uses
+Writer or the Print/Sprint helpers.
+
+Writer now starts with an Unknown profile, and the package-level
+Print/Println/Printf/Sprint/Sprintln/Sprintf functions detect it on first
+use. Setting Writer.Profile or replacing Writer keeps working and skips
+detection.
+
+Fixes #749
+---
+ writer.go      | 36 +++++++++++++++++-----
+ writer_test.go | 84 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 113 insertions(+), 7 deletions(-)
+ create mode 100644 writer_test.go
+
+diff --git a/writer.go b/writer.go
+index 78b48b8..f82fb57 100644
+--- a/writer.go
++++ b/writer.go
+@@ -5,13 +5,35 @@ import (
+ 	"fmt"
+ 	"io"
+ 	"os"
++	"sync"
+ 
+ 	"github.com/charmbracelet/colorprofile"
+ )
+ 
+ // Writer is the default writer that prints to stdout, automatically
+ // downsampling colors when necessary.
+-var Writer = colorprofile.NewWriter(os.Stdout, os.Environ())
++//
++// To keep importing lipgloss cheap, the color profile is not detected at
++// package initialization. While [colorprofile.Writer.Profile] is
++// [colorprofile.Unknown], it is detected on first use by [Print], [Println],
++// [Printf], [Sprint], [Sprintln] and [Sprintf]. Set the Profile (or replace
++// Writer altogether) to skip detection.
++var Writer = &colorprofile.Writer{Forward: os.Stdout}
++
++var writerMu sync.Mutex
++
++// defaultWriter returns [Writer], detecting its color profile first if it
++// hasn't been detected or set yet.
++func defaultWriter() *colorprofile.Writer {
++	writerMu.Lock()
++	defer writerMu.Unlock()
++
++	w := Writer
++	if w.Profile == colorprofile.Unknown {
++		w.Profile = colorprofile.Detect(w.Forward, os.Environ())
++	}
++	return w
++}
+ 
+ // Println to stdout, automatically downsampling colors when necessary, ending
+ // with a trailing newline.
+@@ -24,7 +46,7 @@ var Writer = colorprofile.NewWriter(os.Stdout, os.Environ())
+ //
+ //	Println("Time for a", str, "sandwich!")
+ func Println(v ...any) (int, error) {
+-	return fmt.Fprintln(Writer, v...) //nolint:wrapcheck
++	return fmt.Fprintln(defaultWriter(), v...) //nolint:wrapcheck
+ }
+ 
+ // Printf prints formatted text to stdout, automatically downsampling colors
+@@ -38,7 +60,7 @@ func Println(v ...any) (int, error) {
+ //
+ //	Printf("Time for a %s sandwich!\n", str)
+ func Printf(format string, v ...any) (int, error) {
+-	return fmt.Fprintf(Writer, format, v...) //nolint:wrapcheck
++	return fmt.Fprintf(defaultWriter(), format, v...) //nolint:wrapcheck
+ }
+ 
+ // Print to stdout, automatically downsampling colors when necessary.
+@@ -51,7 +73,7 @@ func Printf(format string, v ...any) (int, error) {
+ //
+ //	Print(str)
+ func Print(v ...any) (int, error) {
+-	return fmt.Fprint(Writer, v...) //nolint:wrapcheck
++	return fmt.Fprint(defaultWriter(), v...) //nolint:wrapcheck
+ }
+ 
+ // Fprint pritnts to the given writer, automatically downsampling colors when
+@@ -111,7 +133,7 @@ func Sprint(v ...any) string {
+ 	var buf bytes.Buffer
+ 	w := colorprofile.Writer{
+ 		Forward: &buf,
+-		Profile: Writer.Profile,
++		Profile: defaultWriter().Profile,
+ 	}
+ 	fmt.Fprint(&w, v...) //nolint:errcheck
+ 	return buf.String()
+@@ -132,7 +154,7 @@ func Sprintln(v ...any) string {
+ 	var buf bytes.Buffer
+ 	w := colorprofile.Writer{
+ 		Forward: &buf,
+-		Profile: Writer.Profile,
++		Profile: defaultWriter().Profile,
+ 	}
+ 	fmt.Fprintln(&w, v...) //nolint:errcheck
+ 	return buf.String()
+@@ -153,7 +175,7 @@ func Sprintf(format string, v ...any) string {
+ 	var buf bytes.Buffer
+ 	w := colorprofile.Writer{
+ 		Forward: &buf,
+-		Profile: Writer.Profile,
++		Profile: defaultWriter().Profile,
+ 	}
+ 	fmt.Fprintf(&w, format, v...) //nolint:errcheck
+ 	return buf.String()
+diff --git a/writer_test.go b/writer_test.go
+new file mode 100644
+index 0000000..8c7e98a
+--- /dev/null
++++ b/writer_test.go
+@@ -0,0 +1,84 @@
++package lipgloss
++
++import (
++	"os"
++	"os/exec"
++	"path/filepath"
++	"runtime"
++	"testing"
++
++	"github.com/charmbracelet/colorprofile"
++)
++
++const writerHelperEnv = "LIPGLOSS_TEST_WRITER_HELPER"
++
++// TestWriterHelper is not a real test. It is run in a subprocess by
++// TestWriterDetectsProfileLazily so that package initialization happens in a
++// controlled environment.
++func TestWriterHelper(t *testing.T) {
++	switch os.Getenv(writerHelperEnv) {
++	case "":
++		t.Skip("helper process only")
++	case "print":
++		Print("")
++	case "sprint":
++		Sprint("")
++	case "preset":
++		Writer.Profile = colorprofile.TrueColor
++		Print("")
++	}
++}
++
++// TestWriterDetectsProfileLazily ensures that importing lipgloss does not run
++// color profile detection (which may spawn `tmux info`) at package init, and
++// that detection still happens once the default Writer is used.
++func TestWriterDetectsProfileLazily(t *testing.T) {
++	if runtime.GOOS == "windows" {
++		t.Skip("uses a shell script as a fake tmux binary")
++	}
++
++	run := func(t *testing.T, mode string) bool {
++		t.Helper()
++		dir := t.TempDir()
++		marker := filepath.Join(dir, "tmux-called")
++		script := "#!/bin/sh\n: > '" + marker + "'\n"
++		if err := os.WriteFile(filepath.Join(dir, "tmux"), []byte(script), 0o755); err != nil { //nolint:gosec
++			t.Fatal(err)
++		}
++
++		cmd := exec.Command(os.Args[0], "-test.run=^TestWriterHelper$") //nolint:gosec
++		cmd.Env = []string{
++			writerHelperEnv + "=" + mode,
++			"PATH=" + dir,
++			"TMUX=/tmp/tmux-test,1,0",
++			"TERM=xterm",
++			"TTY_FORCE=1",
++		}
++		if out, err := cmd.CombinedOutput(); err != nil {
++			t.Fatalf("helper process failed: %v\n%s", err, out)
++		}
++
++		_, err := os.Stat(marker)
++		return err == nil
++	}
++
++	t.Run("import", func(t *testing.T) {
++		if run(t, "import") {
++			t.Error("importing lipgloss ran `tmux info`; expected no color profile detection at init")
++		}
++	})
++
++	for _, mode := range []string{"print", "sprint"} {
++		t.Run(mode, func(t *testing.T) {
++			if !run(t, mode) {
++				t.Errorf("%s did not detect the color profile", mode)
++			}
++		})
++	}
++
++	t.Run("preset profile", func(t *testing.T) {
++		if run(t, "preset") {
++			t.Error("color profile was detected even though Writer.Profile was set")
++		}
++	})
++}
+-- 
+2.43.0
+

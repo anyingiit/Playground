@@ -1,0 +1,119 @@
+From 9aebe78db3e1c4429e8037651dadb0ef9d90d499 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:19:16 +0000
+Subject: [PATCH] feat(tui): add Vim cw and cc commands
+
+Add c as a pending operator in Vim normal mode. cw deletes one word forward and cc clears the current line while keeping it. Both then enter insert mode. Any other key after c cancels without changing the text.
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ packages/tui/src/editor.ts             |  6 +++++
+ packages/tui/src/vim-mode.ts           | 11 ++++++++-
+ packages/tui/test/productivity.test.ts | 33 ++++++++++++++++++++++++++
+ 3 files changed, 49 insertions(+), 1 deletion(-)
+
+diff --git a/packages/tui/src/editor.ts b/packages/tui/src/editor.ts
+index aa69edf..54dab30 100644
+--- a/packages/tui/src/editor.ts
++++ b/packages/tui/src/editor.ts
+@@ -1,5 +1,6 @@
+ // SPDX-FileCopyrightText: 2026 Hari Srinivasan
+ // SPDX-FileCopyrightText: 2026 Kaushik Kumar
++// SPDX-FileCopyrightText: 2026 anyingiit
+ // SPDX-License-Identifier: Apache-2.0
+ 
+ import { graphemeWidth, visibleWidth } from "./render.ts";
+@@ -305,6 +306,11 @@ export class LineEditor {
+     else this.kill(0, lineEnd);
+   }
+ 
++  clearCurrentLine(): void {
++    const { lineStart, lineEnd } = this.position();
++    this.kill(lineStart, lineEnd);
++  }
++
+   openLine(direction: "above" | "below"): void {
+     const { lineStart, lineEnd } = this.position();
+     this.snapshot();
+diff --git a/packages/tui/src/vim-mode.ts b/packages/tui/src/vim-mode.ts
+index 83571b7..eeeb532 100644
+--- a/packages/tui/src/vim-mode.ts
++++ b/packages/tui/src/vim-mode.ts
+@@ -1,5 +1,6 @@
+ // SPDX-FileCopyrightText: 2026 Hari Srinivasan
+ // SPDX-FileCopyrightText: 2026 Kaushik Kumar
++// SPDX-FileCopyrightText: 2026 anyingiit
+ // SPDX-License-Identifier: Apache-2.0
+ 
+ import type { EditorKey, LineEditor } from "./editor.ts";
+@@ -51,7 +52,15 @@ export class VimModeController {
+       else if (char === "w") editor.deleteWordForward();
+       return true;
+     }
+-    if (char === "d" || char === "f") {
++    if (this.pending === "c") {
++      this.pending = "";
++      if (char === "c") editor.clearCurrentLine();
++      else if (char === "w") editor.deleteWordForward();
++      else return true;
++      this.current = "insert";
++      return true;
++    }
++    if (char === "c" || char === "d" || char === "f") {
+       this.pending = char;
+       return true;
+     }
+diff --git a/packages/tui/test/productivity.test.ts b/packages/tui/test/productivity.test.ts
+index 7d24b25..0d6c559 100644
+--- a/packages/tui/test/productivity.test.ts
++++ b/packages/tui/test/productivity.test.ts
+@@ -1,6 +1,7 @@
+ // SPDX-FileCopyrightText: 2026 Hari Srinivasan
+ // SPDX-FileCopyrightText: 2026 Kaushik Kumar
+ // SPDX-FileCopyrightText: 2026 VishnuM449
++// SPDX-FileCopyrightText: 2026 anyingiit
+ // SPDX-License-Identifier: Apache-2.0
+ 
+ import assert from "node:assert/strict";
+@@ -54,6 +55,38 @@ test("Vim mode edits through the standard grapheme-safe editor", () => {
+   assert.equal(editor.render(40).cursorColumn, 3);
+ });
+ 
++test("Vim cw and cc change text and enter insert mode", () => {
++  const editor = new LineEditor();
++  const vim = new VimModeController();
++  editor.setText("one two");
++  vim.handle({ kind: "escape" }, editor);
++  vim.handle({ kind: "char", char: "0" }, editor);
++  vim.handle({ kind: "char", char: "c" }, editor);
++  vim.handle({ kind: "char", char: "w" }, editor);
++  assert.equal(editor.text, "two");
++  assert.equal(vim.mode, "insert");
++
++  editor.setText("first\nsecond\nthird");
++  vim.handle({ kind: "escape" }, editor);
++  vim.handle({ kind: "char", char: "k" }, editor);
++  vim.handle({ kind: "char", char: "c" }, editor);
++  vim.handle({ kind: "char", char: "c" }, editor);
++  assert.equal(editor.text, "first\n\nthird");
++  assert.equal(vim.mode, "insert");
++  editor.apply({ kind: "char", char: "x" });
++  assert.equal(editor.text, "first\nx\nthird");
++
++  editor.setText("keep");
++  vim.handle({ kind: "escape" }, editor);
++  vim.handle({ kind: "char", char: "c" }, editor);
++  vim.handle({ kind: "char", char: "z" }, editor);
++  assert.equal(editor.text, "keep");
++  assert.equal(vim.mode, "normal");
++  vim.handle({ kind: "char", char: "w" }, editor);
++  assert.equal(editor.text, "keep");
++  assert.equal(vim.mode, "normal");
++});
++
+ test("vertical movement preserves the preferred visual column", () => {
+   const editor = new LineEditor();
+   editor.setText("abcdef\nx\nabcdef");
+-- 
+2.43.0
+

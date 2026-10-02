@@ -1,0 +1,1 @@
+[ENH] unconditional second test parameter set for `SupervisedIntervals`, remove test skip

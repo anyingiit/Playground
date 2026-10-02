@@ -1,0 +1,95 @@
+From 41a927c27986abad14408d16a6df1153e67f95aa Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:02:30 +0000
+Subject: [PATCH] Add Rack::TempfileReaper to the endpoint middleware stack
+
+Multipart uploads parsed by Rack::Multipart create tempfiles that were
+left open on disk after the request unless the host app (e.g. Rails)
+already ran Rack::TempfileReaper. Use it in every endpoint's stack so
+they are closed and unlinked once the response body is closed.
+
+Fixes #2487
+---
+ CHANGELOG.md                        |  1 +
+ lib/grape/endpoint.rb               |  1 +
+ spec/grape/integration/rack_spec.rb | 40 +++++++++++++++++++++++++++++
+ 3 files changed, 42 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 5c36121..36e808d 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -9,6 +9,7 @@
+ * [#2960](https://github.com/ruby-grape/grape/pull/2960): Lint every response of an API once under `lint!`, including the router's 404 and mounted Rack apps, instead of inside each endpoint's stack - [@ericproulx](https://github.com/ericproulx).
+ * [#2966](https://github.com/ruby-grape/grape/pull/2966): Require Ruby 3.3.1, the first 3.3 release that parses anonymous argument forwarding from inside a block - [@ericproulx](https://github.com/ericproulx).
+ * [#3008](https://github.com/ruby-grape/grape/pull/3008): Add the grape-on-rack app as a live-server memory profiling harness - [@ericproulx](https://github.com/ericproulx).
++* [#XXXX](https://github.com/ruby-grape/grape/pull/XXXX): Add `Rack::TempfileReaper` to every endpoint's middleware stack so multipart upload tempfiles are unlinked after the response - [@anyingiit](https://github.com/anyingiit).
+ * Your contribution here.
+ 
+ #### Fixes
+diff --git a/lib/grape/endpoint.rb b/lib/grape/endpoint.rb
+index a59a5b9..be59d53 100644
+--- a/lib/grape/endpoint.rb
++++ b/lib/grape/endpoint.rb
+@@ -393,6 +393,7 @@ module Grape
+       content_types = inheritable_setting.content_types
+       format = inheritable_setting.format
+ 
++      stack.use Rack::TempfileReaper
+       stack.use Rack::Head
+       stack.use Grape::Middleware::Error, **error_middleware_options(format, content_types)
+ 
+diff --git a/spec/grape/integration/rack_spec.rb b/spec/grape/integration/rack_spec.rb
+index 174da58..e39d191 100644
+--- a/spec/grape/integration/rack_spec.rb
++++ b/spec/grape/integration/rack_spec.rb
+@@ -50,6 +50,46 @@ describe Rack do
+     end
+   end
+ 
++  # https://github.com/ruby-grape/grape/issues/2487
++  describe 'multipart tempfiles' do
++    let(:uploaded_paths) { [] }
++
++    let(:app) do
++      paths = uploaded_paths
++      Class.new(Grape::API) do
++        params do
++          requires :file, type: File
++        end
++
++        post 'upload' do
++          paths << params[:file][:tempfile].path
++          'ok'
++        end
++
++        post 'failed_upload' do
++          paths << params[:file][:tempfile].path
++          error!('failed', 422)
++        end
++      end
++    end
++
++    let(:upload) { Rack::Test::UploadedFile.new(__FILE__, 'text/plain') }
++
++    it 'unlinks the tempfile once the response is closed' do
++      post '/upload', file: upload
++      expect(last_response.body).to eq('ok')
++      expect(uploaded_paths.size).to eq(1)
++      expect(File.exist?(uploaded_paths.first)).to be(false)
++    end
++
++    it 'unlinks the tempfile when the endpoint returns an error' do
++      post '/failed_upload', file: upload
++      expect(last_response.status).to eq(422)
++      expect(uploaded_paths.size).to eq(1)
++      expect(File.exist?(uploaded_paths.first)).to be(false)
++    end
++  end
++
+   context 'when the app is mounted' do
+     let(:ping_mount) do
+       Class.new(Grape::API) do
+-- 
+2.43.0
+

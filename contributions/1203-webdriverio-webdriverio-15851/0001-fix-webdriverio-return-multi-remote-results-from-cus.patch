@@ -1,0 +1,312 @@
+From 5eaacc698085b94740b120905dd289957f46031b Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:41:10 +0000
+Subject: [PATCH] fix(webdriverio): return multi-remote results from custom$,
+ react$ and shadow$
+
+On a multi-remote browser only `$` and `$$` were turned into a
+`MultiRemoteElement` / `MultiRemoteElementArray`. `custom$`, `react$`,
+`shadow$` and their `$$` variants returned one raw result per instance,
+so they had no `isMultiRemote`, `getInstance()` or `select()`, element
+commands could not run on them, and the list metadata (`selector`,
+`foundWith`, `parent`, `props`) was missing.
+
+Send these queries down the same paths as `$` and `$$`. The `$$`
+variants keep their own `foundWith` and `props`, like the single-session
+lists. Update the multi-remote types, the typings test and the docs that
+described the old behavior.
+
+Closes #15851
+---
+ .agents/skills/wdio-v10-migration/SKILL.md    |  2 +-
+ packages/webdriverio/src/multiRemote.ts       | 47 ++++++++---
+ packages/webdriverio/src/types.ts             | 21 ++---
+ .../webdriverio/tests/multiRemote.test.ts     | 81 +++++++++++++++++++
+ tests/typings/webdriverio/async.ts            |  9 +++
+ website/docs/Multiremote.md                   |  2 +-
+ website/docs/v10Migration.md                  |  2 +-
+ 7 files changed, 142 insertions(+), 22 deletions(-)
+
+diff --git a/.agents/skills/wdio-v10-migration/SKILL.md b/.agents/skills/wdio-v10-migration/SKILL.md
+index 301573c..54aa675 100644
+--- a/.agents/skills/wdio-v10-migration/SKILL.md
++++ b/.agents/skills/wdio-v10-migration/SKILL.md
+@@ -85,7 +85,7 @@ Search for `multiremote` and `Multiremote` case-sensitively. Leave the `id: mult
+ 
+ `browser.emulate()` for geolocation, user agent, color scheme and online state no longer patches the page with a preload script, and those scopes no longer need a reload. `onLine: false` takes the browsing context offline. `colorScheme` and `media` share one media-feature map. Read the Emulation section of the migration guide before changing tests that depended on the old behavior.
+ 
+-`browser.$$()` on a multi-remote browser is still an array, so index access keeps working. Annotate it as `WebdriverIO.MultiRemoteElementArray`. `custom$$` and `react$$` still return one result per instance, not one zipped array.
++`browser.$$()` on a multi-remote browser is still an array, so index access keeps working. Annotate it as `WebdriverIO.MultiRemoteElementArray`. `custom$$`, `react$$` and `shadow$$` return a `MultiRemoteElementArray` too, and `custom$`, `react$` and `shadow$` return a `MultiRemoteElement`.
+ 
+ ### `uploadFile`
+ 
+diff --git a/packages/webdriverio/src/multiRemote.ts b/packages/webdriverio/src/multiRemote.ts
+index 615c0fe..e452e4a 100644
+--- a/packages/webdriverio/src/multiRemote.ts
++++ b/packages/webdriverio/src/multiRemote.ts
+@@ -8,12 +8,34 @@ import { multiRemoteHandler } from './middlewares.js'
+ import { MultiRemoteMock } from './multiRemoteMock.js'
+ import { ElementArray } from './element/array.js'
+ import { addLocatorStrategyHandler, getPrototype } from './utils/index.js'
+-import type { BrowserCommandsType, Selector, WebdriverIOEventMap } from './types.js'
++import type { BrowserCommandsType, ReactSelectorOptions, Selector, WebdriverIOEventMap } from './types.js'
+ 
+ import * as BrowserCommands from './commands/browser.js'
+ 
+ const overridableCommands = new Set(Object.keys(BrowserCommands))
+ 
++/**
++ * element queries whose per-instance results are combined into one
++ * multi-remote element (`$`-like) or one multi-remote element list (`$$`-like)
++ */
++const SINGLE_ELEMENT_QUERIES = new Set(['$', 'custom$', 'react$', 'shadow$'])
++const MULTI_ELEMENT_QUERIES = new Set(['$$', 'custom$$', 'react$$', 'shadow$$'])
++
++/**
++ * the props a single instance stores on the element list, so the multi-remote
++ * list can be fetched again the same way
++ */
++function elementListProps (commandName: string, args: unknown[]): unknown[] {
++    if (commandName === 'react$$') {
++        const { props = {}, state = {} } = (args[1] ?? {}) as ReactSelectorOptions
++        return [props, state]
++    }
++    if (commandName === 'custom$$') {
++        return args.slice(1)
++    }
++    return []
++}
++
+ type EventEmitter = (args: unknown) => void
+ type WrappedClient = {
+     options: Options.WebdriverIO,
+@@ -258,12 +280,19 @@ export default class MultiRemote {
+             }
+ 
+             /**
+-             * `$$` has to return the element list synchronously. An async
+-             * function would unwrap the thenable list before the caller can
+-             * iterate it.
++             * `$$` and its variants have to return the element list
++             * synchronously. An async function would unwrap the thenable list
++             * before the caller can iterate it.
+              */
+-            if (commandName === '$$') {
++            if (MULTI_ELEMENT_QUERIES.has(commandName)) {
+                 const selector = args[0] as Selector
++                /**
++                 * `custom$$` takes a strategy name, not a selector, so its
++                 * elements keep the selector they were found with
++                 */
++                const elementSelector = typeof selector === 'string' && commandName !== 'custom$$'
++                    ? selector
++                    : undefined
+                 return ElementArray.fromAsyncCallback(async () => {
+                     const { result, activeInstances } = await execute()
+                     const zippedResult = zip(...(result as unknown[][]))
+@@ -272,13 +301,13 @@ export default class MultiRemote {
+                         singleResult,
+                         this.__propertiesObject__,
+                         self,
+-                        typeof selector === 'string' ? selector : undefined
++                        elementSelector
+                     ))
+                 }, {
+                     selector,
+-                    foundWith: '$$',
++                    foundWith: commandName,
+                     parent: this,
+-                    props: [],
++                    props: elementListProps(commandName, args),
+                     isMultiRemote: true
+                 })
+             }
+@@ -288,7 +317,7 @@ export default class MultiRemote {
+                 /**
+                  * return element object to call commands directly
+                  */
+-                if (commandName === '$') {
++                if (SINGLE_ELEMENT_QUERIES.has(commandName)) {
+                     return MultiRemote.elementWrapper(activeInstances, result, this.__propertiesObject__, self)
+                 } else if (commandName === 'mock') {
+                     /**
+diff --git a/packages/webdriverio/src/types.ts b/packages/webdriverio/src/types.ts
+index 3d17874..97f3c28 100644
+--- a/packages/webdriverio/src/types.ts
++++ b/packages/webdriverio/src/types.ts
+@@ -247,14 +247,15 @@ type MultiRemoteArrayCommandNames = ElementCommandNames | 'SESSION_MOCKS' | 'CDP
+ type MultiRemoteElementCommands = {
+     [K in keyof Pick<BrowserCommandsType, SingleElementCommandNames>]: (...args: Parameters<BrowserCommandsType[K]>) => ThenArg<WebdriverIO.MultiRemoteElement>
+ } & {
+-    [K in keyof Pick<BrowserCommandsType, '$$'>]: (...args: Parameters<BrowserCommandsType[K]>) => ThenArg<WebdriverIO.MultiRemoteElementArray>
+-} & {
+-    /**
+-     * only `$$` zips the per-instance results into one multi-remote array; `custom$$`
+-     * and `react$$` still resolve to one result per instance, so they keep the
+-     * element-list type rather than claiming to be a `MultiRemoteElementArray`
+-     */
+-    [K in keyof Pick<BrowserCommandsType, Exclude<MultiElementCommandNames, '$$'>>]: (...args: Parameters<BrowserCommandsType[K]>) => ThenArg<WebdriverIO.MultiRemoteElement[]>
++    [K in keyof Pick<BrowserCommandsType, MultiElementCommandNames>]: (...args: Parameters<BrowserCommandsType[K]>) => ThenArg<WebdriverIO.MultiRemoteElementArray>
++}
++/**
++ * shadow queries only exist on elements
++ */
++type ShadowElementCommandNames = 'shadow$' | 'shadow$$'
++type MultiRemoteShadowElementCommands = {
++    shadow$: (...args: Parameters<ElementCommandsType['shadow$']>) => ThenArg<WebdriverIO.MultiRemoteElement>
++    shadow$$: (...args: Parameters<ElementCommandsType['shadow$$']>) => ThenArg<WebdriverIO.MultiRemoteElementArray>
+ }
+ 
+ export type MultiRemoteBrowserCommandsType = {
+@@ -263,8 +264,8 @@ export type MultiRemoteBrowserCommandsType = {
+     mock(...args: Parameters<BrowserCommandsType['mock']>): Promise<WebdriverIO.MultiRemoteMock>
+ }
+ export type MultiRemoteElementCommandsType = {
+-    [K in keyof Omit<ElementCommandsType, ElementCommandNames>]: (...args: Parameters<ElementCommandsType[K]>) => Promise<ThenArg<ReturnType<ElementCommandsType[K]>>[]>
+-} & MultiRemoteElementCommands
++    [K in keyof Omit<ElementCommandsType, ElementCommandNames | ShadowElementCommandNames>]: (...args: Parameters<ElementCommandsType[K]>) => Promise<ThenArg<ReturnType<ElementCommandsType[K]>>[]>
++} & MultiRemoteElementCommands & MultiRemoteShadowElementCommands
+ export type MultiRemoteProtocolCommandsType = {
+     [K in keyof ProtocolCommands]: (...args: Parameters<ProtocolCommands[K]>) => Promise<ThenArg<ReturnType<ProtocolCommands[K]>>[]>
+ }
+diff --git a/packages/webdriverio/tests/multiRemote.test.ts b/packages/webdriverio/tests/multiRemote.test.ts
+index 95f6d0d..f06b8c0 100644
+--- a/packages/webdriverio/tests/multiRemote.test.ts
++++ b/packages/webdriverio/tests/multiRemote.test.ts
+@@ -75,6 +75,87 @@ describe('Multi-Remote tests', () => {
+         })
+     })
+ 
++    describe('element queries other than $ and $$ (#15851)', () => {
++        const strategy = (selector: string) => [
++            { 'element-6066-11e4-a52e-4f735466cecf': `${selector}-foo` },
++            { 'element-6066-11e4-a52e-4f735466cecf': `${selector}-bar` }
++        ] as any
++
++        const expectMultiRemoteElement = (element: WebdriverIO.MultiRemoteElement, elementId: string) => {
++            expect(Array.isArray(element)).toBe(false)
++            expect(element.isMultiRemote).toBe(true)
++            expect([...element.instances].sort()).toEqual(['browserA', 'browserB'])
++            expect(element.getInstance('browserA').elementId).toBe(elementId)
++            expect(element.getInstance('browserB').elementId).toBe(elementId)
++            expect(typeof element.select).toBe('function')
++        }
++
++        test('custom$ returns a multi-remote element', async () => {
++            const browser = await multiRemote(caps())
++            browser.addLocatorStrategy('test', strategy)
++
++            const element = await browser.custom$('test', '.test')
++            expectMultiRemoteElement(element, '.test-foo')
++        })
++
++        test('custom$$ returns a MultiRemoteElementArray', async () => {
++            const browser = await multiRemote(caps())
++            browser.addLocatorStrategy('test', strategy)
++
++            const elements = await browser.custom$$('test', '.test')
++            expect(elements.isMultiRemote).toBe(true)
++            expect(elements.selector).toBe('test')
++            expect(elements.foundWith).toBe('custom$$')
++            expect(elements.props).toEqual(['.test'])
++            expect(elements.parent).toBe(browser)
++            expect(elements).toHaveLength(2)
++            expectMultiRemoteElement(elements[0], '.test-foo')
++            expectMultiRemoteElement(elements[1], '.test-bar')
++        })
++
++        test('react$ returns a multi-remote element', async () => {
++            const browser = await multiRemote(caps())
++
++            const element = await browser.react$('myComp')
++            expectMultiRemoteElement(element, 'some-elem-123')
++            expect(await element.getSize()).toEqual([{ width: 50, height: 30 }, { width: 50, height: 30 }])
++        })
++
++        test('react$$ returns a MultiRemoteElementArray', async () => {
++            const browser = await multiRemote(caps())
++
++            const elements = await browser.react$$('myComp', { props: { foo: 'bar' } })
++            expect(elements.isMultiRemote).toBe(true)
++            expect(elements.selector).toBe('myComp')
++            expect(elements.foundWith).toBe('react$$')
++            expect(elements.props).toEqual([{ foo: 'bar' }, {}])
++            expect(elements).toHaveLength(3)
++            expectMultiRemoteElement(elements[0], 'some-elem-123')
++            expectMultiRemoteElement(elements[2], 'some-elem-789')
++        })
++
++        test('shadow$ returns a multi-remote element', async () => {
++            const browser = await multiRemote(caps())
++
++            const element = await browser.$('#foo').shadow$('#shadowfoo')
++            expectMultiRemoteElement(element, 'some-shadow-sub-elem-321')
++        })
++
++        test('shadow$$ returns a MultiRemoteElementArray', async () => {
++            const browser = await multiRemote(caps())
++
++            const parent = await browser.$('#foo')
++            const elements = await parent.shadow$$('#shadowfoo')
++            expect(elements.isMultiRemote).toBe(true)
++            expect(elements.selector).toBe('#shadowfoo')
++            expect(elements.foundWith).toBe('shadow$$')
++            expect(elements.parent).toBe(parent)
++            expect(elements).toHaveLength(3)
++            expectMultiRemoteElement(elements[0], 'some-shadow-sub-elem-321')
++            expect(elements[0].selector).toBe('#shadowfoo')
++        })
++    })
++
+     test('should add locator strategy on multi-remote and propagate to instances (#15540)', async () => {
+         const browser = await multiRemote(caps())
+         const strategy = (selector: string) => document.querySelector(selector) as HTMLElement
+diff --git a/tests/typings/webdriverio/async.ts b/tests/typings/webdriverio/async.ts
+index e980392..26cee80 100644
+--- a/tests/typings/webdriverio/async.ts
++++ b/tests/typings/webdriverio/async.ts
+@@ -75,6 +75,15 @@ async function bar() {
+     const mrElem = await mr.$('')
+     await mrElem.click()
+ 
++    // the other element queries return multi-remote results as well (#15851)
++    expectType<WebdriverIO.MultiRemoteElement>(await mr.custom$('myStrategy', 'foo'))
++    expectType<WebdriverIO.MultiRemoteElement>(await mr.react$('MyComp'))
++    expectType<WebdriverIO.MultiRemoteElement>(await mrElem.shadow$('foo'))
++    expectType<true>((await mr.custom$$('myStrategy', 'foo')).isMultiRemote)
++    expectType<true>((await mr.react$$('MyComp')).isMultiRemote)
++    expectType<true>((await mrElem.shadow$$('foo')).isMultiRemote)
++    expectType<WebdriverIO.MultiRemoteElement>((await mrElem.shadow$$('foo'))[0])
++
+     // instances array
+     expectType<string[]>(mr.instances)
+ 
+diff --git a/website/docs/Multiremote.md b/website/docs/Multiremote.md
+index ba90fdd..9620aab 100644
+--- a/website/docs/Multiremote.md
++++ b/website/docs/Multiremote.md
+@@ -190,7 +190,7 @@ MultiRemote makes it easy and convenient to control multiple browsers, whether y
+ 
+ ### What `$$` returns
+ 
+-On a multi-remote browser, `$$` returns a `MultiRemoteElementArray`. Each entry is a `MultiRemoteElement` that addresses every instance at once, and the array itself carries the same information as a regular `ElementArray`. `custom$$` and `react$$` are not zipped this way: each returns one result per instance.
++On a multi-remote browser, `$$` returns a `MultiRemoteElementArray`. Each entry is a `MultiRemoteElement` that addresses every instance at once, and the array itself carries the same information as a regular `ElementArray`. `custom$$`, `react$$` and `shadow$$` return a `MultiRemoteElementArray` the same way, and `custom$`, `react$` and `shadow$` return a `MultiRemoteElement`, like `$`.
+ 
+ ```js
+ const messages = await $$('.messages')
+diff --git a/website/docs/v10Migration.md b/website/docs/v10Migration.md
+index d931198..cfd434e 100644
+--- a/website/docs/v10Migration.md
++++ b/website/docs/v10Migration.md
+@@ -510,7 +510,7 @@ With the testrunner and `injectGlobals` left on, the instance name is still a gl
+ 
+ Command results stay in capability order: the first entry belongs to the first key in the capabilities object.
+ 
+-`browser.$$()` on a multi-remote browser returns a `WebdriverIO.MultiRemoteElementArray`, not a plain `MultiRemoteElement[]`. It is still an array, so an index read such as `elements[0]` keeps working. `custom$$` and `react$$` still return one result per instance. They are not zipped into one array.
++`browser.$$()` on a multi-remote browser returns a `WebdriverIO.MultiRemoteElementArray`, not a plain `MultiRemoteElement[]`. It is still an array, so an index read such as `elements[0]` keeps working. `custom$$`, `react$$` and `shadow$$` return a `WebdriverIO.MultiRemoteElementArray` as well, and `custom$`, `react$` and `shadow$` return a `WebdriverIO.MultiRemoteElement`, like `$`.
+ 
+ `WDIO_ENABLE_MULTI_REMOTE_SELECT` and `WDIO_ENABLE_MULTI_REMOTE_ELEMENT_ARRAY` have been removed. `select()` is always available, and `$$()` always returns the element array above. Delete both variables.
+ 
+-- 
+2.43.0
+

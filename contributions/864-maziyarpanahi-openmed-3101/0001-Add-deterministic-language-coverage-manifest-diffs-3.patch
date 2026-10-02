@@ -1,0 +1,1060 @@
+From effa7ac14da1b1c4f485ad51687815c260fd0ce0 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 20:48:38 +0000
+Subject: [PATCH] Add deterministic language coverage manifest diffs (#3101)
+
+Compare versioned clinical language-pack coverage manifests by canonical
+locale, script, identifier classes, surrogate support and evidence digest,
+and render byte-stable added, removed, improved, regressed and changed
+entries as JSON and Markdown. Manifests reject unknown keys so fixture
+text, model paths and evaluation examples cannot reach the diff.
+
+Record the measured Pages artifact size of the new guide in the brand
+byte budgets, keeping the existing aggregate and search allowances.
+---
+ CHANGELOG.md                                  |   3 +
+ docs/brand/system/publication.yml             |   1 +
+ docs/i18n/language-coverage-diffs.md          | 138 ++++++
+ mkdocs.yml                                    |   1 +
+ openmed/core/language_coverage_diff.py        | 435 ++++++++++++++++++
+ tests/browser/brand/budgets.json              |   9 +-
+ .../unit/core/test_language_coverage_diff.py  | 363 +++++++++++++++
+ 7 files changed, 946 insertions(+), 4 deletions(-)
+ create mode 100644 docs/i18n/language-coverage-diffs.md
+ create mode 100644 openmed/core/language_coverage_diff.py
+ create mode 100644 tests/unit/core/test_language_coverage_diff.py
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index d92f243..3cbf978 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ 
+ ### Added
+ 
++- Added offline, deterministic diffs of clinical language-pack coverage
++  manifests by canonical locale, with added, removed, improved, regressed and
++  changed entries and byte-stable JSON and Markdown output (#3101).
+ - Fixed-order clinical brief composition over explicitly reviewed synthetic
+   evidence, with local generation, calibrated NLI integration, exact citations,
+   rendered-packet privacy checks and value-free review/provenance output.
+diff --git a/docs/brand/system/publication.yml b/docs/brand/system/publication.yml
+index 6df4193..c69319f 100644
+--- a/docs/brand/system/publication.yml
++++ b/docs/brand/system/publication.yml
+@@ -344,6 +344,7 @@ classification:
+     - multimodal/audio-resampling-plans.md
+     - multimodal/image-geometry.md
+     - i18n/locale-tags.md
++    - i18n/language-coverage-diffs.md
+     - multimodal/media-type-detection.md
+     - multimodal/pdf-reading-order.md
+     - multimodal/pdf-geometry-preflight.md
+diff --git a/docs/i18n/language-coverage-diffs.md b/docs/i18n/language-coverage-diffs.md
+new file mode 100644
+index 0000000..67f2e3b
+--- /dev/null
++++ b/docs/i18n/language-coverage-diffs.md
+@@ -0,0 +1,138 @@
++# Language coverage diffs
++
++`diff_language_coverage` compares two versioned clinical language-pack coverage
++manifests and reports which locales were added, removed, improved, regressed,
++or otherwise changed. Release review can use it to spot language capability
++regressions without loading models, fixtures, or evaluation data. The module
++uses only the standard library and runs fully offline.
++
++```python
++from openmed.core.language_coverage_diff import diff_language_coverage
++
++digest = "sha256:" + "a" * 64
++before = {
++    "version": "3.2.0",
++    "entries": [
++        {
++            "locale": "hi",
++            "script": "Deva",
++            "identifier_classes": ["aadhaar"],
++            "surrogate_support": "partial",
++            "evidence_digest": digest,
++        },
++        {
++            "locale": "pt-BR",
++            "script": "Latn",
++            "identifier_classes": ["cpf", "phone"],
++            "surrogate_support": "full",
++            "evidence_digest": digest,
++        },
++    ],
++}
++after = {
++    "version": "3.3.0",
++    "entries": [
++        {
++            "locale": "pt-BR",
++            "script": "Latn",
++            "identifier_classes": ["cpf"],
++            "surrogate_support": "full",
++            "evidence_digest": digest,
++        },
++        {
++            "locale": "hi",
++            "script": "Deva",
++            "identifier_classes": ["aadhaar", "pan"],
++            "surrogate_support": "full",
++            "evidence_digest": digest,
++        },
++    ],
++}
++
++diff = diff_language_coverage(before, after)
++assert [(entry.locale, entry.status) for entry in diff.entries] == [
++    ("hi", "improved"),
++    ("pt-BR", "regressed"),
++]
++assert diff.has_regressions
++print(diff.to_markdown())
++```
++
++## Manifest format
++
++A manifest is a JSON-compatible mapping with exactly two keys:
++
++| Key | Value |
++| --- | --- |
++| `version` | Release label: 1-64 ASCII letters, digits, `.`, `+`, `_` or `-`. |
++| `entries` | List of per-locale coverage entries. |
++
++Each entry has exactly these keys:
++
++| Key | Value |
++| --- | --- |
++| `locale` | Locale tag, normalized with [`normalize_locale_tag`](locale-tags.md). |
++| `script` | Four-letter ISO 15924 script code, normalized to title case. |
++| `identifier_classes` | List of lowercase identifier class tokens such as `cpf` or `phone`. |
++| `surrogate_support` | One of `none`, `partial`, or `full`. |
++| `evidence_digest` | `sha256:` followed by 64 lowercase hexadecimal characters. |
++
++Unknown keys are rejected, so a manifest cannot carry fixture text, model
++paths, or raw evaluation examples into the diff output. Two entries that
++resolve to the same canonical locale, including through case variants or
++explicit aliases, are rejected as duplicates.
++
++## Statuses
++
++Locales are compared by canonical locale. Entry order and identifier-class
++order never affect the result, so reordered manifests produce byte-identical
++output.
++
++| Status | Meaning |
++| --- | --- |
++| `added` | The locale exists only in the later manifest. |
++| `removed` | The locale exists only in the earlier manifest. |
++| `regressed` | An identifier class was dropped or surrogate support decreased. |
++| `improved` | Only new identifier classes or stronger surrogate support. |
++| `changed` | Only the script or evidence digest differs. |
++
++Regressions take precedence: a locale that gains one identifier class but loses
++another, or gains a class while surrogate support drops, is `regressed`.
++Locales that are identical in both manifests are listed under `unchanged` and
++counted, but they get no diff entry. `has_regressions` is true when any locale
++was removed or regressed.
++
++## Output
++
++`to_json()` renders indented JSON with sorted keys and a trailing newline.
++`to_markdown()` renders a summary count table followed by one row per changed
++locale. Both are byte-stable for the same inputs. The Markdown output
++says only that an evidence digest changed; the JSON output contains the before
++and after digests.
++
++Explicit locale aliases use the same rules as the locale tag helpers:
++
++```python
++diff = diff_language_coverage(before, after, aliases={"pt_BR": "pt-BR"})
++```
++
++## Failures and privacy
++
++Malformed manifests raise `LanguageCoverageDiffError`, a `ValueError` whose
++`.category` and string are the same constant, such as
++`coverage_manifest_keys_invalid`, `coverage_locale_invalid`,
++`coverage_locale_duplicate`, or `coverage_evidence_digest_invalid`. Rejected
++values are never embedded in the error.
++
++The diff does not run evaluation, decide release gates, or measure translation
++quality. It only compares caller-supplied coverage metadata.
++
++## Verification
++
++```bash
++uv run --frozen --extra dev pytest tests/unit/core/test_language_coverage_diff.py -q
++```
++
++The tests cover equal, added, removed, changed, alias, and reordered manifests
++with golden JSON and Markdown output, plus value-free validation failures. No
++model weights or network calls are needed.
+diff --git a/mkdocs.yml b/mkdocs.yml
+index d582d2f..a5088b5 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -269,6 +269,7 @@ nav:
+       - Audio Resampling Plans: multimodal/audio-resampling-plans.md
+       - Image Geometry Derivation: multimodal/image-geometry.md
+       - Locale Tag Normalization: i18n/locale-tags.md
++      - Language Coverage Diffs: i18n/language-coverage-diffs.md
+       - Bounded Media Type Detection: multimodal/media-type-detection.md
+       - PDF Reading Order: multimodal/pdf-reading-order.md
+       - PDF Page Geometry Preflight: multimodal/pdf-geometry-preflight.md
+diff --git a/openmed/core/language_coverage_diff.py b/openmed/core/language_coverage_diff.py
+new file mode 100644
+index 0000000..865aace
+--- /dev/null
++++ b/openmed/core/language_coverage_diff.py
+@@ -0,0 +1,435 @@
++"""Deterministic diffs of clinical language-pack coverage manifests.
++
++Release review needs to see language capability regressions between two
++versioned coverage manifests without loading models, fixtures, or evaluation
++data. This module compares two caller-supplied manifests by canonical locale
++and reports, per locale, whether coverage was added, removed, improved,
++regressed, or otherwise changed.
++
++A coverage manifest is a JSON-compatible mapping::
++
++    {
++        "version": "3.3.0",
++        "entries": [
++            {
++                "locale": "pt-BR",
++                "script": "Latn",
++                "identifier_classes": ["cpf", "phone"],
++                "surrogate_support": "full",
++                "evidence_digest": "sha256:<64 lowercase hex characters>",
++            },
++        ],
++    }
++
++Only these keys are accepted, so a manifest cannot carry fixture text, model
++paths, or raw evaluation examples into the diff. Locales are normalized with
++:func:`openmed.core.locale_tag.normalize_locale_tag` (optionally with explicit
++aliases), and identifier classes are closed lowercase tokens. Entry order and
++identifier-class order never affect the result.
++
++The diff is purely structural: it does not run evaluation, decide release
++gates, or measure translation quality.
++"""
++
++from __future__ import annotations
++
++import json
++import re
++from collections.abc import Mapping
++from dataclasses import dataclass
++from typing import Any, Final
++
++from .locale_tag import LocaleTagError, normalize_locale_tag
++
++__all__ = [
++    "ADDED",
++    "CHANGED",
++    "IMPROVED",
++    "REGRESSED",
++    "REMOVED",
++    "SURROGATE_SUPPORT_LEVELS",
++    "LanguageCoverageDiff",
++    "LanguageCoverageDiffEntry",
++    "LanguageCoverageDiffError",
++    "LanguageCoverageEntry",
++    "LanguageCoverageManifest",
++    "diff_language_coverage",
++    "parse_language_coverage_manifest",
++]
++
++# Entry statuses, in stable display order.
++ADDED: Final[str] = "added"
++REMOVED: Final[str] = "removed"
++IMPROVED: Final[str] = "improved"
++REGRESSED: Final[str] = "regressed"
++CHANGED: Final[str] = "changed"
++_STATUSES: Final[tuple[str, ...]] = (ADDED, REMOVED, IMPROVED, REGRESSED, CHANGED)
++
++# Ordered from weakest to strongest surrogate support.
++SURROGATE_SUPPORT_LEVELS: Final[tuple[str, ...]] = ("none", "partial", "full")
++
++_MANIFEST_KEYS: Final[frozenset[str]] = frozenset({"version", "entries"})
++_ENTRY_KEYS: Final[frozenset[str]] = frozenset(
++    {
++        "locale",
++        "script",
++        "identifier_classes",
++        "surrogate_support",
++        "evidence_digest",
++    }
++)
++_VERSION: Final[re.Pattern[str]] = re.compile(r"[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}\Z")
++_SCRIPT: Final[re.Pattern[str]] = re.compile(r"[A-Za-z]{4}\Z")
++_IDENTIFIER_CLASS: Final[re.Pattern[str]] = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
++_DIGEST: Final[re.Pattern[str]] = re.compile(r"sha256:[0-9a-f]{64}\Z")
++
++
++class LanguageCoverageDiffError(ValueError):
++    """Stable, value-free failure for coverage manifest validation.
++
++    The message and ``category`` are identical constant strings; rejected
++    values are never embedded so that malformed input cannot leak through
++    error text or logs.
++    """
++
++    def __init__(self, category: str) -> None:
++        self.category = category
++        super().__init__(category)
++
++
++@dataclass(frozen=True)
++class LanguageCoverageEntry:
++    """Validated coverage for one canonical locale."""
++
++    locale: str
++    script: str
++    identifier_classes: tuple[str, ...]
++    surrogate_support: str
++    evidence_digest: str
++
++    def to_dict(self) -> dict[str, Any]:
++        """Return a JSON-serializable representation of the entry."""
++        return {
++            "locale": self.locale,
++            "script": self.script,
++            "identifier_classes": list(self.identifier_classes),
++            "surrogate_support": self.surrogate_support,
++            "evidence_digest": self.evidence_digest,
++        }
++
++
++@dataclass(frozen=True)
++class LanguageCoverageManifest:
++    """Validated coverage manifest with entries sorted by canonical locale."""
++
++    version: str
++    entries: tuple[LanguageCoverageEntry, ...]
++
++    def by_locale(self) -> dict[str, LanguageCoverageEntry]:
++        """Return entries keyed by canonical locale."""
++        return {entry.locale: entry for entry in self.entries}
++
++
++@dataclass(frozen=True)
++class LanguageCoverageDiffEntry:
++    """Coverage difference for one canonical locale.
++
++    ``before`` is ``None`` for added locales and ``after`` is ``None`` for
++    removed locales. ``identifier_classes_added`` and
++    ``identifier_classes_removed`` are sorted.
++    """
++
++    locale: str
++    status: str
++    before: LanguageCoverageEntry | None
++    after: LanguageCoverageEntry | None
++    identifier_classes_added: tuple[str, ...] = ()
++    identifier_classes_removed: tuple[str, ...] = ()
++
++    def to_dict(self) -> dict[str, Any]:
++        """Return a JSON-serializable representation of the diff entry."""
++        result: dict[str, Any] = {"locale": self.locale, "status": self.status}
++        if self.before is not None and self.after is not None:
++            changes: dict[str, Any] = {}
++            if self.identifier_classes_added:
++                changes["identifier_classes_added"] = list(
++                    self.identifier_classes_added
++                )
++            if self.identifier_classes_removed:
++                changes["identifier_classes_removed"] = list(
++                    self.identifier_classes_removed
++                )
++            for field in ("script", "surrogate_support", "evidence_digest"):
++                before = getattr(self.before, field)
++                after = getattr(self.after, field)
++                if before != after:
++                    changes[field] = {"before": before, "after": after}
++            result["changes"] = changes
++        else:
++            snapshot = _snapshot(self).to_dict()
++            del snapshot["locale"]
++            result["coverage"] = snapshot
++        return result
++
++
++@dataclass(frozen=True)
++class LanguageCoverageDiff:
++    """Deterministic diff between two coverage manifests."""
++
++    before_version: str
++    after_version: str
++    entries: tuple[LanguageCoverageDiffEntry, ...]
++    unchanged: tuple[str, ...]
++
++    @property
++    def has_regressions(self) -> bool:
++        """Whether any locale was removed or regressed."""
++        return any(entry.status in (REMOVED, REGRESSED) for entry in self.entries)
++
++    def counts(self) -> dict[str, int]:
++        """Return entry counts per status, including ``unchanged``."""
++        counts = {status: 0 for status in _STATUSES}
++        for entry in self.entries:
++            counts[entry.status] += 1
++        counts["unchanged"] = len(self.unchanged)
++        return counts
++
++    def to_dict(self) -> dict[str, Any]:
++        """Return a JSON-serializable representation of the diff."""
++        return {
++            "before_version": self.before_version,
++            "after_version": self.after_version,
++            "counts": self.counts(),
++            "entries": [entry.to_dict() for entry in self.entries],
++            "unchanged": list(self.unchanged),
++        }
++
++    def to_json(self) -> str:
++        """Render byte-stable JSON with sorted keys and a trailing newline."""
++        return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
++
++    def to_markdown(self) -> str:
++        """Render a byte-stable Markdown summary of the diff."""
++        counts = self.counts()
++        lines = [
++            "# Language coverage diff",
++            "",
++            f"- Before: `{self.before_version}`",
++            f"- After: `{self.after_version}`",
++            "",
++            "| Status | Count |",
++            "| --- | ---: |",
++        ]
++        for status in (*_STATUSES, "unchanged"):
++            lines.append(f"| {status} | {counts[status]} |")
++        lines.append("")
++        if not self.entries:
++            lines.append("No coverage changes.")
++            return "\n".join(lines) + "\n"
++        lines.extend(["| Locale | Status | Details |", "| --- | --- | --- |"])
++        for entry in self.entries:
++            lines.append(
++                f"| `{entry.locale}` | {entry.status} | {_markdown_details(entry)} |"
++            )
++        return "\n".join(lines) + "\n"
++
++
++def parse_language_coverage_manifest(
++    manifest: Mapping[str, Any], *, aliases: Mapping[str, str] | None = None
++) -> LanguageCoverageManifest:
++    """Validate a coverage manifest mapping and return its canonical form.
++
++    Args:
++        manifest: Mapping with ``version`` and ``entries`` keys only.
++        aliases: Optional explicit locale aliases passed to
++            :func:`openmed.core.locale_tag.normalize_locale_tag`.
++
++    Returns:
++        A manifest whose entries are sorted by canonical locale and whose
++        identifier classes are sorted and de-duplicated.
++
++    Raises:
++        LanguageCoverageDiffError: With a constant ``category`` when the
++            manifest is malformed, has unknown keys, or lists the same
++            canonical locale twice.
++    """
++    if not isinstance(manifest, Mapping):
++        raise LanguageCoverageDiffError("coverage_manifest_invalid")
++    if set(manifest) != _MANIFEST_KEYS:
++        raise LanguageCoverageDiffError("coverage_manifest_keys_invalid")
++    version = manifest["version"]
++    if not isinstance(version, str) or not _VERSION.fullmatch(version):
++        raise LanguageCoverageDiffError("coverage_manifest_version_invalid")
++    raw_entries = manifest["entries"]
++    if isinstance(raw_entries, (str, bytes, Mapping)) or not isinstance(
++        raw_entries, (list, tuple)
++    ):
++        raise LanguageCoverageDiffError("coverage_manifest_entries_invalid")
++    entries: dict[str, LanguageCoverageEntry] = {}
++    for raw_entry in raw_entries:
++        entry = _parse_entry(raw_entry, aliases)
++        if entry.locale in entries:
++            raise LanguageCoverageDiffError("coverage_locale_duplicate")
++        entries[entry.locale] = entry
++    return LanguageCoverageManifest(
++        version=version,
++        entries=tuple(entries[locale] for locale in sorted(entries)),
++    )
++
++
++def diff_language_coverage(
++    before: Mapping[str, Any] | LanguageCoverageManifest,
++    after: Mapping[str, Any] | LanguageCoverageManifest,
++    *,
++    aliases: Mapping[str, str] | None = None,
++) -> LanguageCoverageDiff:
++    """Compare two coverage manifests by canonical locale.
++
++    A locale present in both manifests is ``regressed`` when it lost any
++    identifier class or its surrogate support decreased, ``improved`` when it
++    only gained identifier classes or surrogate support, and ``changed`` when
++    only its script or evidence digest differs. Regressions take precedence
++    over improvements so that a mixed change is never hidden.
++
++    Args:
++        before: Earlier manifest mapping or parsed manifest.
++        after: Later manifest mapping or parsed manifest.
++        aliases: Optional explicit locale aliases applied to both mappings.
++
++    Returns:
++        A diff whose entries are sorted by canonical locale.
++    """
++    old = _coerce(before, aliases)
++    new = _coerce(after, aliases)
++    old_by_locale = old.by_locale()
++    new_by_locale = new.by_locale()
++    entries: list[LanguageCoverageDiffEntry] = []
++    unchanged: list[str] = []
++    for locale in sorted(set(old_by_locale) | set(new_by_locale)):
++        old_entry = old_by_locale.get(locale)
++        new_entry = new_by_locale.get(locale)
++        if old_entry is None:
++            entries.append(LanguageCoverageDiffEntry(locale, ADDED, None, new_entry))
++            continue
++        if new_entry is None:
++            entries.append(LanguageCoverageDiffEntry(locale, REMOVED, old_entry, None))
++            continue
++        if old_entry == new_entry:
++            unchanged.append(locale)
++            continue
++        gained = tuple(
++            sorted(
++                set(new_entry.identifier_classes) - set(old_entry.identifier_classes)
++            )
++        )
++        lost = tuple(
++            sorted(
++                set(old_entry.identifier_classes) - set(new_entry.identifier_classes)
++            )
++        )
++        support_delta = SURROGATE_SUPPORT_LEVELS.index(
++            new_entry.surrogate_support
++        ) - SURROGATE_SUPPORT_LEVELS.index(old_entry.surrogate_support)
++        if lost or support_delta < 0:
++            status = REGRESSED
++        elif gained or support_delta > 0:
++            status = IMPROVED
++        else:
++            status = CHANGED
++        entries.append(
++            LanguageCoverageDiffEntry(
++                locale,
++                status,
++                old_entry,
++                new_entry,
++                identifier_classes_added=gained,
++                identifier_classes_removed=lost,
++            )
++        )
++    return LanguageCoverageDiff(
++        before_version=old.version,
++        after_version=new.version,
++        entries=tuple(entries),
++        unchanged=tuple(unchanged),
++    )
++
++
++def _coerce(
++    manifest: Mapping[str, Any] | LanguageCoverageManifest,
++    aliases: Mapping[str, str] | None,
++) -> LanguageCoverageManifest:
++    if isinstance(manifest, LanguageCoverageManifest):
++        return manifest
++    return parse_language_coverage_manifest(manifest, aliases=aliases)
++
++
++def _parse_entry(raw: Any, aliases: Mapping[str, str] | None) -> LanguageCoverageEntry:
++    if not isinstance(raw, Mapping):
++        raise LanguageCoverageDiffError("coverage_entry_invalid")
++    if set(raw) != _ENTRY_KEYS:
++        raise LanguageCoverageDiffError("coverage_entry_keys_invalid")
++    locale = raw["locale"]
++    if not isinstance(locale, str):
++        raise LanguageCoverageDiffError("coverage_locale_invalid")
++    try:
++        canonical_locale = normalize_locale_tag(locale, aliases=aliases)
++    except LocaleTagError as exc:
++        raise LanguageCoverageDiffError("coverage_locale_invalid") from exc
++    script = raw["script"]
++    if not isinstance(script, str) or not _SCRIPT.fullmatch(script):
++        raise LanguageCoverageDiffError("coverage_script_invalid")
++    classes = raw["identifier_classes"]
++    if isinstance(classes, (str, bytes, Mapping)) or not isinstance(
++        classes, (list, tuple)
++    ):
++        raise LanguageCoverageDiffError("coverage_identifier_classes_invalid")
++    for item in classes:
++        if not isinstance(item, str) or not _IDENTIFIER_CLASS.fullmatch(item):
++            raise LanguageCoverageDiffError("coverage_identifier_classes_invalid")
++    if len(set(classes)) != len(classes):
++        raise LanguageCoverageDiffError("coverage_identifier_class_duplicate")
++    support = raw["surrogate_support"]
++    if support not in SURROGATE_SUPPORT_LEVELS:
++        raise LanguageCoverageDiffError("coverage_surrogate_support_invalid")
++    digest = raw["evidence_digest"]
++    if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
++        raise LanguageCoverageDiffError("coverage_evidence_digest_invalid")
++    return LanguageCoverageEntry(
++        locale=canonical_locale,
++        script=script.title(),
++        identifier_classes=tuple(sorted(classes)),
++        surrogate_support=support,
++        evidence_digest=digest,
++    )
++
++
++def _snapshot(entry: LanguageCoverageDiffEntry) -> LanguageCoverageEntry:
++    snapshot = entry.after if entry.after is not None else entry.before
++    if snapshot is None:  # pragma: no cover - construction invariant
++        raise LanguageCoverageDiffError("coverage_diff_entry_invalid")
++    return snapshot
++
++
++def _markdown_details(entry: LanguageCoverageDiffEntry) -> str:
++    if entry.before is None or entry.after is None:
++        snapshot = _snapshot(entry)
++        classes = ", ".join(snapshot.identifier_classes) or "none"
++        return (
++            f"script `{snapshot.script}`; identifiers: {classes}; "
++            f"surrogates: {snapshot.surrogate_support}"
++        )
++    details: list[str] = []
++    if entry.identifier_classes_added:
++        details.append("+identifiers: " + ", ".join(entry.identifier_classes_added))
++    if entry.identifier_classes_removed:
++        details.append("-identifiers: " + ", ".join(entry.identifier_classes_removed))
++    if entry.before.surrogate_support != entry.after.surrogate_support:
++        details.append(
++            f"surrogates: {entry.before.surrogate_support} -> "
++            f"{entry.after.surrogate_support}"
++        )
++    if entry.before.script != entry.after.script:
++        details.append(f"script: `{entry.before.script}` -> `{entry.after.script}`")
++    if entry.before.evidence_digest != entry.after.evidence_digest:
++        details.append("evidence digest changed")
++    return "; ".join(details)
+diff --git a/tests/browser/brand/budgets.json b/tests/browser/brand/budgets.json
+index 8bbc455..c26da0b 100644
+--- a/tests/browser/brand/budgets.json
++++ b/tests/browser/brand/budgets.json
+@@ -1,8 +1,8 @@
+ {
+   "schema_version": 2,
+   "artifact": {
+-    "maximum_total_bytes": 92448657,
+-    "maximum_unique_payload_bytes": 92084144,
++    "maximum_total_bytes": 92691909,
++    "maximum_unique_payload_bytes": 92327396,
+     "maximum_duplicate_payload_bytes": 458752,
+     "maximum_source_map_files": 0
+   },
+@@ -12,13 +12,13 @@
+     "html": 2359296,
+     "image": 262144,
+     "javascript": 716800,
+-    "json": 4442708
++    "json": 4448617
+   },
+   "governed_payload_bytes": {
+     "docs/assets/javascripts/lunr/wordcut.js": 716800,
+     "docs/model-tokenizer-script-coverage/index.html": 2359296,
+     "docs/model-tokenizer-script-coverage.json": 1572864,
+-    "docs/search/search_index.json": 4442708
++    "docs/search/search_index.json": 4448617
+   },
+   "route_transfer_bytes": {
+     "/": 3145728,
+@@ -31,6 +31,7 @@
+     "representative_interaction_latency_ms": 200
+   },
+   "notes": [
++    "The reviewed language coverage diff guide build measures 92576423 total bytes, 92211910 unique bytes, and 4442825 search bytes. Ceilings retain the prior 115486-byte aggregate and 5792-byte search allowances; all route, individual non-JSON, duplicate and source-map limits are unchanged.",
+     "The reviewed synthetic brief walkthrough with native integration measures 92333171 total bytes, 91968658 unique bytes, and 4436916 search bytes. Ceilings retain the prior 115486-byte aggregate and 5792-byte search allowances; all route, individual non-JSON, duplicate and source-map limits are unchanged.",
+     "The reviewed Swift brief guide and summary-gate build measures 92112754 total bytes, 91748241 unique bytes, and 4433661 search bytes. Ceilings retain the prior 115486-byte aggregate and 5792-byte search allowances; all route, individual non-JSON, duplicate and source-map limits are unchanged.",
+     "The reviewed clinical brief guide and navigation build measures 92092293 total bytes, 91727780 unique bytes, and 4427501 search bytes. Ceilings retain the prior 115486-byte aggregate and 5792-byte search allowances; route, individual non-JSON, duplicate and source-map limits are unchanged.",
+diff --git a/tests/unit/core/test_language_coverage_diff.py b/tests/unit/core/test_language_coverage_diff.py
+new file mode 100644
+index 0000000..f060fd9
+--- /dev/null
++++ b/tests/unit/core/test_language_coverage_diff.py
+@@ -0,0 +1,363 @@
++"""Offline golden tests for language-pack coverage manifest diffs."""
++
++from __future__ import annotations
++
++import json
++from types import MappingProxyType
++
++import pytest
++
++from openmed.core.language_coverage_diff import (
++    LanguageCoverageDiffError,
++    diff_language_coverage,
++    parse_language_coverage_manifest,
++)
++
++DIGEST_A = "sha256:" + "a" * 64
++DIGEST_B = "sha256:" + "b" * 64
++
++
++def _entry(locale, script, classes, support, digest=DIGEST_A):
++    return {
++        "locale": locale,
++        "script": script,
++        "identifier_classes": list(classes),
++        "surrogate_support": support,
++        "evidence_digest": digest,
++    }
++
++
++def _manifest(version, *entries):
++    return {"version": version, "entries": list(entries)}
++
++
++BEFORE = _manifest(
++    "3.2.0",
++    _entry("pt-BR", "Latn", ["cpf", "phone"], "full"),
++    _entry("hi", "Deva", ["aadhaar"], "partial"),
++    _entry("de", "Latn", ["phone"], "full"),
++    _entry("fr", "Latn", ["nir"], "partial"),
++    _entry("ar", "Arab", ["phone"], "none"),
++)
++AFTER = _manifest(
++    "3.3.0",
++    _entry("pt-BR", "Latn", ["cpf"], "full"),
++    _entry("hi", "Deva", ["aadhaar", "pan"], "full"),
++    _entry("fr", "Latn", ["nir"], "partial", DIGEST_B),
++    _entry("ar", "Arab", ["phone"], "none"),
++    _entry("sw", "Latn", ["phone"], "partial"),
++)
++
++GOLDEN_MIXED_MARKDOWN = """\
++# Language coverage diff
++
++- Before: `3.2.0`
++- After: `3.3.0`
++
++| Status | Count |
++| --- | ---: |
++| added | 1 |
++| removed | 1 |
++| improved | 1 |
++| regressed | 1 |
++| changed | 1 |
++| unchanged | 1 |
++
++| Locale | Status | Details |
++| --- | --- | --- |
++| `de` | removed | script `Latn`; identifiers: phone; surrogates: full |
++| `fr` | changed | evidence digest changed |
++| `hi` | improved | +identifiers: pan; surrogates: partial -> full |
++| `pt-BR` | regressed | -identifiers: phone |
++| `sw` | added | script `Latn`; identifiers: phone; surrogates: partial |
++"""
++
++GOLDEN_MIXED_DICT = {
++    "after_version": "3.3.0",
++    "before_version": "3.2.0",
++    "counts": {
++        "added": 1,
++        "changed": 1,
++        "improved": 1,
++        "regressed": 1,
++        "removed": 1,
++        "unchanged": 1,
++    },
++    "entries": [
++        {
++            "coverage": {
++                "evidence_digest": DIGEST_A,
++                "identifier_classes": ["phone"],
++                "script": "Latn",
++                "surrogate_support": "full",
++            },
++            "locale": "de",
++            "status": "removed",
++        },
++        {
++            "changes": {
++                "evidence_digest": {"after": DIGEST_B, "before": DIGEST_A},
++            },
++            "locale": "fr",
++            "status": "changed",
++        },
++        {
++            "changes": {
++                "identifier_classes_added": ["pan"],
++                "surrogate_support": {"after": "full", "before": "partial"},
++            },
++            "locale": "hi",
++            "status": "improved",
++        },
++        {
++            "changes": {"identifier_classes_removed": ["phone"]},
++            "locale": "pt-BR",
++            "status": "regressed",
++        },
++        {
++            "coverage": {
++                "evidence_digest": DIGEST_A,
++                "identifier_classes": ["phone"],
++                "script": "Latn",
++                "surrogate_support": "partial",
++            },
++            "locale": "sw",
++            "status": "added",
++        },
++    ],
++    "unchanged": ["ar"],
++}
++
++GOLDEN_EQUAL_MARKDOWN = """\
++# Language coverage diff
++
++- Before: `3.2.0`
++- After: `3.2.1`
++
++| Status | Count |
++| --- | ---: |
++| added | 0 |
++| removed | 0 |
++| improved | 0 |
++| regressed | 0 |
++| changed | 0 |
++| unchanged | 5 |
++
++No coverage changes.
++"""
++
++
++def test_mixed_manifests_have_stable_golden_json_and_markdown() -> None:
++    diff = diff_language_coverage(BEFORE, AFTER)
++
++    assert diff.to_dict() == GOLDEN_MIXED_DICT
++    assert diff.to_json() == (
++        json.dumps(GOLDEN_MIXED_DICT, indent=2, sort_keys=True) + "\n"
++    )
++    assert diff.to_markdown() == GOLDEN_MIXED_MARKDOWN
++    assert diff.has_regressions
++
++
++def test_equal_manifests_report_no_changes() -> None:
++    after = dict(BEFORE, version="3.2.1")
++    diff = diff_language_coverage(BEFORE, after)
++
++    assert diff.entries == ()
++    assert diff.unchanged == ("ar", "de", "fr", "hi", "pt-BR")
++    assert not diff.has_regressions
++    assert diff.to_markdown() == GOLDEN_EQUAL_MARKDOWN
++
++
++def test_added_only_and_removed_only_manifests() -> None:
++    empty = _manifest("0.1.0")
++    added = diff_language_coverage(empty, BEFORE)
++    removed = diff_language_coverage(BEFORE, empty)
++
++    assert [(e.locale, e.status) for e in added.entries] == [
++        ("ar", "added"),
++        ("de", "added"),
++        ("fr", "added"),
++        ("hi", "added"),
++        ("pt-BR", "added"),
++    ]
++    assert not added.has_regressions
++    assert [e.status for e in removed.entries] == ["removed"] * 5
++    assert removed.has_regressions
++    assert removed.counts()["removed"] == 5
++
++
++def test_reordered_manifests_are_byte_identical() -> None:
++    reordered_before = _manifest(
++        BEFORE["version"],
++        *[
++            dict(entry, identifier_classes=entry["identifier_classes"][::-1])
++            for entry in reversed(BEFORE["entries"])
++        ],
++    )
++    reordered_after = _manifest(AFTER["version"], *reversed(AFTER["entries"]))
++
++    reordered = diff_language_coverage(reordered_before, reordered_after)
++    baseline = diff_language_coverage(BEFORE, AFTER)
++
++    assert reordered.to_json() == baseline.to_json()
++    assert reordered.to_markdown() == GOLDEN_MIXED_MARKDOWN
++    assert diff_language_coverage(BEFORE, reordered_before).entries == ()
++
++
++def test_alias_and_case_variant_locales_match_canonical_entries() -> None:
++    aliases = MappingProxyType({"pt_BR": "pt-BR", "iw": "he"})
++    before = _manifest(
++        "1.0.0",
++        _entry("pt_BR", "latn", ["cpf"], "full"),
++        _entry("iw", "Hebr", ["teudat_zehut"], "partial"),
++    )
++    after = _manifest(
++        "1.1.0",
++        _entry("PT-br", "Latn", ["cpf"], "full"),
++        _entry("he", "Hebr", ["teudat_zehut"], "full"),
++    )
++
++    diff = diff_language_coverage(before, after, aliases=aliases)
++
++    assert diff.unchanged == ("pt-BR",)
++    assert [(e.locale, e.status) for e in diff.entries] == [("he", "improved")]
++    assert diff.to_markdown().endswith(
++        "| `he` | improved | surrogates: partial -> full |\n"
++    )
++    assert dict(aliases) == {"pt_BR": "pt-BR", "iw": "he"}
++
++
++def test_regression_takes_precedence_over_mixed_improvements() -> None:
++    before = _manifest("1", _entry("es", "Latn", ["dni"], "full"))
++    after = _manifest("2", _entry("es", "Latn", ["dni", "nie"], "partial"))
++
++    (entry,) = diff_language_coverage(before, after).entries
++
++    assert entry.status == "regressed"
++    assert entry.identifier_classes_added == ("nie",)
++    assert entry.to_dict()["changes"]["surrogate_support"] == {
++        "before": "full",
++        "after": "partial",
++    }
++
++
++def test_script_only_change_is_reported_as_changed() -> None:
++    before = _manifest("1", _entry("sr", "Cyrl", ["jmbg"], "full"))
++    after = _manifest("2", _entry("sr", "Latn", ["jmbg"], "full"))
++
++    (entry,) = diff_language_coverage(before, after).entries
++
++    assert entry.status == "changed"
++    assert entry.to_dict()["changes"] == {"script": {"before": "Cyrl", "after": "Latn"}}
++
++
++def test_parsed_manifests_are_accepted_and_sorted() -> None:
++    parsed = parse_language_coverage_manifest(AFTER)
++
++    assert [entry.locale for entry in parsed.entries] == [
++        "ar",
++        "fr",
++        "hi",
++        "pt-BR",
++        "sw",
++    ]
++    assert parsed.by_locale()["hi"].identifier_classes == ("aadhaar", "pan")
++    assert diff_language_coverage(BEFORE, parsed) == diff_language_coverage(
++        BEFORE, AFTER
++    )
++
++
++@pytest.mark.parametrize(
++    "manifest,category",
++    [
++        (["not", "a", "mapping"], "coverage_manifest_invalid"),
++        ({"version": "1"}, "coverage_manifest_keys_invalid"),
++        (
++            {"version": "1", "entries": [], "model_path": "/models/x"},
++            "coverage_manifest_keys_invalid",
++        ),
++        ({"version": "", "entries": []}, "coverage_manifest_version_invalid"),
++        ({"version": "1/../x", "entries": []}, "coverage_manifest_version_invalid"),
++        ({"version": "1", "entries": "en"}, "coverage_manifest_entries_invalid"),
++        (_manifest("1", "en"), "coverage_entry_invalid"),
++        (
++            _manifest("1", dict(_entry("en", "Latn", [], "none"), example="John")),
++            "coverage_entry_keys_invalid",
++        ),
++        (
++            _manifest("1", _entry("not a locale", "Latn", [], "none")),
++            "coverage_locale_invalid",
++        ),
++        (_manifest("1", _entry("en", "Latin", [], "none")), "coverage_script_invalid"),
++        (
++            _manifest("1", _entry("en", "Latn", ["Patient John"], "none")),
++            "coverage_identifier_classes_invalid",
++        ),
++        (
++            _manifest("1", _entry("en", "Latn", ["ssn", "ssn"], "none")),
++            "coverage_identifier_class_duplicate",
++        ),
++        (
++            _manifest("1", _entry("en", "Latn", [], "complete")),
++            "coverage_surrogate_support_invalid",
++        ),
++        (
++            _manifest("1", _entry("en", "Latn", [], "none", "sha256:ABC")),
++            "coverage_evidence_digest_invalid",
++        ),
++        (
++            _manifest(
++                "1",
++                _entry("en-us", "Latn", [], "none"),
++                _entry("EN-US", "Latn", [], "none"),
++            ),
++            "coverage_locale_duplicate",
++        ),
++    ],
++)
++def test_malformed_manifests_fail_with_value_free_categories(
++    manifest, category
++) -> None:
++    with pytest.raises(LanguageCoverageDiffError) as excinfo:
++        parse_language_coverage_manifest(manifest)
++
++    assert excinfo.value.category == category
++    assert str(excinfo.value) == category
++
++
++def test_diff_output_contains_only_coverage_metadata() -> None:
++    rendered = diff_language_coverage(BEFORE, AFTER).to_json()
++    payload = json.loads(rendered)
++
++    allowed_keys = {
++        "after",
++        "after_version",
++        "before",
++        "before_version",
++        "changes",
++        "counts",
++        "coverage",
++        "entries",
++        "evidence_digest",
++        "identifier_classes",
++        "identifier_classes_added",
++        "identifier_classes_removed",
++        "locale",
++        "script",
++        "status",
++        "surrogate_support",
++        "unchanged",
++        *("added", "changed", "improved", "regressed", "removed"),
++    }
++
++    def keys(value):
++        if isinstance(value, dict):
++            for key, item in value.items():
++                yield key
++                yield from keys(item)
++        elif isinstance(value, list):
++            for item in value:
++                yield from keys(item)
++
++    assert set(keys(payload)) <= allowed_keys
++    assert "/" not in rendered
+-- 
+2.43.0
+

@@ -1,0 +1,1 @@
+Fix 3882: render a checkbox for a string with a const

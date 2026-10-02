@@ -1,0 +1,1 @@
+Fix Bitbucket Server project/repo detection when the repo URL has a context path or /scm/

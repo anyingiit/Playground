@@ -1,0 +1,1 @@
+refactor: document JSON library policy and share []string column helpers

@@ -1,0 +1,1 @@
+expfmt: omit OpenMetrics 1.0 UNIT line if unit is not a name suffix

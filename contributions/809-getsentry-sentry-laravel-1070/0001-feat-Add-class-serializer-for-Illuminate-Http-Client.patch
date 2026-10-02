@@ -1,0 +1,288 @@
+From 40e27f0c11ca00e8aeafd0a6812eb55cfaca52ee Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:51:06 +0000
+Subject: [PATCH] feat: Add class serializer for
+ Illuminate\Http\Client\Response
+
+Register a default class serializer for Laravel HTTP client responses so
+they show the status, reason, effective URL and content type instead of
+just the class name when they appear in stack trace frames. Response
+headers and the full URL are only included when send_default_pii is
+enabled, the response body is never included. Class serializers set by
+the user (for the response class or any parent class or interface) take
+precedence.
+
+Closes #1070
+---
+ .../HttpClientResponseSerializer.php          |  91 ++++++++++++++
+ src/Sentry/Laravel/ServiceProvider.php        |  15 +++
+ .../HttpClientResponseSerializerTest.php      | 119 ++++++++++++++++++
+ 3 files changed, 225 insertions(+)
+ create mode 100644 src/Sentry/Laravel/Serializer/HttpClientResponseSerializer.php
+ create mode 100644 test/Sentry/Features/HttpClientResponseSerializerTest.php
+
+diff --git a/src/Sentry/Laravel/Serializer/HttpClientResponseSerializer.php b/src/Sentry/Laravel/Serializer/HttpClientResponseSerializer.php
+new file mode 100644
+index 0000000..d61e1f4
+--- /dev/null
++++ b/src/Sentry/Laravel/Serializer/HttpClientResponseSerializer.php
+@@ -0,0 +1,91 @@
++<?php
++
++namespace Sentry\Laravel\Serializer;
++
++use Illuminate\Http\Client\Response;
++use Psr\Http\Message\UriInterface;
++
++/**
++ * Class serializer for `Illuminate\Http\Client\Response` objects so they show useful
++ * information (instead of just the class name) when they appear in stack trace frames.
++ *
++ * Response headers are only included when `send_default_pii` is enabled. The response
++ * body is never included because it can be large, can contain sensitive data and
++ * reading it could consume a non-seekable stream.
++ *
++ * @internal
++ */
++class HttpClientResponseSerializer
++{
++    /**
++     * @var bool
++     */
++    private $sendDefaultPii;
++
++    public function __construct(bool $sendDefaultPii = false)
++    {
++        $this->sendDefaultPii = $sendDefaultPii;
++    }
++
++    /**
++     * @param Response $response
++     *
++     * @return array<string, mixed>
++     */
++    public function __invoke($response): array
++    {
++        if (!$response instanceof Response) {
++            return [];
++        }
++
++        $data = [
++            'status' => $response->status(),
++            'reason' => $response->reason(),
++        ];
++
++        $uri = $this->getEffectiveUri($response);
++
++        if ($uri !== null) {
++            if (!$this->sendDefaultPii) {
++                $uri = $uri->withUserInfo('')->withQuery('')->withFragment('');
++            }
++
++            $data['url'] = (string)$uri;
++        }
++
++        $contentType = $response->header('Content-Type');
++
++        if ($contentType !== '') {
++            $data['content_type'] = $contentType;
++        }
++
++        if ($this->sendDefaultPii) {
++            $headers = [];
++
++            // Flatten the header values so they are not cut off by the max serialization depth
++            foreach ($response->headers() as $name => $values) {
++                $headers[$name] = \is_array($values) ? implode(', ', $values) : (string)$values;
++            }
++
++            $data['headers'] = $headers;
++        }
++
++        return $data;
++    }
++
++    private function getEffectiveUri(Response $response): ?UriInterface
++    {
++        // The transfer stats are only available when the request was actually sent (not for faked or manually constructed responses)
++        if (!isset($response->transferStats) || !method_exists($response, 'effectiveUri')) {
++            return null;
++        }
++
++        try {
++            $uri = $response->effectiveUri();
++        } catch (\Throwable $e) {
++            return null;
++        }
++
++        return $uri instanceof UriInterface ? $uri : null;
++    }
++}
+diff --git a/src/Sentry/Laravel/ServiceProvider.php b/src/Sentry/Laravel/ServiceProvider.php
+index 2b5938d..5988b82 100644
+--- a/src/Sentry/Laravel/ServiceProvider.php
++++ b/src/Sentry/Laravel/ServiceProvider.php
+@@ -10,6 +10,7 @@ use Illuminate\Contracts\Http\Kernel as HttpKernelInterface;
+ use Illuminate\Foundation\Application as Laravel;
+ use Illuminate\Foundation\Console\AboutCommand;
+ use Illuminate\Foundation\Http\Kernel as HttpKernel;
++use Illuminate\Http\Client\Response as HttpClientResponse;
+ use Illuminate\Http\Request;
+ use Laravel\Lumen\Application as Lumen;
+ use RuntimeException;
+@@ -25,6 +26,7 @@ use Sentry\Laravel\Http\FlushEventsMiddleware;
+ use Sentry\Laravel\Http\LaravelRequestFetcher;
+ use Sentry\Laravel\Http\SetRequestIpMiddleware;
+ use Sentry\Laravel\Http\SetRequestMiddleware;
++use Sentry\Laravel\Serializer\HttpClientResponseSerializer;
+ use Sentry\Laravel\Tracing\BacktraceHelper;
+ use Sentry\Laravel\Tracing\ServiceProvider as TracingServiceProvider;
+ use Sentry\Logger\DebugFileLogger;
+@@ -303,6 +305,19 @@ class ServiceProvider extends BaseServiceProvider
+                 $options['environment'] = $this->app->environment();
+             }
+ 
++            // Register a class serializer for HTTP client responses so they are shown with useful information in stack traces,
++            // class serializers configured by the user for the same class take precedence over the ones we provide by default
++            if (class_exists(HttpClientResponse::class)) {
++                $userClassSerializers = $options['class_serializers'] ?? [];
++
++                // The default is appended after the user's serializers so it never shadows a user serializer for a parent class or interface
++                if (\is_array($userClassSerializers) && !isset($userClassSerializers[HttpClientResponse::class])) {
++                    $userClassSerializers[HttpClientResponse::class] = new HttpClientResponseSerializer((bool)($options['send_default_pii'] ?? false));
++
++                    $options['class_serializers'] = $userClassSerializers;
++                }
++            }
++
+             if ($this->app instanceof Lumen) {
+                 $wrapBeforeSend = function (?callable $userBeforeSend) {
+                     return function (Event $event, ?EventHint $eventHint) use ($userBeforeSend) {
+diff --git a/test/Sentry/Features/HttpClientResponseSerializerTest.php b/test/Sentry/Features/HttpClientResponseSerializerTest.php
+new file mode 100644
+index 0000000..8151ef1
+--- /dev/null
++++ b/test/Sentry/Features/HttpClientResponseSerializerTest.php
+@@ -0,0 +1,119 @@
++<?php
++
++namespace Sentry\Laravel\Tests\Features;
++
++use GuzzleHttp\Psr7\Request as PsrRequest;
++use GuzzleHttp\Psr7\Response as PsrResponse;
++use GuzzleHttp\TransferStats;
++use Illuminate\Http\Client\Response;
++use Sentry\Laravel\Tests\TestCase;
++use Sentry\Serializer\Serializer;
++
++class HttpClientResponseSerializerTest extends TestCase
++{
++    protected function setUp(): void
++    {
++        if (!class_exists(Response::class)) {
++            $this->markTestSkipped('The Laravel HTTP client is only available in Laravel 7.0+');
++        }
++
++        parent::setUp();
++    }
++
++    public function testClassSerializerIsRegisteredForHttpClientResponse(): void
++    {
++        $classSerializers = $this->getSentryClientFromContainer()->getOptions()->getClassSerializers();
++
++        $this->assertArrayHasKey(Response::class, $classSerializers);
++        $this->assertIsCallable($classSerializers[Response::class]);
++    }
++
++    public function testHttpClientResponseIsSerializedWithoutPii(): void
++    {
++        $serialized = $this->serialize($this->makeResponse());
++
++        $this->assertSame([
++            'status' => 404,
++            'reason' => 'Not Found',
++            'url' => 'https://example.com/users/1',
++            'content_type' => 'application/json',
++        ], $serialized['data'] ?? null);
++    }
++
++    public function testHttpClientResponseIsSerializedWithPii(): void
++    {
++        $this->resetApplicationWithConfig([
++            'sentry.send_default_pii' => true,
++        ]);
++
++        $serialized = $this->serialize($this->makeResponse());
++
++        $this->assertSame(404, $serialized['data']['status']);
++        $this->assertSame('Not Found', $serialized['data']['reason']);
++        $this->assertSame('https://user:secret@example.com/users/1?token=secret#fragment', $serialized['data']['url']);
++        $this->assertSame('application/json', $serialized['data']['content_type']);
++        $this->assertSame('application/json', $serialized['data']['headers']['Content-Type']);
++        $this->assertSame('foo=bar', $serialized['data']['headers']['Set-Cookie']);
++    }
++
++    public function testHttpClientResponseWithoutTransferStatsIsSerialized(): void
++    {
++        $serialized = $this->serialize(new Response(new PsrResponse(200, [], 'body')));
++
++        $this->assertSame([
++            'status' => 200,
++            'reason' => 'OK',
++        ], $serialized['data'] ?? null);
++    }
++
++    public function testUserConfiguredClassSerializerTakesPrecedence(): void
++    {
++        $this->resetApplicationWithConfig([
++            'sentry.class_serializers' => [
++                Response::class => static function (Response $response): array {
++                    return ['custom' => $response->status()];
++                },
++            ],
++        ]);
++
++        $serialized = $this->serialize($this->makeResponse());
++
++        $this->assertSame(['custom' => 404], $serialized['data'] ?? null);
++    }
++
++    public function testUserConfiguredClassSerializerForInterfaceTakesPrecedence(): void
++    {
++        $this->resetApplicationWithConfig([
++            'sentry.class_serializers' => [
++                \ArrayAccess::class => static function (\ArrayAccess $object): array {
++                    return ['custom' => true];
++                },
++            ],
++        ]);
++
++        $serialized = $this->serialize($this->makeResponse());
++
++        $this->assertSame(['custom' => true], $serialized['data'] ?? null);
++    }
++
++    private function makeResponse(): Response
++    {
++        $response = new Response(new PsrResponse(404, [
++            'Content-Type' => 'application/json',
++            'Set-Cookie' => 'foo=bar',
++        ], '{"message":"not found"}'));
++
++        $response->transferStats = new TransferStats(
++            new PsrRequest('GET', 'https://user:secret@example.com/users/1?token=secret#fragment')
++        );
++
++        return $response;
++    }
++
++    private function serialize(Response $response)
++    {
++        $serializer = new Serializer($this->getSentryClientFromContainer()->getOptions());
++
++        return $serializer->serialize($response);
++    }
++}
+-- 
+2.43.0
+

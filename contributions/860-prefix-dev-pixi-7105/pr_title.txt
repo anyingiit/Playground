@@ -1,0 +1,1 @@
+feat(manifest): add `description` field for environments

@@ -1,0 +1,206 @@
+From e1a44106361757813e1dcf5552cffb3555b3b9ce Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:43:50 +0000
+Subject: [PATCH] fix(go): type a local assigned from a generic constructor
+ call
+
+_GO_CALL_DECL required the target to be followed directly by '(', so
+'x := New[T](cfg)' and 'x := pkg.New[K, V](..)' declared no call-typed
+local and later method calls on 'x' lost their edge. The pattern now
+skips an optional type-argument list, two levels deep like
+_GO_FIELD_END.
+
+The Go grammar also reads 'New[T](x)' as a conversion to a generic type
+and 'New[T]()' as a call through an index expression, so neither left a
+call site for the resolver to read the return type from. go.scm now
+captures both shapes as calls; for the index shape only an index that
+can be a type argument counts, so 'fns[0]()' still names no function.
+
+Fixes #2796
+---
+ .../ingestion/languages/receiver_types.py     |  7 +++-
+ .../repowise/core/ingestion/queries/go.scm    | 36 ++++++++++++++++++
+ .../test_call_resolver_strategies.py          | 14 +++++++
+ tests/unit/ingestion/test_go_extractors.py    | 37 +++++++++++++++++++
+ tests/unit/ingestion/test_receiver_types.py   | 21 +++++++++++
+ 5 files changed, 114 insertions(+), 1 deletion(-)
+
+diff --git a/packages/core/src/repowise/core/ingestion/languages/receiver_types.py b/packages/core/src/repowise/core/ingestion/languages/receiver_types.py
+index 5129b59..74a527a 100644
+--- a/packages/core/src/repowise/core/ingestion/languages/receiver_types.py
++++ b/packages/core/src/repowise/core/ingestion/languages/receiver_types.py
+@@ -182,9 +182,14 @@ _GO_EMBEDDED_FIELD = re.compile(
+ # ``x := f(..)``, ``x, err := pkg.New(..)``: the head of a call whose return
+ # type names the local. Only the head is matched here; ``scan_call_assignments``
+ # checks that the call is the whole right-hand side, not ``f().g()``.
++#
++# A generic call's type arguments (``New[T](..)``, ``pkg.New[K, V](..)``) sit
++# between the target and its ``(`` and are skipped, two levels deep like
++# ``_GO_FIELD_END``: ``New[map[string]int](..)`` still types its local.
+ _GO_CALL_DECL = re.compile(
+     rf"(?<![\w.])(?P<name>{_GO_NAME})\s*(?:,\s*{_GO_NAME}\s*)*:="
+-    r"[ \t]*(?:(?P<receiver>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\.)?(?P<target>[A-Za-z_]\w*)\s*\("
++    r"[ \t]*(?:(?P<receiver>[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\.)?(?P<target>[A-Za-z_]\w*)"
++    r"(?:\[(?:[^\[\]\n]|\[[^\[\]\n]*\])*\])?\s*\("
+ )
+ 
+ # Kotlin annotates after the name, and `val x: Foo`, `var x: Foo`, parameters
+diff --git a/packages/core/src/repowise/core/ingestion/queries/go.scm b/packages/core/src/repowise/core/ingestion/queries/go.scm
+index dbd695b..d47214b 100644
+--- a/packages/core/src/repowise/core/ingestion/queries/go.scm
++++ b/packages/core/src/repowise/core/ingestion/queries/go.scm
+@@ -91,6 +91,42 @@
+   arguments: (argument_list) @call.arguments
+ ) @call.site
+ 
++; Generic call with explicit type arguments. ``New[K, V](a, b)`` is a
++; call_expression whose function the patterns above already match, but the
++; grammar cannot tell ``New[T](x)`` from a conversion to a generic type, nor
++; ``New[T]()`` from a call through an index, so both shapes are matched here.
++; A real conversion ``List[int](x)`` reaches the resolver as a call to the type,
++; just as ``T(x)`` does. For the index shape, only an index that can be a type
++; argument (``T``, ``pkg.T``, ``*T``) counts, so ``fns[0]()`` and
++; ``handlers["a"]()`` stay calls through a value and name no function.
++(type_conversion_expression
++  type: (generic_type
++    type: (type_identifier) @call.target)
++) @call.site
++
++(type_conversion_expression
++  type: (generic_type
++    type: (qualified_type
++      package: (package_identifier) @call.receiver
++      name: (type_identifier) @call.target))
++) @call.site
++
++(call_expression
++  function: (index_expression
++    operand: (identifier) @call.target
++    index: [(identifier) (selector_expression) (unary_expression operator: "*")])
++  arguments: (argument_list) @call.arguments
++) @call.site
++
++(call_expression
++  function: (index_expression
++    operand: (selector_expression
++      operand: (identifier) @call.receiver
++      field: (field_identifier) @call.target)
++    index: [(identifier) (selector_expression) (unary_expression operator: "*")])
++  arguments: (argument_list) @call.arguments
++) @call.site
++
+ ; Qualified function value passed as call argument: f(pkg.Handler, ...)
+ ; Rescues functions used as first-class values — passed as callbacks, middleware,
+ ; or handlers rather than called directly. A reference and not a call: nothing
+diff --git a/tests/unit/ingestion/test_call_resolver_strategies.py b/tests/unit/ingestion/test_call_resolver_strategies.py
+index d58f87f..1669edb 100644
+--- a/tests/unit/ingestion/test_call_resolver_strategies.py
++++ b/tests/unit/ingestion/test_call_resolver_strategies.py
+@@ -524,6 +524,7 @@ _GO_DETECT = (
+     "func NewDetector() *Detector { return &Detector{} }\n\n"
+     "func NewPair() (*Detector, error) { return &Detector{}, nil }\n\n"
+     "func NewOther() *Other { return &Other{} }\n\n"
++    "func NewOf[T any](v ...T) *Detector { return &Detector{} }\n\n"
+     "func (d *Detector) Child() *Other { return &Other{} }\n\n"
+     "func (d *Detector) Scan() int { return 1 }\n\n"
+     "func (o *Other) Scan() int { return 2 }\n\n"
+@@ -559,6 +560,19 @@ class TestGoCallTypedLocal:
+         assert [e[1] for e in edges] == ["detect/detect.go::Detector::Scan"]
+         assert edges[0][3].startswith("receiver_typed_")
+ 
++    @pytest.mark.parametrize(
++        "call",
++        ["detect.NewOf[int]()", "detect.NewOf[int](1)", "detect.NewOf[map[string]int](m, m)"],
++    )
++    def test_a_generic_constructor_result_types_its_receiver(
++        self, tmp_path: Path, call: str
++    ) -> None:
++        """The type arguments stand between the target and its call, and do
++        not hide the declared return type. The grammar reads each argument
++        count as a different node, so each is checked."""
++        edges = _go_method_edges(tmp_path, f"\td := {call}\n\td.Scan()\n")
++        assert [e[1] for e in edges] == ["detect/detect.go::Detector::Scan"]
++
+     def test_the_first_of_several_results_is_the_type(self, tmp_path: Path) -> None:
+         body = "\td, err := detect.NewPair()\n\t_ = err\n\td.Scan()\n"
+         edges = _go_method_edges(tmp_path, body)
+diff --git a/tests/unit/ingestion/test_go_extractors.py b/tests/unit/ingestion/test_go_extractors.py
+index dcf8783..ba68c80 100644
+--- a/tests/unit/ingestion/test_go_extractors.py
++++ b/tests/unit/ingestion/test_go_extractors.py
+@@ -141,3 +141,40 @@ class TestGoCallThroughField:
+         do_calls = [c for c in result.calls if c.target_name == "Do"]
+         assert len(do_calls) == 1, f"expected one call site for Do, got {do_calls}"
+         assert do_calls[0].receiver_name == "i"
++
++
++class TestGoGenericCall:
++    """``New[T](..)``: each shape the grammar gives a generic call is a call."""
++
++    @pytest.mark.parametrize(
++        ("call", "receiver"),
++        [
++            ("New[T]()", None),
++            ("New[T](cfg)", None),
++            ("New[K, V](a, b)", None),
++            ("New[map[string]int](cfg)", None),
++            ("New[*T]()", None),
++            ("pkg.New[T]()", "pkg"),
++            ("pkg.New[T](cfg)", "pkg"),
++            ("pkg.New[K, V](a, b)", "pkg"),
++            ("pkg.New[pkg.T]()", "pkg"),
++        ],
++    )
++    def test_generic_call_site_is_captured(
++        self, parser: ASTParser, call: str, receiver: str | None
++    ) -> None:
++        src = f"package x\n\nfunc f() {{\n\tx := {call}\n\t_ = x\n}}\n".encode()
++        result = parser.parse_file(_file(), src)
++        new_calls = [c for c in result.calls if c.target_name == "New"]
++        assert len(new_calls) == 1, f"expected one call site for New, got {new_calls}"
++        assert new_calls[0].receiver_name == receiver
++        assert new_calls[0].line == 4
++
++    @pytest.mark.parametrize("call", ["fns[0]()", 'handlers["a"](req)', "fns[i+1]()"])
++    def test_a_call_through_a_value_index_names_no_function(
++        self, parser: ASTParser, call: str
++    ) -> None:
++        """An index no type argument can take is a slice or map of funcs."""
++        src = f"package x\n\nfunc f() {{\n\t{call}\n}}\n".encode()
++        result = parser.parse_file(_file(), src)
++        assert [c.target_name for c in result.calls] == []
+diff --git a/tests/unit/ingestion/test_receiver_types.py b/tests/unit/ingestion/test_receiver_types.py
+index 54b0566..7a52ee2 100644
+--- a/tests/unit/ingestion/test_receiver_types.py
++++ b/tests/unit/ingestion/test_receiver_types.py
+@@ -677,6 +677,27 @@ class TestGoCallAssignments:
+     def test_a_composite_literal_is_left_to_scan_declarations(self) -> None:
+         assert scan_call_assignments("func f() {\n\tr := Rule{}\n}", "go") == ()
+ 
++    def test_a_generic_call_s_type_arguments_are_skipped(self) -> None:
++        body = "func f() {\n\tx := New[T](cfg)\n\tx.Scan()\n}"
++        assert scan_call_assignments(body, "go") == (CallAssignment(2, "x", None, "New"),)
++
++    def test_a_qualified_generic_call_with_several_type_arguments(self) -> None:
++        body = "func f() {\n\tc, err := cache.New[K, V](size)\n}"
++        assert scan_call_assignments(body, "go") == (CallAssignment(2, "c", "cache", "New"),)
++
++    def test_a_type_argument_may_hold_one_nested_bracket(self) -> None:
++        body = "func f() {\n\tm := New[map[string]int](\n\t\tcfg,\n\t)\n}"
++        assert scan_call_assignments(body, "go") == (CallAssignment(2, "m", None, "New"),)
++
++    def test_a_generic_call_is_still_refused_inside_an_expression(self) -> None:
++        assert scan_call_assignments("func f() {\n\tx := New[T]().Child()\n}", "go") == ()
++        assert scan_call_assignments("func f() {\n\tn := Count[T](xs) + 1\n}", "go") == ()
++
++    def test_an_index_expression_is_not_a_call(self) -> None:
++        """``xs[i]`` and ``m[k].f`` call nothing, so nothing is typed from them."""
++        body = "func f() {\n\tx := xs[i]\n\ty := m[k].f\n}"
++        assert scan_call_assignments(body, "go") == ()
++
+     def test_other_languages_scan_nothing(self) -> None:
+         assert scan_call_assignments("x := f()\n", "java") == ()
+ 
+-- 
+2.43.0
+

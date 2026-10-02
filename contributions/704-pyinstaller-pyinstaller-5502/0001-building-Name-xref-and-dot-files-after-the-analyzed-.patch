@@ -1,0 +1,183 @@
+From 4a501a344d5baab0673aeaf42e3530e0f4815d5a Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:25:32 +0000
+Subject: [PATCH] building: Name xref and dot files after the analyzed script.
+
+The import-graph cross-reference (xref-*.html) and the GraphViz graph
+(graph-*.dot) were named after the spec file. A spec file with several
+Analysis instances (e.g., a multipackage bundle using MERGE) therefore
+wrote all of them to the same files, and only the graph of the last
+Analysis was kept.
+
+Name the files after the (first) script of the respective Analysis
+instead, as proposed in #5502. For the common case of a spec file
+generated from a script, the file names do not change. The now unused
+'xref-file' and 'dot-file' CONF entries are removed.
+
+Fixes #5502.
+---
+ PyInstaller/building/build_main.py  | 16 ++++++----
+ doc/when-things-go-wrong.rst        |  7 +++--
+ news/5502.feature.rst               |  5 ++++
+ tests/functional/test_regression.py | 45 ++++++++++++++++++++++++++---
+ 4 files changed, 61 insertions(+), 12 deletions(-)
+ create mode 100644 news/5502.feature.rst
+
+diff --git a/PyInstaller/building/build_main.py b/PyInstaller/building/build_main.py
+index bceb964..f725f45 100644
+--- a/PyInstaller/building/build_main.py
++++ b/PyInstaller/building/build_main.py
+@@ -1092,18 +1092,24 @@ def dependency_description(name, dep_info):
+     def _write_graph_debug(self):
+         """
+         Write a xref (in html) and with `--log-level DEBUG` a dot-drawing of the graph.
++
++        The files are named after the (first) script of this Analysis rather than after the spec file, so that spec
++        files with multiple Analysis instances (e.g., multipackage bundles using MERGE) do not overwrite them.
+         """
+         from PyInstaller.config import CONF
+-        with open(CONF['xref-file'], 'w', encoding='utf-8') as fh:
++        script_name = os.path.splitext(os.path.basename(self.inputs[0]))[0]
++        xref_file = os.path.join(CONF['workpath'], f'xref-{script_name}.html')
++        dot_file = os.path.join(CONF['workpath'], f'graph-{script_name}.dot')
++        with open(xref_file, 'w', encoding='utf-8') as fh:
+             self.graph.create_xref(fh)
+-            logger.info("Graph cross-reference written to %s", CONF['xref-file'])
++            logger.info("Graph cross-reference written to %s", xref_file)
+         if logger.getEffectiveLevel() > logging.DEBUG:
+             return
+         # The `DOT language's <https://www.graphviz.org/doc/info/lang.html>`_ default character encoding (see the end
+         # of the linked page) is UTF-8.
+-        with open(CONF['dot-file'], 'w', encoding='utf-8') as fh:
++        with open(dot_file, 'w', encoding='utf-8') as fh:
+             self.graph.graphreport(fh)
+-            logger.info("Graph drawing written to %s", CONF['dot-file'])
++            logger.info("Graph drawing written to %s", dot_file)
+ 
+     def exclude_system_libraries(self, list_of_exceptions=None):
+         """
+@@ -1151,8 +1157,6 @@ def build(spec, distpath, workpath, clean_build):
+     CONF['workpath'] = workpath
+ 
+     CONF['warnfile'] = os.path.join(workpath, 'warn-%s.txt' % CONF['specnm'])
+-    CONF['dot-file'] = os.path.join(workpath, 'graph-%s.dot' % CONF['specnm'])
+-    CONF['xref-file'] = os.path.join(workpath, 'xref-%s.html' % CONF['specnm'])
+ 
+     CONF['code_cache'] = dict()
+ 
+diff --git a/doc/when-things-go-wrong.rst b/doc/when-things-go-wrong.rst
+index 856274c..7407f34 100644
+--- a/doc/when-things-go-wrong.rst
++++ b/doc/when-things-go-wrong.rst
+@@ -79,10 +79,13 @@ Build-Time Dependency Graph
+ 
+ On each run PyInstaller writes a cross-referencing file about dependencies
+ into the build folder:
+-:file:`build/{name}/xref-{name}.html` in the
++:file:`build/{name}/xref-{script}.html` in the
+ ``work-path=`` directory is an HTML file that lists the full
+ contents of the import graph, showing which modules are imported
+ by which ones.
++Here ``{name}`` is the name of the spec file and ``{script}`` is the name of
++the (first) script passed to the ``Analysis``,
++so a spec file with several ``Analysis`` instances gets one file per script.
+ You can open it in any web browser.
+ Find a module name, then keep clicking the "imported by" links
+ until you find the top-level import that causes that module to be included.
+@@ -90,7 +93,7 @@ until you find the top-level import that causes that module to be included.
+ If you specify :option:`--log-level=DEBUG <--log-level>` to the ``pyinstaller`` command,
+ PyInstaller additionally generates a GraphViz_ input file representing the
+ dependency graph.
+-The file is :file:`build/{name}/graph-{name}.dot` in the
++The file is :file:`build/{name}/graph-{script}.dot` in the
+ ``work-path=`` directory.
+ You can process it with any GraphViz_ command, e.g. :program:`dot`,
+ to produce
+diff --git a/news/5502.feature.rst b/news/5502.feature.rst
+new file mode 100644
+index 0000000..38b01a9
+--- /dev/null
++++ b/news/5502.feature.rst
+@@ -0,0 +1,5 @@
++Name the import graph cross-reference file (``xref-*.html``) and the
++GraphViz dependency graph file (``graph-*.dot``) in the build directory
++after the analyzed script instead of after the spec file, so that spec files
++with multiple ``Analysis`` instances (e.g., multipackage bundles using
++``MERGE``) no longer overwrite these files.
+diff --git a/tests/functional/test_regression.py b/tests/functional/test_regression.py
+index 5bd40b4..b215d7c 100644
+--- a/tests/functional/test_regression.py
++++ b/tests/functional/test_regression.py
+@@ -9,6 +9,7 @@
+ # SPDX-License-Identifier: (GPL-2.0-or-later WITH Bootloader-exception)
+ #-----------------------------------------------------------------------------
+ 
++import logging
+ import pathlib
+ import importlib.machinery
+ 
+@@ -29,8 +30,6 @@ def test_issue_2492(monkeypatch, tmp_path):
+             'workpath': str(tmp_path),
+             'spec': str(tmp_path),
+             'warnfile': str(tmp_path / 'warn.txt'),
+-            'dot-file': str(tmp_path / 'imports.dot'),
+-            'xref-file': str(tmp_path / 'imports.xref'),
+             'hiddenimports': [],
+             'specnm': 'issue_2492_script',
+             'code_cache': dict(),
+@@ -84,8 +83,6 @@ def get_macos_sdk_version(*args, **kwargs):
+             'workpath': str(tmp_path),
+             'spec': str(tmp_path),
+             'warnfile': str(tmp_path / 'warn.txt'),
+-            'dot-file': str(tmp_path / 'imports.dot'),
+-            'xref-file': str(tmp_path / 'imports.xref'),
+             'hiddenimports': [],
+             'specnm': 'issue_5131_script',
+             'code_cache': dict(),
+@@ -147,3 +144,43 @@ def test_5797(pyi_builder):
+             assert exception_name == 'PyInstallerImportError', f"Unexpected exception type: {exception_name}"
+         """
+     )
++
++
++def test_issue_5502(monkeypatch, tmp_path, caplog):
++    """
++    With multiple Analysis instances in one spec file (e.g., multipackage bundles using MERGE), each Analysis should
++    write its own xref and dot file, named after its script, instead of all of them overwriting the same
++    `xref-<specname>.html` and `graph-<specname>.dot`.
++    """
++    workpath = tmp_path / 'build'
++    workpath.mkdir()
++
++    # Set up fake CONF for Analysis
++    monkeypatch.setattr(
++        'PyInstaller.config.CONF', {
++            'workpath': str(workpath),
++            'spec': str(tmp_path),
++            'warnfile': str(workpath / 'warn.txt'),
++            'hiddenimports': [],
++            'specnm': 'issue_5502',
++            'code_cache': dict(),
++        }
++    )
++    # Speedup: avoid analyzing base_library.zip
++    monkeypatch.setattr(analysis, 'PY3_BASE_MODULES', [])
++    # The dot file is written only with DEBUG log level.
++    caplog.set_level(logging.DEBUG, logger='PyInstaller.building.build_main')
++
++    excludes = ['encodings', 'pydoc', 'xml', 'distutils']
++    for name, module in (('script_a', 'json'), ('script_b', 'csv')):
++        (tmp_path / f'{name}.py').write_text(f"import {module}", encoding='utf-8')
++        Analysis([str(tmp_path / f'{name}.py')], excludes=excludes)
++
++    for name, module in (('script_a', 'json'), ('script_b', 'csv')):
++        xref_file = workpath / f'xref-{name}.html'
++        dot_file = workpath / f'graph-{name}.dot'
++        assert xref_file.is_file()
++        assert dot_file.is_file()
++        assert module in xref_file.read_text(encoding='utf-8')
++    assert not (workpath / 'xref-issue_5502.html').exists()
++    assert not (workpath / 'graph-issue_5502.dot').exists()
+-- 
+2.43.0
+

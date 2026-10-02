@@ -1,0 +1,128 @@
+From 32f159fe74efc6512378f2b2eec81f9e19a2f8d4 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:34:07 +0000
+Subject: [PATCH 1/2] test(ensure): cover start-case words with periods and
+ numbers
+
+Add failing cases for subjects such as "Add Module 1.0.0" and "Add Core.js",
+which are start case but are rejected today because start-case splits words
+on periods and digits. Also pin down the cases that must keep failing.
+
+Refs #3294
+---
+ @commitlint/ensure/src/case.test.ts        | 65 ++++++++++++++++++++++
+ @commitlint/rules/src/subject-case.test.ts |  8 +++
+ 2 files changed, 73 insertions(+)
+
+diff --git a/@commitlint/ensure/src/case.test.ts b/@commitlint/ensure/src/case.test.ts
+index 33f1031..3da096e 100644
+--- a/@commitlint/ensure/src/case.test.ts
++++ b/@commitlint/ensure/src/case.test.ts
+@@ -232,6 +232,71 @@ test("false for foo_bar`Any_CASE_iN_back-quotes`foo_bar on start-case", () => {
+ 	expect(actual).toBe(false);
+ });
+ 
++test("true for Add Module 1.0.0 on start-case", () => {
++	const actual = ensure("Add Module 1.0.0", "start-case");
++	expect(actual).toBe(true);
++});
++
++test("true for Add Core.js on start-case", () => {
++	const actual = ensure("Add Core.js", "start-case");
++	expect(actual).toBe(true);
++});
++
++test("true for Support Node.js 22 And Es2015 on start-case", () => {
++	const actual = ensure("Support Node.js 22 And Es2015", "start-case");
++	expect(actual).toBe(true);
++});
++
++test("true for Typo on start-case", () => {
++	const actual = ensure("Typo", "start-case");
++	expect(actual).toBe(true);
++});
++
++test("true for Release on start-case", () => {
++	const actual = ensure("Release", "start-case");
++	expect(actual).toBe(true);
++});
++
++test("false for Add module 1.0.0 on start-case", () => {
++	const actual = ensure("Add module 1.0.0", "start-case");
++	expect(actual).toBe(false);
++});
++
++test("false for Add core.js on start-case", () => {
++	const actual = ensure("Add core.js", "start-case");
++	expect(actual).toBe(false);
++});
++
++test("false for Add Module v1.0.0 on start-case", () => {
++	const actual = ensure("Add Module v1.0.0", "start-case");
++	expect(actual).toBe(false);
++});
++
++test("false for Add FooBar.js on start-case", () => {
++	const actual = ensure("Add FooBar.js", "start-case");
++	expect(actual).toBe(false);
++});
++
++test("false for Add Foo_bar 1.0.0 on start-case", () => {
++	const actual = ensure("Add Foo_bar 1.0.0", "start-case");
++	expect(actual).toBe(false);
++});
++
++test("false for Add Foo-bar 1.0.0 on start-case", () => {
++	const actual = ensure("Add Foo-bar 1.0.0", "start-case");
++	expect(actual).toBe(false);
++});
++
++test("false for Add Foo_bar.js on start-case", () => {
++	const actual = ensure("Add Foo_bar.js", "start-case");
++	expect(actual).toBe(false);
++});
++
++test("false for Add  Module 1.0.0 (double space) on start-case", () => {
++	const actual = ensure("Add  Module 1.0.0", "start-case");
++	expect(actual).toBe(false);
++});
++
+ test("true for lowercase `Any_CASE_iN_back-quotes` `Any_CASE_iN_back-quotes` lowercase on lowercase", () => {
+ 	const actual = ensure(
+ 		"lowercase `Any_CASE_iN_back-quotes` `Any_CASE_iN_back-quotes` lowercase",
+diff --git a/@commitlint/rules/src/subject-case.test.ts b/@commitlint/rules/src/subject-case.test.ts
+index 43e4922..66a8c79 100644
+--- a/@commitlint/rules/src/subject-case.test.ts
++++ b/@commitlint/rules/src/subject-case.test.ts
+@@ -21,6 +21,7 @@ const messages = {
+ 	snakecase_unicode: "test: сэ_дэв", // Mongolian for `sub_ject`
+ 	startcase: "test: Sub Ject",
+ 	startcase_unicode: "test: Äm Ne", // Swedish for `Sub Ject`
++	startcase_version: "feat: Add Module 1.0.0",
+ 	sentencecase: "test: Sub ject",
+ 	sentencecase_unicode: "test: Мав зуъ", // Tajik for `Sub ject`
+ };
+@@ -44,6 +45,7 @@ const parsed = {
+ 	snakecase_unicode: parse(messages.snakecase_unicode),
+ 	startcase: parse(messages.startcase),
+ 	startcase_unicode: parse(messages.startcase_unicode),
++	startcase_version: parse(messages.startcase_version),
+ 	sentencecase: parse(messages.sentencecase),
+ 	sentencecase_unicode: parse(messages.sentencecase_unicode),
+ };
+@@ -324,6 +326,12 @@ test('with startcase subject should succeed for "always startcase"', async () =>
+ 	expect(actual).toEqual(expected);
+ });
+ 
++test('with startcase subject containing a version should succeed for "always startcase"', async () => {
++	const [actual] = subjectCase(await parsed.startcase_version, "always", "start-case");
++	const expected = true;
++	expect(actual).toEqual(expected);
++});
++
+ test('with startcase unicode subject should fail for "always pascalcase"', async () => {
+ 	const [actual] = subjectCase(await parsed.startcase_unicode, "always", "pascal-case");
+ 	const expected = false;
+-- 
+2.43.0
+

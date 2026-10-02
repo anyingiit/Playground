@@ -1,0 +1,961 @@
+From 839faba5089bc88f367bfec1774fe1b7011a6626 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:34:33 +0000
+Subject: [PATCH] feat(registry): add timeline component
+
+Add a Timeline PDF component for both the takumi and forme bases: a
+vertical accent spine with dot markers, a fixed-width muted date column,
+a semibold title and optional muted body.
+
+Each item is rendered as its own unbreakable row (wrap={false}) with its
+own spine segment and dot, so the spine and dots stay aligned across
+items of different heights and long timelines split across pages
+without orphaned markers.
+
+Includes docs pages with live previews, examples, registry.json entries
+and the regenerated public registry output.
+
+Closes #75
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ .../content/docs/components/forme/meta.json   |   1 +
+ .../docs/components/forme/timeline.mdx        | 124 +++++++++++++
+ .../content/docs/components/takumi/meta.json  |   1 +
+ .../docs/components/takumi/timeline.mdx       | 136 ++++++++++++++
+ apps/web/examples/__index__.ts                |   4 +
+ apps/web/examples/forme/timeline.tsx          |  36 ++++
+ apps/web/examples/takumi/timeline.tsx         |  38 ++++
+ apps/web/public/r/forme/timeline.json         |  22 +++
+ apps/web/public/r/registry.json               |  30 ++++
+ apps/web/public/r/takumi/timeline.json        |  22 +++
+ apps/web/registry.json                        |  30 ++++
+ .../forme/components/timeline/timeline.tsx    | 166 ++++++++++++++++++
+ .../takumi/components/timeline/timeline.tsx   | 166 ++++++++++++++++++
+ 13 files changed, 776 insertions(+)
+ create mode 100644 apps/web/content/docs/components/forme/timeline.mdx
+ create mode 100644 apps/web/content/docs/components/takumi/timeline.mdx
+ create mode 100644 apps/web/examples/forme/timeline.tsx
+ create mode 100644 apps/web/examples/takumi/timeline.tsx
+ create mode 100644 apps/web/public/r/forme/timeline.json
+ create mode 100644 apps/web/public/r/takumi/timeline.json
+ create mode 100644 apps/web/registry/bases/forme/components/timeline/timeline.tsx
+ create mode 100644 apps/web/registry/bases/takumi/components/timeline/timeline.tsx
+
+diff --git a/apps/web/content/docs/components/forme/meta.json b/apps/web/content/docs/components/forme/meta.json
+index 2c049fa..839616a 100644
+--- a/apps/web/content/docs/components/forme/meta.json
++++ b/apps/web/content/docs/components/forme/meta.json
+@@ -24,6 +24,7 @@
+     "stack",
+     "table",
+     "text",
++    "timeline",
+     "watermark"
+   ],
+   "title": "Forme"
+diff --git a/apps/web/content/docs/components/forme/timeline.mdx b/apps/web/content/docs/components/forme/timeline.mdx
+new file mode 100644
+index 0000000..1585ddb
+--- /dev/null
++++ b/apps/web/content/docs/components/forme/timeline.mdx
+@@ -0,0 +1,124 @@
++---
++title: "Timeline"
++description: "Vertical timeline with an accent spine, dot markers, dates, titles and optional body text."
++---
++
++<ComponentPreview base="forme" name="timeline" hideCode />
++
++## Installation
++
++<CodeTabs>
++
++<TabsList>
++  <TabsTrigger value="cli">Command</TabsTrigger>
++  <TabsTrigger value="manual">Manual</TabsTrigger>
++</TabsList>
++
++<TabsContent value="cli">
++
++```bash
++npx shadcn@latest add @pdfcn/forme/timeline
++```
++
++</TabsContent>
++
++<TabsContent value="manual">
++
++<Steps>
++
++<Step>Install the following dependencies:</Step>
++
++```bash
++npm install @formepdf/react @formepdf/core
++```
++
++<Step>Copy and paste the following code into your project.</Step>
++
++<ComponentSource
++  src="registry/bases/forme/components/timeline/timeline.tsx"
++  base="forme"
++  title="components/pdf/timeline/timeline.tsx"
++/>
++
++<ComponentSource
++  src="registry/bases/forme/components/theme-provider.tsx"
++  base="forme"
++  title="components/pdf/theme-provider.tsx"
++/>
++
++<ComponentSource
++  src="registry/bases/forme/lib/resolve-color.ts"
++  base="forme"
++  title="lib/resolve-color.ts"
++/>
++
++<ComponentSource
++  src="registry/themes/professional.ts"
++  base="forme"
++  title="lib/pdf-themes/professional.ts"
++/>
++
++<ComponentSource
++  src="registry/themes/primitives.ts"
++  base="forme"
++  title="lib/pdf-themes/primitives.ts"
++/>
++
++<ComponentSource
++  src="registry/types/pdf-themes.ts"
++  base="forme"
++  title="types/pdf-themes.ts"
++/>
++
++<ComponentSource
++  src="registry/types/pdf-components.ts"
++  base="forme"
++  title="types/pdf-components.ts"
++/>
++
++<Step>Update the import paths to match your project setup.</Step>
++
++</Steps>
++
++</TabsContent>
++
++</CodeTabs>
++
++## Usage
++
++```tsx
++import { Timeline } from "@/components/pdf/timeline";
++```
++
++```tsx
++<Timeline
++  items={[
++    {
++      date: "2021 – 2024",
++      title: "Senior Engineer",
++      body: "Led the billing platform team.",
++    },
++    { date: "2018 – 2021", title: "Software Engineer" },
++  ]}
++/>
++```
++
++Each item is rendered as its own unbreakable row with its own spine segment and dot, so long timelines (resume experience, event schedules, proposal phases) split across pages without orphaned markers.
++
++## API Reference
++
++### Timeline
++
++| Prop          | Type             | Default   |
++| ------------- | ---------------- | --------- |
++| `items`       | `TimelineItem[]` | -         |
++| `accentColor` | `string`         | 'primary' |
++| `dateWidth`   | `number`         | 72        |
++
++### TimelineItem
++
++| Prop    | Type     | Default |
++| ------- | -------- | ------- |
++| `date`  | `string` | -       |
++| `title` | `string` | -       |
++| `body`  | `string` | -       |
+diff --git a/apps/web/content/docs/components/takumi/meta.json b/apps/web/content/docs/components/takumi/meta.json
+index 6bb138f..4dcb4df 100644
+--- a/apps/web/content/docs/components/takumi/meta.json
++++ b/apps/web/content/docs/components/takumi/meta.json
+@@ -24,6 +24,7 @@
+     "stack",
+     "table",
+     "text",
++    "timeline",
+     "watermark"
+   ],
+   "title": "Takumi"
+diff --git a/apps/web/content/docs/components/takumi/timeline.mdx b/apps/web/content/docs/components/takumi/timeline.mdx
+new file mode 100644
+index 0000000..63692ac
+--- /dev/null
++++ b/apps/web/content/docs/components/takumi/timeline.mdx
+@@ -0,0 +1,136 @@
++---
++title: "Timeline"
++description: "Vertical timeline with an accent spine, dot markers, dates, titles and optional body text."
++---
++
++<ComponentPreview base="takumi" name="timeline" hideCode />
++
++## Installation
++
++<CodeTabs>
++
++<TabsList>
++  <TabsTrigger value="cli">Command</TabsTrigger>
++  <TabsTrigger value="manual">Manual</TabsTrigger>
++</TabsList>
++
++<TabsContent value="cli">
++
++```bash
++npx shadcn@latest add @pdfcn/takumi/timeline
++```
++
++</TabsContent>
++
++<TabsContent value="manual">
++
++<Steps>
++
++<Step>Install the following dependencies:</Step>
++
++```bash
++npm install takumi-pdf @takumi-rs/helpers
++```
++
++<Step>Copy and paste the following code into your project.</Step>
++
++<ComponentSource
++  src="registry/bases/takumi/components/timeline/timeline.tsx"
++  base="takumi"
++  title="components/pdf/timeline/timeline.tsx"
++/>
++
++<ComponentSource
++  src="registry/bases/takumi/components/theme-provider.tsx"
++  base="takumi"
++  title="components/pdf/theme-provider.tsx"
++/>
++
++<ComponentSource
++  src="registry/bases/takumi/lib/resolve-color.ts"
++  base="takumi"
++  title="lib/resolve-color.ts"
++/>
++
++<ComponentSource
++  src="registry/bases/takumi/lib/pdf-primitives.tsx"
++  base="takumi"
++  title="lib/pdf-primitives.tsx"
++/>
++
++<ComponentSource
++  src="registry/bases/takumi/lib/pdf-svg.tsx"
++  base="takumi"
++  title="lib/pdf-svg.tsx"
++/>
++
++<ComponentSource
++  src="registry/themes/professional.ts"
++  base="takumi"
++  title="lib/pdf-themes/professional.ts"
++/>
++
++<ComponentSource
++  src="registry/themes/primitives.ts"
++  base="takumi"
++  title="lib/pdf-themes/primitives.ts"
++/>
++
++<ComponentSource
++  src="registry/types/pdf-themes.ts"
++  base="takumi"
++  title="types/pdf-themes.ts"
++/>
++
++<ComponentSource
++  src="registry/types/pdf-components.ts"
++  base="takumi"
++  title="types/pdf-components.ts"
++/>
++
++<Step>Update the import paths to match your project setup.</Step>
++
++</Steps>
++
++</TabsContent>
++
++</CodeTabs>
++
++## Usage
++
++```tsx
++import { Timeline } from "@/components/pdf/timeline";
++```
++
++```tsx
++<Timeline
++  items={[
++    {
++      date: "2021 – 2024",
++      title: "Senior Engineer",
++      body: "Led the billing platform team.",
++    },
++    { date: "2018 – 2021", title: "Software Engineer" },
++  ]}
++/>
++```
++
++Each item is rendered as its own unbreakable row with its own spine segment and dot, so long timelines (resume experience, event schedules, proposal phases) split across pages without orphaned markers.
++
++## API Reference
++
++### Timeline
++
++| Prop          | Type             | Default     |
++| ------------- | ---------------- | ----------- |
++| `items`       | `TimelineItem[]` | -           |
++| `accentColor` | `string`         | `'primary'` |
++| `dateWidth`   | `number`         | `72`        |
++
++### TimelineItem
++
++| Prop    | Type     | Default |
++| ------- | -------- | ------- |
++| `date`  | `string` | -       |
++| `title` | `string` | -       |
++| `body`  | `string` | -       |
+diff --git a/apps/web/examples/__index__.ts b/apps/web/examples/__index__.ts
+index ffe68ba..86c5e62 100644
+--- a/apps/web/examples/__index__.ts
++++ b/apps/web/examples/__index__.ts
+@@ -42,6 +42,7 @@ import forme_signature from "@/examples/forme/signature";
+ import forme_stack from "@/examples/forme/stack";
+ import forme_table from "@/examples/forme/table";
+ import forme_text from "@/examples/forme/text";
++import forme_timeline from "@/examples/forme/timeline";
+ import forme_watermark from "@/examples/forme/watermark";
+ import forme_work_order from "@/examples/forme/work-order";
+ import takumi_alert from "@/examples/takumi/alert";
+@@ -86,6 +87,7 @@ import takumi_signature from "@/examples/takumi/signature";
+ import takumi_stack from "@/examples/takumi/stack";
+ import takumi_table from "@/examples/takumi/table";
+ import takumi_text from "@/examples/takumi/text";
++import takumi_timeline from "@/examples/takumi/timeline";
+ import takumi_watermark from "@/examples/takumi/watermark";
+ import takumi_work_order from "@/examples/takumi/work-order";
+ import type { BaseName } from "@/registry/bases";
+@@ -136,6 +138,7 @@ export const demos: Record<BaseName, DemoMap> = {
+     stack: forme_stack,
+     table: forme_table,
+     text: forme_text,
++    timeline: forme_timeline,
+     watermark: forme_watermark,
+     "work-order": forme_work_order,
+   },
+@@ -182,6 +185,7 @@ export const demos: Record<BaseName, DemoMap> = {
+     stack: takumi_stack,
+     table: takumi_table,
+     text: takumi_text,
++    timeline: takumi_timeline,
+     watermark: takumi_watermark,
+     "work-order": takumi_work_order,
+   },
+diff --git a/apps/web/examples/forme/timeline.tsx b/apps/web/examples/forme/timeline.tsx
+new file mode 100644
+index 0000000..eca299b
+--- /dev/null
++++ b/apps/web/examples/forme/timeline.tsx
+@@ -0,0 +1,36 @@
++import { Document, Page } from "@formepdf/react";
++
++import { Timeline } from "@/registry/bases/forme/components/timeline/timeline";
++
++const DemoBody = () => (
++  <Timeline
++    items={[
++      {
++        body: "Stakeholder interviews, current-state audit and success metrics.",
++        date: "Jan 2026",
++        title: "Discovery",
++      },
++      {
++        body: "Information architecture, wireframes and a clickable prototype reviewed with the core team.",
++        date: "Feb 2026",
++        title: "Design",
++      },
++      {
++        body: "Iterative delivery in two-week sprints with weekly demos.",
++        date: "Mar – May 2026",
++        title: "Build",
++      },
++      { date: "Jun 2026", title: "Launch" },
++    ]}
++  />
++);
++
++const Demo = () => (
++  <Document>
++    <Page size="A4" margin={40}>
++      <DemoBody />
++    </Page>
++  </Document>
++);
++
++export default Demo;
+diff --git a/apps/web/examples/takumi/timeline.tsx b/apps/web/examples/takumi/timeline.tsx
+new file mode 100644
+index 0000000..e677134
+--- /dev/null
++++ b/apps/web/examples/takumi/timeline.tsx
+@@ -0,0 +1,38 @@
++import { PdfcnThemeProvider } from "@/registry/bases/takumi/components/theme-provider";
++import { Timeline } from "@/registry/bases/takumi/components/timeline/timeline";
++import { Document, Page } from "@/registry/bases/takumi/lib/pdf-primitives";
++
++const DemoBody = () => (
++  <Timeline
++    items={[
++      {
++        body: "Stakeholder interviews, current-state audit and success metrics.",
++        date: "Jan 2026",
++        title: "Discovery",
++      },
++      {
++        body: "Information architecture, wireframes and a clickable prototype reviewed with the core team.",
++        date: "Feb 2026",
++        title: "Design",
++      },
++      {
++        body: "Iterative delivery in two-week sprints with weekly demos.",
++        date: "Mar – May 2026",
++        title: "Build",
++      },
++      { date: "Jun 2026", title: "Launch" },
++    ]}
++  />
++);
++
++const Demo = () => (
++  <Document>
++    <Page size="A4">
++      <PdfcnThemeProvider>
++        <DemoBody />
++      </PdfcnThemeProvider>
++    </Page>
++  </Document>
++);
++
++export default Demo;
+diff --git a/apps/web/public/r/forme/timeline.json b/apps/web/public/r/forme/timeline.json
+new file mode 100644
+index 0000000..959f82e
+--- /dev/null
++++ b/apps/web/public/r/forme/timeline.json
+@@ -0,0 +1,22 @@
++{
++  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
++  "name": "forme/timeline",
++  "title": "Timeline",
++  "description": "Timeline PDF component (forme)",
++  "dependencies": [
++    "@formepdf/react",
++    "@formepdf/core"
++  ],
++  "registryDependencies": [
++    "@pdfcn/forme/utils"
++  ],
++  "files": [
++    {
++      "path": "registry/bases/forme/components/timeline/timeline.tsx",
++      "content": "import {\n  usePdfcnTheme,\n  useSafeMemo,\n} from \"@/components/pdf/theme-provider\";\nimport {\n  StyleSheet,\n  Text as PDFText,\n  View,\n} from \"@/lib/pdf-primitives\";\nimport type { Style } from \"@/lib/pdf-primitives\";\nimport { resolveColor } from \"@/lib/resolve-color\";\nimport type { PDFComponentProps } from \"@/types/pdf-components\";\nimport type { PdfcnTheme } from \"@/types/pdf-themes\";\n\n/**\n * A single timeline entry.\n * Props - `date` | `title` | `body`\n * @see {@link TimelineItem}\n */\nexport interface TimelineItem {\n  date: string;\n  title: string;\n  body?: string;\n}\n\n/**\n * Vertical timeline with an accent spine and dot markers.\n * Each item is rendered as its own unbreakable row with its own spine segment,\n * so the timeline can split across pages without orphaned markers.\n * Props - `items` | `accentColor` | `dateWidth` | `style`\n * @see {@link TimelineProps}\n */\nexport interface TimelineProps extends Omit<PDFComponentProps, \"children\"> {\n  items: TimelineItem[];\n  /**\n   * Theme color token or raw CSS color for the spine and dots.\n   * @default 'primary'\n   */\n  accentColor?: string;\n  /**\n   * Fixed width of the date column in points.\n   * @default 72\n   */\n  dateWidth?: number;\n}\n\nconst DOT_SIZE = 8;\nconst SPINE_WIDTH = 1.5;\n\nconst createTimelineStyles = (t: PdfcnTheme) => {\n  const { spacing, fontWeights, borderRadius, typography } = t.primitives;\n  const c = t.colors;\n  const { body } = t.typography;\n  const titleLineHeight = body.fontSize * body.lineHeight;\n  const dateLineHeight = typography.xs * body.lineHeight;\n  // Center the dot (and the date) on the first line of the title.\n  const dotOffset = (titleLineHeight - DOT_SIZE) / 2;\n  const dateOffset = (titleLineHeight - dateLineHeight) / 2;\n\n  return StyleSheet.create({\n    body: {\n      color: c.mutedForeground,\n      fontFamily: body.fontFamily,\n      fontSize: typography.xs,\n      fontWeight: fontWeights.regular,\n      lineHeight: body.lineHeight,\n      marginTop: spacing[0.5],\n    },\n    container: { flexDirection: \"column\", width: \"100%\" },\n    content: {\n      flex: 1,\n      flexDirection: \"column\",\n      paddingBottom: t.spacing.componentGap + spacing[2],\n    },\n    contentLast: { paddingBottom: 0 },\n    date: {\n      color: c.mutedForeground,\n      fontFamily: body.fontFamily,\n      fontSize: typography.xs,\n      fontWeight: fontWeights.regular,\n      lineHeight: body.lineHeight,\n      marginTop: dateOffset,\n    },\n    dateColumn: { flexShrink: 0, paddingRight: spacing[3] },\n    dot: {\n      borderRadius: borderRadius.full,\n      height: DOT_SIZE,\n      width: DOT_SIZE,\n    },\n    rail: {\n      alignItems: \"center\",\n      flexDirection: \"column\",\n      marginRight: spacing[3],\n      width: DOT_SIZE,\n    },\n    row: {\n      alignItems: \"stretch\",\n      flexDirection: \"row\",\n    },\n    spineAfter: { flexGrow: 1, width: SPINE_WIDTH },\n    spineBefore: { height: dotOffset, width: SPINE_WIDTH },\n    title: {\n      color: c.foreground,\n      fontFamily: body.fontFamily,\n      fontSize: body.fontSize,\n      fontWeight: fontWeights.semibold,\n      lineHeight: body.lineHeight,\n    },\n  });\n};\n\nexport const Timeline = ({\n  items,\n  accentColor = \"primary\",\n  dateWidth = 72,\n  style,\n}: TimelineProps) => {\n  const theme = usePdfcnTheme();\n  const styles = useSafeMemo(() => createTimelineStyles(theme), [theme]);\n  const accent = resolveColor(accentColor, theme.colors);\n  const containerStyles: Style[] = [styles.container];\n  if (style) {\n    containerStyles.push(...[style].flat());\n  }\n\n  return (\n    <View style={containerStyles}>\n      {items.map((item, index) => {\n        const isFirst = index === 0;\n        const isLast = index === items.length - 1;\n        return (\n          <View\n            key={`${item.date}-${item.title}-${index}`}\n            wrap={false}\n            style={styles.row}\n          >\n            <View style={[styles.dateColumn, { width: dateWidth }]}>\n              <PDFText style={styles.date}>{item.date}</PDFText>\n            </View>\n            <View style={styles.rail}>\n              <View\n                style={\n                  isFirst\n                    ? styles.spineBefore\n                    : [styles.spineBefore, { backgroundColor: accent }]\n                }\n              />\n              <View style={[styles.dot, { backgroundColor: accent }]} />\n              {isLast ? null : (\n                <View\n                  style={[styles.spineAfter, { backgroundColor: accent }]}\n                />\n              )}\n            </View>\n            <View style={[styles.content, isLast ? styles.contentLast : {}]}>\n              <PDFText style={styles.title}>{item.title}</PDFText>\n              {item.body ? (\n                <PDFText style={styles.body}>{item.body}</PDFText>\n              ) : null}\n            </View>\n          </View>\n        );\n      })}\n    </View>\n  );\n};\n",
++      "type": "registry:component",
++      "target": "components/pdf/timeline/timeline.tsx"
++    }
++  ],
++  "type": "registry:ui"
++}
+diff --git a/apps/web/public/r/registry.json b/apps/web/public/r/registry.json
+index 5d00c71..daf5eef 100644
+--- a/apps/web/public/r/registry.json
++++ b/apps/web/public/r/registry.json
+@@ -447,6 +447,21 @@
+       "title": "Text",
+       "type": "registry:ui"
+     },
++    {
++      "dependencies": ["takumi-pdf", "@takumi-rs/helpers"],
++      "description": "Timeline PDF component (takumi)",
++      "files": [
++        {
++          "path": "registry/bases/takumi/components/timeline/timeline.tsx",
++          "type": "registry:component",
++          "target": "components/pdf/timeline/timeline.tsx"
++        }
++      ],
++      "name": "takumi/timeline",
++      "registryDependencies": ["@pdfcn/takumi/utils"],
++      "title": "Timeline",
++      "type": "registry:ui"
++    },
+     {
+       "dependencies": ["takumi-pdf", "@takumi-rs/helpers"],
+       "description": "Watermark PDF component (takumi)",
+@@ -1756,6 +1771,21 @@
+       "title": "Text",
+       "type": "registry:ui"
+     },
++    {
++      "dependencies": ["@formepdf/react", "@formepdf/core"],
++      "description": "Timeline PDF component (forme)",
++      "files": [
++        {
++          "path": "registry/bases/forme/components/timeline/timeline.tsx",
++          "type": "registry:component",
++          "target": "components/pdf/timeline/timeline.tsx"
++        }
++      ],
++      "name": "forme/timeline",
++      "registryDependencies": ["@pdfcn/forme/utils"],
++      "title": "Timeline",
++      "type": "registry:ui"
++    },
+     {
+       "dependencies": ["@formepdf/react", "@formepdf/core"],
+       "description": "Watermark PDF component (forme)",
+diff --git a/apps/web/public/r/takumi/timeline.json b/apps/web/public/r/takumi/timeline.json
+new file mode 100644
+index 0000000..fcff051
+--- /dev/null
++++ b/apps/web/public/r/takumi/timeline.json
+@@ -0,0 +1,22 @@
++{
++  "$schema": "https://ui.shadcn.com/schema/registry-item.json",
++  "name": "takumi/timeline",
++  "title": "Timeline",
++  "description": "Timeline PDF component (takumi)",
++  "dependencies": [
++    "takumi-pdf",
++    "@takumi-rs/helpers"
++  ],
++  "registryDependencies": [
++    "@pdfcn/takumi/utils"
++  ],
++  "files": [
++    {
++      "path": "registry/bases/takumi/components/timeline/timeline.tsx",
++      "content": "import {\n  usePdfcnTheme,\n  useSafeMemo,\n} from \"@/components/pdf/theme-provider\";\nimport {\n  StyleSheet,\n  Text as PDFText,\n  View,\n} from \"@/lib/pdf-primitives\";\nimport type { Style } from \"@/lib/pdf-primitives\";\nimport { resolveColor } from \"@/lib/resolve-color\";\nimport type { PDFComponentProps } from \"@/types/pdf-components\";\nimport type { PdfcnTheme } from \"@/types/pdf-themes\";\n\n/**\n * A single timeline entry.\n * Props - `date` | `title` | `body`\n * @see {@link TimelineItem}\n */\nexport interface TimelineItem {\n  date: string;\n  title: string;\n  body?: string;\n}\n\n/**\n * Vertical timeline with an accent spine and dot markers.\n * Each item is rendered as its own unbreakable row with its own spine segment,\n * so the timeline can split across pages without orphaned markers.\n * Props - `items` | `accentColor` | `dateWidth` | `style`\n * @see {@link TimelineProps}\n */\nexport interface TimelineProps extends Omit<PDFComponentProps, \"children\"> {\n  items: TimelineItem[];\n  /**\n   * Theme color token or raw CSS color for the spine and dots.\n   * @default 'primary'\n   */\n  accentColor?: string;\n  /**\n   * Fixed width of the date column in points.\n   * @default 72\n   */\n  dateWidth?: number;\n}\n\nconst DOT_SIZE = 8;\nconst SPINE_WIDTH = 1.5;\n\nconst createTimelineStyles = (t: PdfcnTheme) => {\n  const { spacing, fontWeights, borderRadius, typography } = t.primitives;\n  const c = t.colors;\n  const { body } = t.typography;\n  const titleLineHeight = body.fontSize * body.lineHeight;\n  const dateLineHeight = typography.xs * body.lineHeight;\n  // Center the dot (and the date) on the first line of the title.\n  const dotOffset = (titleLineHeight - DOT_SIZE) / 2;\n  const dateOffset = (titleLineHeight - dateLineHeight) / 2;\n\n  return StyleSheet.create({\n    body: {\n      color: c.mutedForeground,\n      fontFamily: body.fontFamily,\n      fontSize: typography.xs,\n      fontWeight: fontWeights.regular,\n      lineHeight: body.lineHeight,\n      marginTop: spacing[0.5],\n    },\n    container: { flexDirection: \"column\" },\n    content: {\n      flex: 1,\n      flexDirection: \"column\",\n      paddingBottom: t.spacing.componentGap + spacing[2],\n    },\n    contentLast: { paddingBottom: 0 },\n    date: {\n      color: c.mutedForeground,\n      fontFamily: body.fontFamily,\n      fontSize: typography.xs,\n      fontWeight: fontWeights.regular,\n      lineHeight: body.lineHeight,\n      marginTop: dateOffset,\n    },\n    dateColumn: { flexShrink: 0, paddingRight: spacing[3] },\n    dot: {\n      borderRadius: borderRadius.full,\n      height: DOT_SIZE,\n      width: DOT_SIZE,\n    },\n    rail: {\n      alignItems: \"center\",\n      flexDirection: \"column\",\n      marginRight: spacing[3],\n      width: DOT_SIZE,\n    },\n    row: {\n      alignItems: \"stretch\",\n      flexDirection: \"row\",\n    },\n    spineAfter: { flexGrow: 1, width: SPINE_WIDTH },\n    spineBefore: { height: dotOffset, width: SPINE_WIDTH },\n    title: {\n      color: c.foreground,\n      fontFamily: body.fontFamily,\n      fontSize: body.fontSize,\n      fontWeight: fontWeights.semibold,\n      lineHeight: body.lineHeight,\n    },\n  });\n};\n\nexport const Timeline = ({\n  items,\n  accentColor = \"primary\",\n  dateWidth = 72,\n  style,\n}: TimelineProps) => {\n  const theme = usePdfcnTheme();\n  const styles = useSafeMemo(() => createTimelineStyles(theme), [theme]);\n  const accent = resolveColor(accentColor, theme.colors);\n  const containerStyles: Style[] = [styles.container];\n  if (style) {\n    containerStyles.push(...[style].flat());\n  }\n\n  return (\n    <View style={containerStyles}>\n      {items.map((item, index) => {\n        const isFirst = index === 0;\n        const isLast = index === items.length - 1;\n        return (\n          <View\n            key={`${item.date}-${item.title}-${index}`}\n            wrap={false}\n            style={styles.row}\n          >\n            <View style={[styles.dateColumn, { width: dateWidth }]}>\n              <PDFText style={styles.date}>{item.date}</PDFText>\n            </View>\n            <View style={styles.rail}>\n              <View\n                style={\n                  isFirst\n                    ? styles.spineBefore\n                    : [styles.spineBefore, { backgroundColor: accent }]\n                }\n              />\n              <View style={[styles.dot, { backgroundColor: accent }]} />\n              {isLast ? null : (\n                <View\n                  style={[styles.spineAfter, { backgroundColor: accent }]}\n                />\n              )}\n            </View>\n            <View style={[styles.content, isLast ? styles.contentLast : {}]}>\n              <PDFText style={styles.title}>{item.title}</PDFText>\n              {item.body ? (\n                <PDFText style={styles.body}>{item.body}</PDFText>\n              ) : null}\n            </View>\n          </View>\n        );\n      })}\n    </View>\n  );\n};\n",
++      "type": "registry:component",
++      "target": "components/pdf/timeline/timeline.tsx"
++    }
++  ],
++  "type": "registry:ui"
++}
+diff --git a/apps/web/registry.json b/apps/web/registry.json
+index 5d00c71..daf5eef 100644
+--- a/apps/web/registry.json
++++ b/apps/web/registry.json
+@@ -447,6 +447,21 @@
+       "title": "Text",
+       "type": "registry:ui"
+     },
++    {
++      "dependencies": ["takumi-pdf", "@takumi-rs/helpers"],
++      "description": "Timeline PDF component (takumi)",
++      "files": [
++        {
++          "path": "registry/bases/takumi/components/timeline/timeline.tsx",
++          "type": "registry:component",
++          "target": "components/pdf/timeline/timeline.tsx"
++        }
++      ],
++      "name": "takumi/timeline",
++      "registryDependencies": ["@pdfcn/takumi/utils"],
++      "title": "Timeline",
++      "type": "registry:ui"
++    },
+     {
+       "dependencies": ["takumi-pdf", "@takumi-rs/helpers"],
+       "description": "Watermark PDF component (takumi)",
+@@ -1756,6 +1771,21 @@
+       "title": "Text",
+       "type": "registry:ui"
+     },
++    {
++      "dependencies": ["@formepdf/react", "@formepdf/core"],
++      "description": "Timeline PDF component (forme)",
++      "files": [
++        {
++          "path": "registry/bases/forme/components/timeline/timeline.tsx",
++          "type": "registry:component",
++          "target": "components/pdf/timeline/timeline.tsx"
++        }
++      ],
++      "name": "forme/timeline",
++      "registryDependencies": ["@pdfcn/forme/utils"],
++      "title": "Timeline",
++      "type": "registry:ui"
++    },
+     {
+       "dependencies": ["@formepdf/react", "@formepdf/core"],
+       "description": "Watermark PDF component (forme)",
+diff --git a/apps/web/registry/bases/forme/components/timeline/timeline.tsx b/apps/web/registry/bases/forme/components/timeline/timeline.tsx
+new file mode 100644
+index 0000000..7f100b4
+--- /dev/null
++++ b/apps/web/registry/bases/forme/components/timeline/timeline.tsx
+@@ -0,0 +1,166 @@
++import {
++  usePdfcnTheme,
++  useSafeMemo,
++} from "@/registry/bases/forme/components/theme-provider";
++import {
++  StyleSheet,
++  Text as PDFText,
++  View,
++} from "@/registry/bases/forme/lib/pdf-primitives";
++import type { Style } from "@/registry/bases/forme/lib/pdf-primitives";
++import { resolveColor } from "@/registry/bases/forme/lib/resolve-color";
++import type { PDFComponentProps } from "@/registry/types/pdf-components";
++import type { PdfcnTheme } from "@/registry/types/pdf-themes";
++
++/**
++ * A single timeline entry.
++ * Props - `date` | `title` | `body`
++ * @see {@link TimelineItem}
++ */
++export interface TimelineItem {
++  date: string;
++  title: string;
++  body?: string;
++}
++
++/**
++ * Vertical timeline with an accent spine and dot markers.
++ * Each item is rendered as its own unbreakable row with its own spine segment,
++ * so the timeline can split across pages without orphaned markers.
++ * Props - `items` | `accentColor` | `dateWidth` | `style`
++ * @see {@link TimelineProps}
++ */
++export interface TimelineProps extends Omit<PDFComponentProps, "children"> {
++  items: TimelineItem[];
++  /**
++   * Theme color token or raw CSS color for the spine and dots.
++   * @default 'primary'
++   */
++  accentColor?: string;
++  /**
++   * Fixed width of the date column in points.
++   * @default 72
++   */
++  dateWidth?: number;
++}
++
++const DOT_SIZE = 8;
++const SPINE_WIDTH = 1.5;
++
++const createTimelineStyles = (t: PdfcnTheme) => {
++  const { spacing, fontWeights, borderRadius, typography } = t.primitives;
++  const c = t.colors;
++  const { body } = t.typography;
++  const titleLineHeight = body.fontSize * body.lineHeight;
++  const dateLineHeight = typography.xs * body.lineHeight;
++  // Center the dot (and the date) on the first line of the title.
++  const dotOffset = (titleLineHeight - DOT_SIZE) / 2;
++  const dateOffset = (titleLineHeight - dateLineHeight) / 2;
++
++  return StyleSheet.create({
++    body: {
++      color: c.mutedForeground,
++      fontFamily: body.fontFamily,
++      fontSize: typography.xs,
++      fontWeight: fontWeights.regular,
++      lineHeight: body.lineHeight,
++      marginTop: spacing[0.5],
++    },
++    container: { flexDirection: "column", width: "100%" },
++    content: {
++      flex: 1,
++      flexDirection: "column",
++      paddingBottom: t.spacing.componentGap + spacing[2],
++    },
++    contentLast: { paddingBottom: 0 },
++    date: {
++      color: c.mutedForeground,
++      fontFamily: body.fontFamily,
++      fontSize: typography.xs,
++      fontWeight: fontWeights.regular,
++      lineHeight: body.lineHeight,
++      marginTop: dateOffset,
++    },
++    dateColumn: { flexShrink: 0, paddingRight: spacing[3] },
++    dot: {
++      borderRadius: borderRadius.full,
++      height: DOT_SIZE,
++      width: DOT_SIZE,
++    },
++    rail: {
++      alignItems: "center",
++      flexDirection: "column",
++      marginRight: spacing[3],
++      width: DOT_SIZE,
++    },
++    row: {
++      alignItems: "stretch",
++      flexDirection: "row",
++    },
++    spineAfter: { flexGrow: 1, width: SPINE_WIDTH },
++    spineBefore: { height: dotOffset, width: SPINE_WIDTH },
++    title: {
++      color: c.foreground,
++      fontFamily: body.fontFamily,
++      fontSize: body.fontSize,
++      fontWeight: fontWeights.semibold,
++      lineHeight: body.lineHeight,
++    },
++  });
++};
++
++export const Timeline = ({
++  items,
++  accentColor = "primary",
++  dateWidth = 72,
++  style,
++}: TimelineProps) => {
++  const theme = usePdfcnTheme();
++  const styles = useSafeMemo(() => createTimelineStyles(theme), [theme]);
++  const accent = resolveColor(accentColor, theme.colors);
++  const containerStyles: Style[] = [styles.container];
++  if (style) {
++    containerStyles.push(...[style].flat());
++  }
++
++  return (
++    <View style={containerStyles}>
++      {items.map((item, index) => {
++        const isFirst = index === 0;
++        const isLast = index === items.length - 1;
++        return (
++          <View
++            key={`${item.date}-${item.title}-${index}`}
++            wrap={false}
++            style={styles.row}
++          >
++            <View style={[styles.dateColumn, { width: dateWidth }]}>
++              <PDFText style={styles.date}>{item.date}</PDFText>
++            </View>
++            <View style={styles.rail}>
++              <View
++                style={
++                  isFirst
++                    ? styles.spineBefore
++                    : [styles.spineBefore, { backgroundColor: accent }]
++                }
++              />
++              <View style={[styles.dot, { backgroundColor: accent }]} />
++              {isLast ? null : (
++                <View
++                  style={[styles.spineAfter, { backgroundColor: accent }]}
++                />
++              )}
++            </View>
++            <View style={[styles.content, isLast ? styles.contentLast : {}]}>
++              <PDFText style={styles.title}>{item.title}</PDFText>
++              {item.body ? (
++                <PDFText style={styles.body}>{item.body}</PDFText>
++              ) : null}
++            </View>
++          </View>
++        );
++      })}
++    </View>
++  );
++};
+diff --git a/apps/web/registry/bases/takumi/components/timeline/timeline.tsx b/apps/web/registry/bases/takumi/components/timeline/timeline.tsx
+new file mode 100644
+index 0000000..6f4bab5
+--- /dev/null
++++ b/apps/web/registry/bases/takumi/components/timeline/timeline.tsx
+@@ -0,0 +1,166 @@
++import {
++  usePdfcnTheme,
++  useSafeMemo,
++} from "@/registry/bases/takumi/components/theme-provider";
++import {
++  StyleSheet,
++  Text as PDFText,
++  View,
++} from "@/registry/bases/takumi/lib/pdf-primitives";
++import type { Style } from "@/registry/bases/takumi/lib/pdf-primitives";
++import { resolveColor } from "@/registry/bases/takumi/lib/resolve-color";
++import type { PDFComponentProps } from "@/registry/types/pdf-components";
++import type { PdfcnTheme } from "@/registry/types/pdf-themes";
++
++/**
++ * A single timeline entry.
++ * Props - `date` | `title` | `body`
++ * @see {@link TimelineItem}
++ */
++export interface TimelineItem {
++  date: string;
++  title: string;
++  body?: string;
++}
++
++/**
++ * Vertical timeline with an accent spine and dot markers.
++ * Each item is rendered as its own unbreakable row with its own spine segment,
++ * so the timeline can split across pages without orphaned markers.
++ * Props - `items` | `accentColor` | `dateWidth` | `style`
++ * @see {@link TimelineProps}
++ */
++export interface TimelineProps extends Omit<PDFComponentProps, "children"> {
++  items: TimelineItem[];
++  /**
++   * Theme color token or raw CSS color for the spine and dots.
++   * @default 'primary'
++   */
++  accentColor?: string;
++  /**
++   * Fixed width of the date column in points.
++   * @default 72
++   */
++  dateWidth?: number;
++}
++
++const DOT_SIZE = 8;
++const SPINE_WIDTH = 1.5;
++
++const createTimelineStyles = (t: PdfcnTheme) => {
++  const { spacing, fontWeights, borderRadius, typography } = t.primitives;
++  const c = t.colors;
++  const { body } = t.typography;
++  const titleLineHeight = body.fontSize * body.lineHeight;
++  const dateLineHeight = typography.xs * body.lineHeight;
++  // Center the dot (and the date) on the first line of the title.
++  const dotOffset = (titleLineHeight - DOT_SIZE) / 2;
++  const dateOffset = (titleLineHeight - dateLineHeight) / 2;
++
++  return StyleSheet.create({
++    body: {
++      color: c.mutedForeground,
++      fontFamily: body.fontFamily,
++      fontSize: typography.xs,
++      fontWeight: fontWeights.regular,
++      lineHeight: body.lineHeight,
++      marginTop: spacing[0.5],
++    },
++    container: { flexDirection: "column" },
++    content: {
++      flex: 1,
++      flexDirection: "column",
++      paddingBottom: t.spacing.componentGap + spacing[2],
++    },
++    contentLast: { paddingBottom: 0 },
++    date: {
++      color: c.mutedForeground,
++      fontFamily: body.fontFamily,
++      fontSize: typography.xs,
++      fontWeight: fontWeights.regular,
++      lineHeight: body.lineHeight,
++      marginTop: dateOffset,
++    },
++    dateColumn: { flexShrink: 0, paddingRight: spacing[3] },
++    dot: {
++      borderRadius: borderRadius.full,
++      height: DOT_SIZE,
++      width: DOT_SIZE,
++    },
++    rail: {
++      alignItems: "center",
++      flexDirection: "column",
++      marginRight: spacing[3],
++      width: DOT_SIZE,
++    },
++    row: {
++      alignItems: "stretch",
++      flexDirection: "row",
++    },
++    spineAfter: { flexGrow: 1, width: SPINE_WIDTH },
++    spineBefore: { height: dotOffset, width: SPINE_WIDTH },
++    title: {
++      color: c.foreground,
++      fontFamily: body.fontFamily,
++      fontSize: body.fontSize,
++      fontWeight: fontWeights.semibold,
++      lineHeight: body.lineHeight,
++    },
++  });
++};
++
++export const Timeline = ({
++  items,
++  accentColor = "primary",
++  dateWidth = 72,
++  style,
++}: TimelineProps) => {
++  const theme = usePdfcnTheme();
++  const styles = useSafeMemo(() => createTimelineStyles(theme), [theme]);
++  const accent = resolveColor(accentColor, theme.colors);
++  const containerStyles: Style[] = [styles.container];
++  if (style) {
++    containerStyles.push(...[style].flat());
++  }
++
++  return (
++    <View style={containerStyles}>
++      {items.map((item, index) => {
++        const isFirst = index === 0;
++        const isLast = index === items.length - 1;
++        return (
++          <View
++            key={`${item.date}-${item.title}-${index}`}
++            wrap={false}
++            style={styles.row}
++          >
++            <View style={[styles.dateColumn, { width: dateWidth }]}>
++              <PDFText style={styles.date}>{item.date}</PDFText>
++            </View>
++            <View style={styles.rail}>
++              <View
++                style={
++                  isFirst
++                    ? styles.spineBefore
++                    : [styles.spineBefore, { backgroundColor: accent }]
++                }
++              />
++              <View style={[styles.dot, { backgroundColor: accent }]} />
++              {isLast ? null : (
++                <View
++                  style={[styles.spineAfter, { backgroundColor: accent }]}
++                />
++              )}
++            </View>
++            <View style={[styles.content, isLast ? styles.contentLast : {}]}>
++              <PDFText style={styles.title}>{item.title}</PDFText>
++              {item.body ? (
++                <PDFText style={styles.body}>{item.body}</PDFText>
++              ) : null}
++            </View>
++          </View>
++        );
++      })}
++    </View>
++  );
++};
+-- 
+2.43.0
+

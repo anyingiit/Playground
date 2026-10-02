@@ -1,0 +1,53 @@
+From 6861cf34ce880be518c2b6675059c34b1b1f69d6 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:10:48 +0000
+Subject: [PATCH] fix: say "1 hour ago" and "1 day ago" in vortix list
+
+format_elapsed always used the plural, so a profile last used an hour or a
+day ago showed "1 hours ago" or "1 days ago". Use the singular when the
+count is 1.
+
+Fixes #379
+---
+ crates/vortix/src/cli/profiles.rs | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/crates/vortix/src/cli/profiles.rs b/crates/vortix/src/cli/profiles.rs
+index 3fd3774..2cc9e64 100644
+--- a/crates/vortix/src/cli/profiles.rs
++++ b/crates/vortix/src/cli/profiles.rs
+@@ -162,9 +162,17 @@ fn format_elapsed(secs: u64) -> String {
+         return format!("{} min ago", secs / 60);
+     }
+     if secs < 86_400 {
+-        return format!("{} hours ago", secs / 3600);
++        return plural_ago(secs / 3600, "hour");
++    }
++    plural_ago(secs / 86_400, "day")
++}
++
++fn plural_ago(n: u64, unit: &str) -> String {
++    if n == 1 {
++        format!("1 {unit} ago")
++    } else {
++        format!("{n} {unit}s ago")
+     }
+-    format!("{} days ago", secs / 86_400)
+ }
+ 
+ /// Build a single `ProfileEntry` for `handle_list`. Pulled out as a
+@@ -952,7 +960,11 @@ mod tests {
+     fn test_format_elapsed() {
+         assert_eq!(format_elapsed(30), "just now");
+         assert_eq!(format_elapsed(120), "2 min ago");
++        assert_eq!(format_elapsed(3600), "1 hour ago");
++        assert_eq!(format_elapsed(7199), "1 hour ago");
+         assert_eq!(format_elapsed(7200), "2 hours ago");
++        assert_eq!(format_elapsed(86_400), "1 day ago");
++        assert_eq!(format_elapsed(172_799), "1 day ago");
+         assert_eq!(format_elapsed(172_800), "2 days ago");
+     }
+ }
+-- 
+2.43.0
+

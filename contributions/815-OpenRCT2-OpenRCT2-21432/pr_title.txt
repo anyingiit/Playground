@@ -1,0 +1,1 @@
+Refactor constant notation in Entrance.h and NewsItem.h

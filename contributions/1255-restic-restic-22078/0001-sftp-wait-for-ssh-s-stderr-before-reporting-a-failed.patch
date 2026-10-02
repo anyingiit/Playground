@@ -1,0 +1,155 @@
+From 0815408047c0814049e3795cccb535fa71ab221f Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:23:16 +0000
+Subject: [PATCH] sftp: wait for ssh's stderr before reporting a failed session
+ start
+
+startClient copied the stderr of ssh to restic's stderr from a goroutine
+that nothing waited for. When sftp.NewClientPipe failed, the error was
+returned immediately and restic could exit before ssh's error message
+(e.g. "Connection refused") was printed. In addition, cmd.Wait() closes
+the pipe returned by cmd.StderrPipe() once the process exits, so
+unread output could be lost.
+
+Use an os.Pipe for stderr, which is not closed by cmd.Wait(), and wait
+(bounded by closeTimeout) for the stderr reader to finish before
+returning the error from NewClientPipe.
+
+Fixes #22078
+---
+ changelog/unreleased/issue-22078   |  8 +++++++
+ internal/backend/sftp/sftp.go      | 22 +++++++++++++++---
+ internal/backend/sftp/sftp_test.go | 37 ++++++++++++++++++++++++++++++
+ 3 files changed, 64 insertions(+), 3 deletions(-)
+ create mode 100644 changelog/unreleased/issue-22078
+
+diff --git a/changelog/unreleased/issue-22078 b/changelog/unreleased/issue-22078
+new file mode 100644
+index 0000000..5f6324e
+--- /dev/null
++++ b/changelog/unreleased/issue-22078
+@@ -0,0 +1,8 @@
++Bugfix: Reliably print ssh error message if the sftp connection fails
++
++When the sftp backend failed to start a session, for example because the
++server refused the connection, restic sometimes exited without printing the
++error message reported by `ssh`. This happened mostly on heavily loaded hosts.
++Restic now waits for the error message of `ssh` before returning the error.
++
++https://github.com/restic/restic/issues/22078
+diff --git a/internal/backend/sftp/sftp.go b/internal/backend/sftp/sftp.go
+index f33f2b4..5ecdc0e 100644
+--- a/internal/backend/sftp/sftp.go
++++ b/internal/backend/sftp/sftp.go
+@@ -65,13 +65,19 @@ func startClient(cfg Config, errorLog func(string, ...any)) (*SFTP, error) {
+ 	// command.  This assumes that passwordless login is correctly configured.
+ 	cmd := exec.Command(program, args...)
+ 
+-	// prefix the errors with the program name
+-	stderr, err := cmd.StderrPipe()
++	// prefix the errors with the program name. Use a pipe that is not
++	// closed by cmd.Wait(), so that no output is lost if the process exits
++	// before everything has been read.
++	stderr, stderrW, err := os.Pipe()
+ 	if err != nil {
+-		return nil, errors.Wrap(err, "cmd.StderrPipe")
++		return nil, errors.Wrap(err, "os.Pipe")
+ 	}
++	cmd.Stderr = stderrW
+ 
++	stderrDone := make(chan struct{})
+ 	go func() {
++		defer close(stderrDone)
++		defer func() { _ = stderr.Close() }()
+ 		sc := bufio.NewScanner(stderr)
+ 		for sc.Scan() {
+ 			errorLog("subprocess %v: %v\n", program, sc.Text())
+@@ -81,14 +87,18 @@ func startClient(cfg Config, errorLog func(string, ...any)) (*SFTP, error) {
+ 	// get stdin and stdout
+ 	wr, err := cmd.StdinPipe()
+ 	if err != nil {
++		_ = stderrW.Close()
+ 		return nil, errors.Wrap(err, "cmd.StdinPipe")
+ 	}
+ 	rd, err := cmd.StdoutPipe()
+ 	if err != nil {
++		_ = stderrW.Close()
+ 		return nil, errors.Wrap(err, "cmd.StdoutPipe")
+ 	}
+ 
+ 	bg, err := terminal.StartForeground(cmd)
++	// the child process has its own copy of the write end now
++	_ = stderrW.Close()
+ 	if err != nil {
+ 		if errors.Is(err, exec.ErrDot) {
+ 			return nil, errors.Errorf("cannot implicitly run relative executable %v found in current directory, use -o sftp.command=./<command> to override", cmd.Path)
+@@ -114,6 +124,12 @@ func startClient(cfg Config, errorLog func(string, ...any)) (*SFTP, error) {
+ 		// increase send buffer per file to 4MB
+ 		sftp.MaxConcurrentRequestsPerFile(128))
+ 	if err != nil {
++		// give the process a chance to print its error message (e.g. ssh's
++		// "Connection refused") before we return and restic exits
++		select {
++		case <-stderrDone:
++		case <-time.After(closeTimeout):
++		}
+ 		return nil, errors.Errorf("unable to start the sftp session, error: %v", err)
+ 	}
+ 
+diff --git a/internal/backend/sftp/sftp_test.go b/internal/backend/sftp/sftp_test.go
+index 2e88b16..5f4de31 100644
+--- a/internal/backend/sftp/sftp_test.go
++++ b/internal/backend/sftp/sftp_test.go
+@@ -5,8 +5,10 @@ import (
+ 	"fmt"
+ 	"io/fs"
+ 	"os"
++	"os/exec"
+ 	"path/filepath"
+ 	"strings"
++	"sync"
+ 	"testing"
+ 
+ 	"github.com/restic/restic/internal/backend"
+@@ -124,3 +126,38 @@ func TestSaveSetsDirPermissions(t *testing.T) {
+ 	rtest.OK(t, err)
+ 	rtest.Equals(t, os.FileMode(0o700), fi.Mode().Perm())
+ }
++
++func TestOpenFailurePrintsStderr(t *testing.T) {
++	sh, err := exec.LookPath("sh")
++	if err != nil {
++		t.Skip("sh not found")
++	}
++
++	// The command closes stdout, so that the sftp session fails to start
++	// immediately, and only prints its error message afterwards, like ssh
++	// does on a loaded host.
++	cfg := sftp.Config{
++		Path:    rtest.TempDir(t),
++		Command: fmt.Sprintf("%q -c %q", sh, "exec >&-; sleep 0.5; echo connection refused >&2"),
++	}
++
++	var mu sync.Mutex
++	var lines []string
++	errorLog := func(msg string, args ...any) {
++		mu.Lock()
++		defer mu.Unlock()
++		lines = append(lines, fmt.Sprintf(msg, args...))
++	}
++
++	be, err := sftp.Open(context.Background(), cfg, errorLog)
++	if err == nil {
++		_ = be.Close()
++		t.Fatal("expected an error, got nil")
++	}
++
++	mu.Lock()
++	defer mu.Unlock()
++	if !strings.Contains(strings.Join(lines, ""), "connection refused") {
++		t.Fatalf("stderr of the command was not logged before Open returned, got %q", lines)
++	}
++}
+-- 
+2.43.0
+

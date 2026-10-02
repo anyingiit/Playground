@@ -1,0 +1,36 @@
+From f11f43887b735f78c66271fb20bcd18c93baa8f2 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:14:11 +0000
+Subject: [PATCH] docs: enable JAVADOC_BANNER so banner-style comments are
+ rendered
+
+Several files document themselves with Javadoc "banner" comments
+(`/*****...`), e.g. search/binary_search.cpp, search/interpolation_search.cpp,
+sorting/selection_sort_iterative.cpp, dynamic_programming/partition_problem.cpp
+and geometry/graham_scan_*. With JAVADOC_BANNER = NO Doxygen treats these
+as plain comments, so the @file blocks are ignored and the files show up
+in bold without a page in the generated file list.
+
+Set JAVADOC_BANNER = YES so these blocks are parsed as documentation.
+
+Closes #3234
+---
+ doc/Doxyfile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/doc/Doxyfile b/doc/Doxyfile
+index 14101f4..53b227a 100644
+--- a/doc/Doxyfile
++++ b/doc/Doxyfile
+@@ -225,7 +225,7 @@ JAVADOC_AUTOBRIEF      = NO
+ # interpreted by Doxygen.
+ # The default value is: NO.
+ 
+-JAVADOC_BANNER         = NO
++JAVADOC_BANNER         = YES
+ 
+ # If the QT_AUTOBRIEF tag is set to YES then Doxygen will interpret the first
+ # line (until the first dot) of a Qt-style comment as the brief description. If
+-- 
+2.43.0
+

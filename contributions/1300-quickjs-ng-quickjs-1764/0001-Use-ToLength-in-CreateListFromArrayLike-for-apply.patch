@@ -1,0 +1,75 @@
+From 319e10f3e92fe3b8a1cd2589936a2b6f71388f5b Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 22:58:11 +0000
+Subject: [PATCH] Use ToLength in CreateListFromArrayLike for apply
+
+Function.prototype.apply, Reflect.apply and Reflect.construct read the
+length of the array-like with ToUint32, so a negative length such as -1
+wrapped around to 2^32-1 and threw "too many arguments". The spec says
+CreateListFromArrayLike uses LengthOfArrayLike (ToLength), which clamps
+negative values to 0 and does not truncate lengths >= 2^32.
+
+Fixes: https://github.com/quickjs-ng/quickjs/issues/1764
+---
+ quickjs.c             |  7 +++++--
+ tests/test_builtin.js | 13 +++++++++++++
+ 2 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/quickjs.c b/quickjs.c
+index ed65ce4..a745759 100644
+--- a/quickjs.c
++++ b/quickjs.c
+@@ -42485,6 +42485,7 @@ static JSValue *build_arg_list(JSContext *ctx, uint32_t *plen,
+                                JSValueConst array_arg)
+ {
+     uint32_t len, i;
++    int64_t len64;
+     JSValue *tab, ret;
+     JSObject *p;
+ 
+@@ -42492,14 +42493,16 @@ static JSValue *build_arg_list(JSContext *ctx, uint32_t *plen,
+         JS_ThrowTypeError(ctx, "not a object");
+         return NULL;
+     }
+-    if (js_get_length32(ctx, &len, array_arg))
++    /* CreateListFromArrayLike uses ToLength, not ToUint32 */
++    if (js_get_length64(ctx, &len64, array_arg))
+         return NULL;
+-    if (len > JS_MAX_LOCAL_VARS) {
++    if (len64 > JS_MAX_LOCAL_VARS) {
+         // XXX: check for stack overflow?
+         JS_ThrowRangeError(ctx, "too many arguments in function call (only %d allowed)",
+                            JS_MAX_LOCAL_VARS);
+         return NULL;
+     }
++    len = len64;
+     /* avoid allocating 0 bytes */
+     tab = js_mallocz(ctx, sizeof(tab[0]) * max_uint32(1, len));
+     if (!tab)
+diff --git a/tests/test_builtin.js b/tests/test_builtin.js
+index fb38263..a0ddf90 100644
+--- a/tests/test_builtin.js
++++ b/tests/test_builtin.js
+@@ -145,6 +145,19 @@ function test_function()
+         Reflect.apply((function () { return 1; }), null, undefined);
+     }));
+ 
++    // CreateListFromArrayLike uses ToLength: negative lengths become 0
++    function nargs() { return arguments.length; }
++    assert(nargs.apply(null, { length: -1 }), 0);
++    assert(nargs.apply(null, { length: -Infinity }), 0);
++    assert(nargs.apply(null, { length: -4294967295 }), 0);
++    assert(Reflect.apply(nargs, null, { length: -1 }), 0);
++    assert(Reflect.construct(function () { this.n = arguments.length; },
++                             { length: -1 }).n, 0);
++    // ... and lengths >= 2^32 are not truncated modulo 2^32
++    assertThrows(RangeError, function () {
++        nargs.apply(null, { length: 2 ** 32 + 1 });
++    });
++
+     r = new Function("a", "b", "return a + b;");
+     assert(r(2,3), 5, "function");
+ 
+-- 
+2.43.0
+

@@ -1,0 +1,1 @@
+fileset: add `sparse()` function

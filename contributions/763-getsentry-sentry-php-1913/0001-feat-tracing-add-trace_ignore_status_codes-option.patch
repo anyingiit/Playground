@@ -1,0 +1,347 @@
+From 51e9a1d7db32d723dcbb4e2bf0730524de18933d Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:24:14 +0000
+Subject: [PATCH] feat(tracing): add trace_ignore_status_codes option
+
+Add a `trace_ignore_status_codes` option that lists HTTP status codes
+(or inclusive `[min, max]` ranges) of incoming requests that should not
+be traced. When a sampled transaction finishes and its
+`http.response.status_code` data matches an entry, the transaction is
+marked as not sampled and is not sent.
+
+The default is an empty list, so existing behavior is unchanged.
+
+Resolves #1913
+---
+ src/Options.php                   | 60 +++++++++++++++++++++++++
+ src/Tracing/Transaction.php       | 50 +++++++++++++++++++++
+ src/functions.php                 |  1 +
+ tests/OptionsTest.php             | 36 +++++++++++++++
+ tests/Tracing/TransactionTest.php | 75 +++++++++++++++++++++++++++++++
+ 5 files changed, 222 insertions(+)
+
+diff --git a/src/Options.php b/src/Options.php
+index 15803a6..8bd9d75 100644
+--- a/src/Options.php
++++ b/src/Options.php
+@@ -600,6 +600,35 @@ public function setIgnoreTransactions(array $ignoreTransaction): self
+         return $this->updateOptions(['ignore_transactions' => $ignoreTransaction]);
+     }
+ 
++    /**
++     * Gets the HTTP status codes of incoming requests whose transactions
++     * should not be sampled. Each entry is either a single status code or an
++     * inclusive `[min, max]` range.
++     *
++     * @return array<int|array{int, int}>
++     */
++    public function getTraceIgnoreStatusCodes(): array
++    {
++        /**
++         * @var array<int|array{int, int}> $traceIgnoreStatusCodes
++         */
++        $traceIgnoreStatusCodes = $this->options['trace_ignore_status_codes'];
++
++        return $traceIgnoreStatusCodes;
++    }
++
++    /**
++     * Sets the HTTP status codes of incoming requests whose transactions
++     * should not be sampled. Each entry is either a single status code or an
++     * inclusive `[min, max]` range.
++     *
++     * @param array<int|array{int, int}> $traceIgnoreStatusCodes The status codes or ranges to ignore
++     */
++    public function setTraceIgnoreStatusCodes(array $traceIgnoreStatusCodes): self
++    {
++        return $this->updateOptions(['trace_ignore_status_codes' => $traceIgnoreStatusCodes]);
++    }
++
+     /**
+      * Gets a callback that will be invoked before an event is sent to the server.
+      * If `null` is returned it won't be sent.
+@@ -1254,6 +1283,7 @@ private function configureOptions(OptionsResolver $resolver): void
+         $resolver->setAllowedTypes('before_send_metric', ['callable']);
+         $resolver->setAllowedTypes('ignore_exceptions', 'string[]');
+         $resolver->setAllowedTypes('ignore_transactions', 'string[]');
++        $resolver->setAllowedTypes('trace_ignore_status_codes', 'array');
+         $resolver->setAllowedTypes('trace_propagation_targets', ['null', 'string[]']);
+         $resolver->setAllowedTypes('strict_trace_continuation', 'bool');
+         $resolver->setAllowedTypes('strict_trace_propagation', 'bool');
+@@ -1283,6 +1313,7 @@ private function configureOptions(OptionsResolver $resolver): void
+         $resolver->setAllowedValues('dsn', \Closure::fromCallable([$this, 'validateDsnOption']));
+         $resolver->setAllowedValues('max_breadcrumbs', \Closure::fromCallable([$this, 'validateMaxBreadcrumbsOptions']));
+         $resolver->setAllowedValues('class_serializers', \Closure::fromCallable([$this, 'validateClassSerializersOption']));
++        $resolver->setAllowedValues('trace_ignore_status_codes', \Closure::fromCallable([$this, 'validateTraceIgnoreStatusCodesOption']));
+         $resolver->setAllowedValues('context_lines', \Closure::fromCallable([$this, 'validateContextLinesOption']));
+         $resolver->setAllowedValues('log_flush_threshold', \Closure::fromCallable([$this, 'validateLogFlushThresholdOption']));
+         $resolver->setAllowedValues('metric_flush_threshold', \Closure::fromCallable([$this, 'validateMetricFlushThresholdOption']));
+@@ -1337,6 +1368,7 @@ private function configureOptions(OptionsResolver $resolver): void
+             'server_name' => gethostname(),
+             'ignore_exceptions' => [],
+             'ignore_transactions' => [],
++            'trace_ignore_status_codes' => [],
+             'before_send' => static function (Event $event): Event {
+                 return $event;
+             },
+@@ -1536,6 +1568,34 @@ private function validateContextLinesOption(?int $contextLines): bool
+         return $contextLines === null || $contextLines >= 0;
+     }
+ 
++    /**
++     * Validates that the value passed to the "trace_ignore_status_codes" option
++     * only contains status codes or inclusive `[min, max]` ranges of status codes.
++     *
++     * @param array<mixed> $statusCodes The value to validate
++     */
++    private function validateTraceIgnoreStatusCodesOption(array $statusCodes): bool
++    {
++        /**
++         * @var mixed $statusCode
++         */
++        foreach ($statusCodes as $statusCode) {
++            if (\is_int($statusCode)) {
++                continue;
++            }
++
++            if (!\is_array($statusCode) || \count($statusCode) !== 2 || !isset($statusCode[0], $statusCode[1])) {
++                return false;
++            }
++
++            if (!\is_int($statusCode[0]) || !\is_int($statusCode[1]) || $statusCode[0] > $statusCode[1]) {
++                return false;
++            }
++        }
++
++        return true;
++    }
++
+     /**
+      * Validates that the value passed to the "log_flush_threshold" option is valid.
+      *
+diff --git a/src/Tracing/Transaction.php b/src/Tracing/Transaction.php
+index 5e4d727..f41249a 100644
+--- a/src/Tracing/Transaction.php
++++ b/src/Tracing/Transaction.php
+@@ -159,6 +159,10 @@ public function finish(?float $endTimestamp = null): ?EventId
+ 
+         parent::finish($endTimestamp);
+ 
++        if ($this->sampled === true && $this->shouldIgnoreStatusCode()) {
++            $this->sampled = false;
++        }
++
+         if ($this->sampled !== true) {
+             return null;
+         }
+@@ -192,4 +196,50 @@ public function finish(?float $endTimestamp = null): ?EventId
+ 
+         return $this->hub->captureEvent($event);
+     }
++
++    /**
++     * Checks whether the `http.response.status_code` of this transaction
++     * matches an entry of the `trace_ignore_status_codes` option.
++     */
++    private function shouldIgnoreStatusCode(): bool
++    {
++        /**
++         * @var int|string|null $statusCode
++         */
++        $statusCode = $this->data['http.response.status_code'] ?? null;
++
++        if (\is_string($statusCode) && ctype_digit($statusCode)) {
++            $statusCode = (int) $statusCode;
++        }
++
++        if (!\is_int($statusCode)) {
++            return false;
++        }
++
++        $client = $this->hub->getClient();
++
++        if ($client === null) {
++            return false;
++        }
++
++        $options = $client->getOptions();
++
++        foreach ($options->getTraceIgnoreStatusCodes() as $ignoredStatusCode) {
++            if (\is_array($ignoredStatusCode)) {
++                $matches = $statusCode >= $ignoredStatusCode[0] && $statusCode <= $ignoredStatusCode[1];
++            } else {
++                $matches = $statusCode === $ignoredStatusCode;
++            }
++
++            if ($matches) {
++                $options->getLoggerOrNullLogger()->info(
++                    \sprintf('Transaction [%s] will be discarded because its HTTP status code %d matches an entry in "trace_ignore_status_codes".', (string) $this->getTraceId(), $statusCode)
++                );
++
++                return true;
++            }
++        }
++
++        return false;
++    }
+ }
+diff --git a/src/functions.php b/src/functions.php
+index d339824..dfa3fb4 100644
+--- a/src/functions.php
++++ b/src/functions.php
+@@ -71,6 +71,7 @@
+  *     spotlight_url?: string,
+  *     strict_trace_continuation?: bool,
+  *     tags?: array<string>,
++ *     trace_ignore_status_codes?: array<int|array{int, int}>,
+  *     trace_propagation_targets?: array<string>|null,
+  *     traces_sample_rate?: float|int|null,
+  *     traces_sampler?: callable|null,
+diff --git a/tests/OptionsTest.php b/tests/OptionsTest.php
+index 32972ee..b5a29a7 100644
+--- a/tests/OptionsTest.php
++++ b/tests/OptionsTest.php
+@@ -299,6 +299,13 @@ static function (): void {},
+             'setIgnoreTransactions',
+         ];
+ 
++        yield [
++            'trace_ignore_status_codes',
++            [404, [301, 303]],
++            'getTraceIgnoreStatusCodes',
++            'setTraceIgnoreStatusCodes',
++        ];
++
+         yield [
+             'before_send',
+             static function (): void {},
+@@ -609,6 +616,7 @@ public function testDefaultOptionValues(): void
+             'server_name' => gethostname(),
+             'ignore_exceptions' => [],
+             'ignore_transactions' => [],
++            'trace_ignore_status_codes' => [],
+             'before_send' => \Closure::class,
+             'before_send_transaction' => \Closure::class,
+             'before_send_check_in' => \Closure::class,
+@@ -854,6 +862,34 @@ public static function contextLinesOptionValidatesInputValueDataProvider(): \Gen
+         ];
+     }
+ 
++    /**
++     * @dataProvider traceIgnoreStatusCodesOptionIsValidatedCorrectlyDataProvider
++     */
++    public function testTraceIgnoreStatusCodesOptionIsValidatedCorrectly($value, array $expectedValue): void
++    {
++        $options = new Options(['trace_ignore_status_codes' => $value]);
++
++        $this->assertSame($expectedValue, $options->getTraceIgnoreStatusCodes());
++    }
++
++    public static function traceIgnoreStatusCodesOptionIsValidatedCorrectlyDataProvider(): array
++    {
++        return [
++            [[], []],
++            [[404], [404]],
++            [[[301, 303], [305, 399], [401, 404]], [[301, 303], [305, 399], [401, 404]]],
++            [[404, [500, 599]], [404, [500, 599]]],
++            [[[404, 404]], [[404, 404]]],
++            ['404', []],
++            [['404'], []],
++            [[[303, 301]], []],
++            [[[301]], []],
++            [[[301, 303, 305]], []],
++            [[['301', '303']], []],
++            [[['min' => 301, 'max' => 303]], []],
++        ];
++    }
++
+     /**
+      * @dataProvider logFlushThresholdOptionIsValidatedCorrectlyDataProvider
+      */
+diff --git a/tests/Tracing/TransactionTest.php b/tests/Tracing/TransactionTest.php
+index 76a2c3a..8efa740 100644
+--- a/tests/Tracing/TransactionTest.php
++++ b/tests/Tracing/TransactionTest.php
+@@ -182,4 +182,79 @@ public function parentTransactionContextDataProviderDisabled(): \Generator
+             false,
+         ];
+     }
++
++    /**
++     * @dataProvider traceIgnoreStatusCodesDataProvider
++     *
++     * @param array<int|array{int, int}> $traceIgnoreStatusCodes
++     * @param mixed                      $statusCode
++     */
++    public function testFinishRespectsTraceIgnoreStatusCodesOption(array $traceIgnoreStatusCodes, $statusCode, bool $expectedSampled): void
++    {
++        $client = $this->createMock(ClientInterface::class);
++        $client->expects($this->any())
++            ->method('getOptions')
++            ->willReturn(new Options(['trace_ignore_status_codes' => $traceIgnoreStatusCodes]));
++
++        $hub = $this->createMock(HubInterface::class);
++        $hub->expects($this->any())
++            ->method('getClient')
++            ->willReturn($client);
++
++        $hub->expects($expectedSampled ? $this->once() : $this->never())
++            ->method('captureEvent')
++            ->willReturn(EventId::generate());
++
++        $transactionContext = TransactionContext::make()
++            ->setSampled(true);
++
++        $transaction = new Transaction($transactionContext, $hub);
++        $transaction->setData(['http.response.status_code' => $statusCode]);
++        $transaction->finish();
++
++        $this->assertSame($expectedSampled, $transaction->getSampled());
++    }
++
++    public static function traceIgnoreStatusCodesDataProvider(): \Generator
++    {
++        yield 'default does not ignore anything' => [[], 404, true];
++
++        yield 'exact match' => [[404], 404, false];
++
++        yield 'no match' => [[404], 200, true];
++
++        yield 'numeric string status code' => [[404], '404', false];
++
++        yield 'inside range' => [[[301, 303], [305, 399]], 350, false];
++
++        yield 'range lower bound is inclusive' => [[[301, 303]], 301, false];
++
++        yield 'range upper bound is inclusive' => [[[301, 303]], 303, false];
++
++        yield 'outside range' => [[[301, 303], [305, 399]], 304, true];
++
++        yield 'mixed codes and ranges' => [[[500, 599], 404], 404, false];
++    }
++
++    public function testFinishIgnoresTraceIgnoreStatusCodesOptionWithoutStatusCode(): void
++    {
++        $client = $this->createMock(ClientInterface::class);
++        $client->expects($this->any())
++            ->method('getOptions')
++            ->willReturn(new Options(['trace_ignore_status_codes' => [[100, 599]]]));
++
++        $hub = $this->createMock(HubInterface::class);
++        $hub->expects($this->any())
++            ->method('getClient')
++            ->willReturn($client);
++
++        $hub->expects($this->once())
++            ->method('captureEvent')
++            ->willReturn(EventId::generate());
++
++        $transaction = new Transaction(TransactionContext::make()->setSampled(true), $hub);
++        $transaction->finish();
++
++        $this->assertTrue($transaction->getSampled());
++    }
+ }
+-- 
+2.43.0
+

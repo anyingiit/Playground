@@ -1,0 +1,484 @@
+From 9e2ce9f4f58e60ac4c7e2ceaebeb2625d7ccf83c Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 19:00:37 +0000
+Subject: [PATCH] Add metrics.serviceMonitor.enabled to allow skipping the
+ ServiceMonitor
+
+Add an optional `enabled` field to the ServiceMonitor spec, shared by the
+MariaDB and MaxScale metrics configuration. It defaults to true, so existing
+resources keep their behaviour. When set to false, the operator still deploys
+the exporter Deployment and Service but neither requires the ServiceMonitor
+CRD nor creates the ServiceMonitor object. This allows scraping the exporter
+from a Prometheus running outside of the cluster.
+
+Closes #1828
+---
+ api/v1alpha1/mariadb_types.go                 | 16 +++++
+ api/v1alpha1/mariadb_types_test.go            | 59 +++++++++++++++++++
+ api/v1alpha1/maxscale_types.go                |  5 ++
+ api/v1alpha1/maxscale_types_test.go           | 59 +++++++++++++++++++
+ api/v1alpha1/zz_generated.deepcopy.go         |  9 ++-
+ .../crd/bases/k8s.mariadb.com_mariadbs.yaml   |  6 ++
+ .../crd/bases/k8s.mariadb.com_maxscales.yaml  |  6 ++
+ .../mariadb-operator-crds/templates/crds.yaml | 12 ++++
+ deploy/crds/crds.yaml                         | 12 ++++
+ docs/api_reference.md                         |  1 +
+ docs/metrics.md                               | 17 ++++++
+ .../controller/mariadb_controller_metrics.go  | 26 ++++----
+ .../controller/maxscale_controller_metrics.go | 26 ++++----
+ 13 files changed, 230 insertions(+), 24 deletions(-)
+
+diff --git a/api/v1alpha1/mariadb_types.go b/api/v1alpha1/mariadb_types.go
+index e14b4b0..ae7f67a 100644
+--- a/api/v1alpha1/mariadb_types.go
++++ b/api/v1alpha1/mariadb_types.go
+@@ -21,6 +21,12 @@ import (
+ 
+ // ServiceMonitor defines a prometheus ServiceMonitor object.
+ type ServiceMonitor struct {
++	// Enabled indicates whether the ServiceMonitor object should be created. It defaults to true.
++	// It can be set to false to deploy only the exporter, for instance when Prometheus is running outside the cluster
++	// and the ServiceMonitor CRD is not installed.
++	// +optional
++	// +operator-sdk:csv:customresourcedefinitions:type=spec,xDescriptors={"urn:alm:descriptor:com.tectonic.ui:booleanSwitch"}
++	Enabled *bool `json:"enabled,omitempty"`
+ 	// PrometheusRelease is the release label to add to the ServiceMonitor object.
+ 	// +optional
+ 	// +operator-sdk:csv:customresourcedefinitions:type=spec
+@@ -39,6 +45,11 @@ type ServiceMonitor struct {
+ 	ScrapeTimeout string `json:"scrapeTimeout,omitempty"`
+ }
+ 
++// IsEnabled indicates whether the ServiceMonitor object should be created. It defaults to true.
++func (s ServiceMonitor) IsEnabled() bool {
++	return ptr.Deref(s.Enabled, true)
++}
++
+ // MariadbMetrics defines the metrics for a MariaDB.
+ type MariadbMetrics struct {
+ 	// Enabled is a flag to enable Metrics
+@@ -1085,6 +1096,11 @@ func (m *MariaDB) AreMetricsEnabled() bool {
+ 	return ptr.Deref(m.Spec.Metrics, MariadbMetrics{}).Enabled
+ }
+ 
++// IsServiceMonitorEnabled indicates whether the MariaDB instance has metrics enabled and a ServiceMonitor should be created
++func (m *MariaDB) IsServiceMonitorEnabled() bool {
++	return m.AreMetricsEnabled() && m.Spec.Metrics.ServiceMonitor.IsEnabled()
++}
++
+ // IsInitialUserEnabled indicates whether the initial User is enabled
+ func (m *MariaDB) IsInitialUserEnabled() bool {
+ 	return m.Spec.Username != nil && m.Spec.Database != nil &&
+diff --git a/api/v1alpha1/mariadb_types_test.go b/api/v1alpha1/mariadb_types_test.go
+index b754ad4..0c74a29 100644
+--- a/api/v1alpha1/mariadb_types_test.go
++++ b/api/v1alpha1/mariadb_types_test.go
+@@ -2510,6 +2510,65 @@ var _ = Describe("MariaDB types", func() {
+ 			),
+ 		)
+ 	})
++	Describe("IsServiceMonitorEnabled", func() {
++		DescribeTable("should determine whether the ServiceMonitor is enabled",
++			func(obj *MariaDB, expected bool) {
++				Expect(obj.IsServiceMonitorEnabled()).To(Equal(expected))
++			},
++			Entry("metrics not set", &MariaDB{}, false),
++			Entry(
++				"metrics disabled",
++				&MariaDB{
++					Spec: MariaDBSpec{
++						Metrics: &MariadbMetrics{
++							Enabled: false,
++						},
++					},
++				},
++				false,
++			),
++			Entry(
++				"metrics enabled, serviceMonitor.enabled unset",
++				&MariaDB{
++					Spec: MariaDBSpec{
++						Metrics: &MariadbMetrics{
++							Enabled: true,
++						},
++					},
++				},
++				true,
++			),
++			Entry(
++				"metrics enabled, serviceMonitor.enabled true",
++				&MariaDB{
++					Spec: MariaDBSpec{
++						Metrics: &MariadbMetrics{
++							Enabled: true,
++							ServiceMonitor: ServiceMonitor{
++								Enabled: ptr.To(true),
++							},
++						},
++					},
++				},
++				true,
++			),
++			Entry(
++				"metrics enabled, serviceMonitor.enabled false",
++				&MariaDB{
++					Spec: MariaDBSpec{
++						Metrics: &MariadbMetrics{
++							Enabled: true,
++							ServiceMonitor: ServiceMonitor{
++								Enabled: ptr.To(false),
++							},
++						},
++					},
++				},
++				false,
++			),
++		)
++	})
++
+ })
+ 
+ var _ = Describe("MariaDBVolume conversion", func() {
+diff --git a/api/v1alpha1/maxscale_types.go b/api/v1alpha1/maxscale_types.go
+index 02f436b..7b46cce 100644
+--- a/api/v1alpha1/maxscale_types.go
++++ b/api/v1alpha1/maxscale_types.go
+@@ -1011,6 +1011,11 @@ func (m *MaxScale) AreMetricsEnabled() bool {
+ 	return ptr.Deref(m.Spec.Metrics, MaxScaleMetrics{}).Enabled
+ }
+ 
++// IsServiceMonitorEnabled indicates whether the MaxScale instance has metrics enabled and a ServiceMonitor should be created
++func (m *MaxScale) IsServiceMonitorEnabled() bool {
++	return m.AreMetricsEnabled() && m.Spec.Metrics.ServiceMonitor.IsEnabled()
++}
++
+ // IsTLSEnabled  indicates whether TLS is enabled
+ func (m *MaxScale) IsTLSEnabled() bool {
+ 	return ptr.Deref(m.Spec.TLS, MaxScaleTLS{}).Enabled
+diff --git a/api/v1alpha1/maxscale_types_test.go b/api/v1alpha1/maxscale_types_test.go
+index 7c17ef2..f73d39e 100644
+--- a/api/v1alpha1/maxscale_types_test.go
++++ b/api/v1alpha1/maxscale_types_test.go
+@@ -657,4 +657,63 @@ var _ = Describe("MaxScale types", func() {
+ 			Expect(tls.ServerCertSecretRef).To(BeNil())
+ 		})
+ 	})
++
++	Describe("IsServiceMonitorEnabled", func() {
++		DescribeTable("should determine whether the ServiceMonitor is enabled",
++			func(obj *MaxScale, expected bool) {
++				Expect(obj.IsServiceMonitorEnabled()).To(Equal(expected))
++			},
++			Entry("metrics not set", &MaxScale{}, false),
++			Entry(
++				"metrics disabled",
++				&MaxScale{
++					Spec: MaxScaleSpec{
++						Metrics: &MaxScaleMetrics{
++							Enabled: false,
++						},
++					},
++				},
++				false,
++			),
++			Entry(
++				"metrics enabled, serviceMonitor.enabled unset",
++				&MaxScale{
++					Spec: MaxScaleSpec{
++						Metrics: &MaxScaleMetrics{
++							Enabled: true,
++						},
++					},
++				},
++				true,
++			),
++			Entry(
++				"metrics enabled, serviceMonitor.enabled true",
++				&MaxScale{
++					Spec: MaxScaleSpec{
++						Metrics: &MaxScaleMetrics{
++							Enabled: true,
++							ServiceMonitor: ServiceMonitor{
++								Enabled: ptr.To(true),
++							},
++						},
++					},
++				},
++				true,
++			),
++			Entry(
++				"metrics enabled, serviceMonitor.enabled false",
++				&MaxScale{
++					Spec: MaxScaleSpec{
++						Metrics: &MaxScaleMetrics{
++							Enabled: true,
++							ServiceMonitor: ServiceMonitor{
++								Enabled: ptr.To(false),
++							},
++						},
++					},
++				},
++				false,
++			),
++		)
++	})
+ })
+diff --git a/api/v1alpha1/zz_generated.deepcopy.go b/api/v1alpha1/zz_generated.deepcopy.go
+index ee8c942..09b3a3c 100644
+--- a/api/v1alpha1/zz_generated.deepcopy.go
++++ b/api/v1alpha1/zz_generated.deepcopy.go
+@@ -2568,7 +2568,7 @@ func (in *MariaDBVolumeSource) DeepCopy() *MariaDBVolumeSource {
+ func (in *MariadbMetrics) DeepCopyInto(out *MariadbMetrics) {
+ 	*out = *in
+ 	in.Exporter.DeepCopyInto(&out.Exporter)
+-	out.ServiceMonitor = in.ServiceMonitor
++	in.ServiceMonitor.DeepCopyInto(&out.ServiceMonitor)
+ 	out.PasswordSecretKeyRef = in.PasswordSecretKeyRef
+ }
+ 
+@@ -2831,7 +2831,7 @@ func (in *MaxScaleMaintenance) DeepCopy() *MaxScaleMaintenance {
+ func (in *MaxScaleMetrics) DeepCopyInto(out *MaxScaleMetrics) {
+ 	*out = *in
+ 	in.Exporter.DeepCopyInto(&out.Exporter)
+-	out.ServiceMonitor = in.ServiceMonitor
++	in.ServiceMonitor.DeepCopyInto(&out.ServiceMonitor)
+ }
+ 
+ // DeepCopy is an autogenerated deepcopy function, copying the receiver, creating a new MaxScaleMetrics.
+@@ -4986,6 +4986,11 @@ func (in *SecurityContext) DeepCopy() *SecurityContext {
+ // DeepCopyInto is an autogenerated deepcopy function, copying the receiver, writing into out. in must be non-nil.
+ func (in *ServiceMonitor) DeepCopyInto(out *ServiceMonitor) {
+ 	*out = *in
++	if in.Enabled != nil {
++		in, out := &in.Enabled, &out.Enabled
++		*out = new(bool)
++		**out = **in
++	}
+ }
+ 
+ // DeepCopy is an autogenerated deepcopy function, copying the receiver, creating a new ServiceMonitor.
+diff --git a/config/crd/bases/k8s.mariadb.com_mariadbs.yaml b/config/crd/bases/k8s.mariadb.com_mariadbs.yaml
+index 86e1ef3..22f4a79 100644
+--- a/config/crd/bases/k8s.mariadb.com_mariadbs.yaml
++++ b/config/crd/bases/k8s.mariadb.com_mariadbs.yaml
+@@ -3463,6 +3463,12 @@ spec:
+                   serviceMonitor:
+                     description: ServiceMonitor defines the ServiceMonior object.
+                     properties:
++                      enabled:
++                        description: |-
++                          Enabled indicates whether the ServiceMonitor object should be created. It defaults to true.
++                          It can be set to false to deploy only the exporter, for instance when Prometheus is running outside the cluster
++                          and the ServiceMonitor CRD is not installed.
++                        type: boolean
+                       interval:
+                         description: Interval for scraping metrics.
+                         type: string
+diff --git a/config/crd/bases/k8s.mariadb.com_maxscales.yaml b/config/crd/bases/k8s.mariadb.com_maxscales.yaml
+index d7abfd2..5fdd02c 100644
+--- a/config/crd/bases/k8s.mariadb.com_maxscales.yaml
++++ b/config/crd/bases/k8s.mariadb.com_maxscales.yaml
+@@ -1620,6 +1620,12 @@ spec:
+                   serviceMonitor:
+                     description: ServiceMonitor defines the ServiceMonior object.
+                     properties:
++                      enabled:
++                        description: |-
++                          Enabled indicates whether the ServiceMonitor object should be created. It defaults to true.
++                          It can be set to false to deploy only the exporter, for instance when Prometheus is running outside the cluster
++                          and the ServiceMonitor CRD is not installed.
++                        type: boolean
+                       interval:
+                         description: Interval for scraping metrics.
+                         type: string
+diff --git a/deploy/charts/mariadb-operator-crds/templates/crds.yaml b/deploy/charts/mariadb-operator-crds/templates/crds.yaml
+index 8b593eb..d882e7d 100644
+--- a/deploy/charts/mariadb-operator-crds/templates/crds.yaml
++++ b/deploy/charts/mariadb-operator-crds/templates/crds.yaml
+@@ -5637,6 +5637,12 @@ spec:
+                   serviceMonitor:
+                     description: ServiceMonitor defines the ServiceMonior object.
+                     properties:
++                      enabled:
++                        description: |-
++                          Enabled indicates whether the ServiceMonitor object should be created. It defaults to true.
++                          It can be set to false to deploy only the exporter, for instance when Prometheus is running outside the cluster
++                          and the ServiceMonitor CRD is not installed.
++                        type: boolean
+                       interval:
+                         description: Interval for scraping metrics.
+                         type: string
+@@ -10748,6 +10754,12 @@ spec:
+                   serviceMonitor:
+                     description: ServiceMonitor defines the ServiceMonior object.
+                     properties:
++                      enabled:
++                        description: |-
++                          Enabled indicates whether the ServiceMonitor object should be created. It defaults to true.
++                          It can be set to false to deploy only the exporter, for instance when Prometheus is running outside the cluster
++                          and the ServiceMonitor CRD is not installed.
++                        type: boolean
+                       interval:
+                         description: Interval for scraping metrics.
+                         type: string
+diff --git a/deploy/crds/crds.yaml b/deploy/crds/crds.yaml
+index 8b593eb..d882e7d 100644
+--- a/deploy/crds/crds.yaml
++++ b/deploy/crds/crds.yaml
+@@ -5637,6 +5637,12 @@ spec:
+                   serviceMonitor:
+                     description: ServiceMonitor defines the ServiceMonior object.
+                     properties:
++                      enabled:
++                        description: |-
++                          Enabled indicates whether the ServiceMonitor object should be created. It defaults to true.
++                          It can be set to false to deploy only the exporter, for instance when Prometheus is running outside the cluster
++                          and the ServiceMonitor CRD is not installed.
++                        type: boolean
+                       interval:
+                         description: Interval for scraping metrics.
+                         type: string
+@@ -10748,6 +10754,12 @@ spec:
+                   serviceMonitor:
+                     description: ServiceMonitor defines the ServiceMonior object.
+                     properties:
++                      enabled:
++                        description: |-
++                          Enabled indicates whether the ServiceMonitor object should be created. It defaults to true.
++                          It can be set to false to deploy only the exporter, for instance when Prometheus is running outside the cluster
++                          and the ServiceMonitor CRD is not installed.
++                        type: boolean
+                       interval:
+                         description: Interval for scraping metrics.
+                         type: string
+diff --git a/docs/api_reference.md b/docs/api_reference.md
+index aefe776..fc00ef9 100644
+--- a/docs/api_reference.md
++++ b/docs/api_reference.md
+@@ -3070,6 +3070,7 @@ _Appears in:_
+ 
+ | Field | Description | Default | Validation |
+ | --- | --- | --- | --- |
++| `enabled` _boolean_ | Enabled indicates whether the ServiceMonitor object should be created. It defaults to true.<br />It can be set to false to deploy only the exporter, for instance when Prometheus is running outside the cluster<br />and the ServiceMonitor CRD is not installed. |  |  |
+ | `prometheusRelease` _string_ | PrometheusRelease is the release label to add to the ServiceMonitor object. |  |  |
+ | `jobLabel` _string_ | JobLabel to add to the ServiceMonitor object. |  |  |
+ | `interval` _string_ | Interval for scraping metrics. |  |  |
+diff --git a/docs/metrics.md b/docs/metrics.md
+index 29cd3ab..d2171cd 100644
+--- a/docs/metrics.md
++++ b/docs/metrics.md
+@@ -35,6 +35,23 @@ Once the exporter `Deployment` is ready, `mariadb-operator` creates a [ServiceMo
+ 
+ As you scale your MariaDB with more or less replicas, `mariadb-operator` will reconcile the `ServiceMonitor` to add/remove targets related to the MariaDB instances. 
+ 
++If you don't need the `ServiceMonitor`, for instance because Prometheus is running outside of the cluster and the `ServiceMonitor` CRD is not installed, you can disable it by setting `spec.metrics.serviceMonitor.enabled = false`. The exporter `Deployment` and `Service` will still be created, so they can be scraped by other means:
++
++```yaml
++apiVersion: k8s.mariadb.com/v1alpha1
++kind: MariaDB
++metadata:
++  name: mariadb
++spec:
++...
++  metrics:
++    enabled: true
++    serviceMonitor:
++      enabled: false
++```
++
++The same `spec.metrics.serviceMonitor.enabled` field is available in the `MaxScale` resource.
++
+ ## Configuration
+ 
+ The easiest way to setup metrics in your MariaDB instance is just by setting `spec.metrics.enabled = true`, like in this [example](../examples/manifests/mariadb_metrics.yaml):
+diff --git a/internal/controller/mariadb_controller_metrics.go b/internal/controller/mariadb_controller_metrics.go
+index 03d79ba..ef0a091 100644
+--- a/internal/controller/mariadb_controller_metrics.go
++++ b/internal/controller/mariadb_controller_metrics.go
+@@ -32,15 +32,17 @@ func (r *MariaDBReconciler) reconcileMetrics(ctx context.Context, mariadb *maria
+ 		return ctrl.Result{}, nil
+ 	}
+ 
+-	exist, err := r.Discovery.ServiceMonitorExist()
+-	if err != nil {
+-		return ctrl.Result{}, err
+-	}
+-	if !exist {
+-		r.Recorder.Eventf(mariadb, nil, corev1.EventTypeWarning, mariadbv1alpha1.ReasonCRDNotFound, mariadbv1alpha1.ReasonCRDNotFound,
+-			"Unable to reconcile metrics: ServiceMonitor CRD not installed in the cluster")
+-		log.FromContext(ctx).Error(errors.New("ServiceMonitor CRD not installed in the cluster"), "Unable to reconcile metrics")
+-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
++	if mariadb.IsServiceMonitorEnabled() {
++		exist, err := r.Discovery.ServiceMonitorExist()
++		if err != nil {
++			return ctrl.Result{}, err
++		}
++		if !exist {
++			r.Recorder.Eventf(mariadb, nil, corev1.EventTypeWarning, mariadbv1alpha1.ReasonCRDNotFound, mariadbv1alpha1.ReasonCRDNotFound,
++				"Unable to reconcile metrics: ServiceMonitor CRD not installed in the cluster")
++			log.FromContext(ctx).Error(errors.New("ServiceMonitor CRD not installed in the cluster"), "Unable to reconcile metrics")
++			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
++		}
+ 	}
+ 
+ 	if !mariadb.IsReady() {
+@@ -63,8 +65,10 @@ func (r *MariaDBReconciler) reconcileMetrics(ctx context.Context, mariadb *maria
+ 	if err := r.reconcileExporterService(ctx, mariadb); err != nil {
+ 		return ctrl.Result{}, err
+ 	}
+-	if err := r.reconcileServiceMonitor(ctx, mariadb); err != nil {
+-		return ctrl.Result{}, err
++	if mariadb.IsServiceMonitorEnabled() {
++		if err := r.reconcileServiceMonitor(ctx, mariadb); err != nil {
++			return ctrl.Result{}, err
++		}
+ 	}
+ 	return ctrl.Result{}, nil
+ }
+diff --git a/internal/controller/maxscale_controller_metrics.go b/internal/controller/maxscale_controller_metrics.go
+index 00ad505..62dcdf6 100644
+--- a/internal/controller/maxscale_controller_metrics.go
++++ b/internal/controller/maxscale_controller_metrics.go
+@@ -25,15 +25,17 @@ func (r *MaxScaleReconciler) reconcileMetrics(ctx context.Context, req *requestM
+ 		return ctrl.Result{}, nil
+ 	}
+ 
+-	exist, err := r.Discovery.ServiceMonitorExist()
+-	if err != nil {
+-		return ctrl.Result{}, err
+-	}
+-	if !exist {
+-		r.Recorder.Eventf(req.mxs, nil, corev1.EventTypeWarning, mariadbv1alpha1.ReasonCRDNotFound, mariadbv1alpha1.ReasonCRDNotFound,
+-			"Unable to reconcile metrics: ServiceMonitor CRD not installed in the cluster")
+-		log.FromContext(ctx).Error(errors.New("ServiceMonitor CRD not installed in the cluster"), "Unable to reconcile metrics")
+-		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
++	if req.mxs.IsServiceMonitorEnabled() {
++		exist, err := r.Discovery.ServiceMonitorExist()
++		if err != nil {
++			return ctrl.Result{}, err
++		}
++		if !exist {
++			r.Recorder.Eventf(req.mxs, nil, corev1.EventTypeWarning, mariadbv1alpha1.ReasonCRDNotFound, mariadbv1alpha1.ReasonCRDNotFound,
++				"Unable to reconcile metrics: ServiceMonitor CRD not installed in the cluster")
++			log.FromContext(ctx).Error(errors.New("ServiceMonitor CRD not installed in the cluster"), "Unable to reconcile metrics")
++			return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
++		}
+ 	}
+ 
+ 	if !req.mxs.IsReady() {
+@@ -49,8 +51,10 @@ func (r *MaxScaleReconciler) reconcileMetrics(ctx context.Context, req *requestM
+ 	if err := r.reconcileExporterService(ctx, req.mxs); err != nil {
+ 		return ctrl.Result{}, err
+ 	}
+-	if err := r.reconcileServiceMonitor(ctx, req.mxs); err != nil {
+-		return ctrl.Result{}, err
++	if req.mxs.IsServiceMonitorEnabled() {
++		if err := r.reconcileServiceMonitor(ctx, req.mxs); err != nil {
++			return ctrl.Result{}, err
++		}
+ 	}
+ 	return ctrl.Result{}, nil
+ }
+-- 
+2.43.0
+

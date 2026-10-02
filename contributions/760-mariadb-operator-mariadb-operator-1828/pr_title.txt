@@ -1,0 +1,1 @@
+Add metrics.serviceMonitor.enabled to allow skipping the ServiceMonitor

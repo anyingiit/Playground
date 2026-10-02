@@ -1,0 +1,252 @@
+From 7c64f9ffb82937c20622d398f150d1fc0eece493 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:54:30 +0000
+Subject: [PATCH] Fix 3882: render a checkbox for a string with a const
+
+A string field with a `const` and `ui:widget: checkbox` threw
+`No widget 'checkbox' for type 'string'`. `StringField` now renders the
+registry's `CheckboxWidget` for it: the box is checked when the value
+equals the `const`, checking it sets the value to the `const`, and
+unchecking it clears the value. Focus and blur report the same string
+value.
+
+Also documents the widget in `widgets.md`, adds an example to the
+playground's Widgets sample and a changelog entry.
+---
+ CHANGELOG.md                                  | 10 +-
+ .../src/components/fields/StringField.tsx     | 33 +++++--
+ packages/core/test/StringField.test.tsx       | 97 +++++++++++++++++++
+ packages/docs/docs/usage/widgets.md           |  1 +
+ packages/playground/src/samples/widgets.tsx   |  9 ++
+ 5 files changed, 143 insertions(+), 7 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 7b194c9..6868ca5 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -16,12 +16,20 @@ should change the heading of the (upcoming) version to include a major version b
+ 
+ -->
+ 
+-# 6.11.1
++# 6.12.0
++
++## @rjsf/core
++
++- Updated `StringField` to render a checkbox for a string with a `const` when its `ui:widget` is `checkbox`, instead of throwing `No widget 'checkbox' for type 'string'`. Checking the box sets the value to the `const` and unchecking it clears the value, fixing [#3882](https://github.com/rjsf-team/react-jsonschema-form/issues/3882)
+ 
+ ## @rjsf/utils
+ 
+ - Upgraded `@x0k/json-schema-merge` to `^1.1.0`, which merges `if`/`then`/`else`, `properties`/`patternProperties`/`additionalProperties` and `items`/`additionalItems` as groups. `omitExtraData()` merges an object's `allOf` before evaluating its conditions, and the older merge could pair one entry's `else` with another entry's `if`, so data from an inactive branch was kept. The same merge in `retrieveSchema()` no longer lets an `additionalProperties` or `additionalItems` from one `allOf` entry act on another entry's `properties`/`patternProperties`/`items`
+ 
++## Dev / docs / playground
++
++- Documented the `checkbox` widget for a string with a `const` in `widgets.md`, and added an example of it to the playground's `Widgets` sample
++
+ # 6.11.0
+ 
+ ## @rjsf/core
+diff --git a/packages/core/src/components/fields/StringField.tsx b/packages/core/src/components/fields/StringField.tsx
+index 6b85622..640c5d6 100644
+--- a/packages/core/src/components/fields/StringField.tsx
++++ b/packages/core/src/components/fields/StringField.tsx
+@@ -33,11 +33,32 @@ function StringField<T = any, S extends StrictRJSFSchema = RJSFSchema, F extends
+   const { widget = defaultWidget, placeholder = '', title: uiTitle, ...options } = getUiOptions<T, S, F>(uiSchema);
+   const displayLabel = schemaUtils.getDisplayLabel(schema, uiSchema, globalUiOptions);
+   const label = uiTitle ?? title ?? schemaTitle ?? name;
+-  const Widget = getWidget<T, S, F>(schema, widget, widgets);
++  // A checkbox can only stand in for a string that has exactly one valid value: checked selects the `const` and
++  // unchecked clears the field, so the widget deals in booleans while the form data stays a string
++  const constCheckbox = widget === 'checkbox' && typeof schema.const === 'string';
++  const Widget = getWidget<T, S, F>(
++    schema,
++    constCheckbox && !('checkbox' in widgets) ? 'CheckboxWidget' : widget,
++    widgets,
++  );
++  const toFormValue = useCallback(
++    (value: any) => {
++      if (!constCheckbox) {
++        return value;
++      }
++      return value ? (schema.const as T) : undefined;
++    },
++    [constCheckbox, schema.const],
++  );
+   const onWidgetChange = useCallback(
+     (value: T | undefined, errorSchema?: ErrorSchema, id?: string) =>
+-      onChange(value, fieldPathId.path, errorSchema, id),
+-    [onChange, fieldPathId],
++      onChange(toFormValue(value), fieldPathId.path, errorSchema, id),
++    [onChange, fieldPathId, toFormValue],
++  );
++  const onWidgetBlur = useCallback((id: string, value: any) => onBlur(id, toFormValue(value)), [onBlur, toFormValue]);
++  const onWidgetFocus = useCallback(
++    (id: string, value: any) => onFocus(id, toFormValue(value)),
++    [onFocus, toFormValue],
+   );
+   return (
+     <Widget
+@@ -49,10 +70,10 @@ function StringField<T = any, S extends StrictRJSFSchema = RJSFSchema, F extends
+       label={label}
+       hideLabel={!displayLabel}
+       hideError={hideError}
+-      value={formData}
++      value={constCheckbox ? formData === schema.const : formData}
+       onChange={onWidgetChange}
+-      onBlur={onBlur}
+-      onFocus={onFocus}
++      onBlur={onWidgetBlur}
++      onFocus={onWidgetFocus}
+       required={required}
+       disabled={disabled}
+       readonly={readonly}
+diff --git a/packages/core/test/StringField.test.tsx b/packages/core/test/StringField.test.tsx
+index 1867ded..901fbb5 100644
+--- a/packages/core/test/StringField.test.tsx
++++ b/packages/core/test/StringField.test.tsx
+@@ -747,6 +747,103 @@ describe('StringField', () => {
+     });
+   });
+ 
++  describe('CheckboxWidget with const', () => {
++    const constSchema: RJSFSchema = {
++      type: 'object',
++      properties: {
++        confirm: { title: 'Confirmation', type: 'string', const: 'foo' },
++      },
++    };
++    const constUiSchema: UiSchema = { confirm: { 'ui:widget': 'checkbox' } };
++
++    it('should render a checkbox for a string with a const', () => {
++      const { node } = createFormComponent({
++        schema: constSchema,
++        uiSchema: constUiSchema,
++        experimental_defaultFormStateBehavior: { constAsDefaults: 'never' },
++      });
++
++      expect(node.querySelectorAll('input[type=checkbox]')).toHaveLength(1);
++      expect(node.querySelector('input[type=checkbox]')).not.toBeChecked();
++    });
++
++    it('should be checked when the value equals the const', () => {
++      const { node } = createFormComponent({
++        schema: constSchema,
++        uiSchema: constUiSchema,
++        formData: { confirm: 'foo' },
++      });
++
++      expect(node.querySelector('input[type=checkbox]')).toBeChecked();
++    });
++
++    it('should not be checked when the value differs from the const', () => {
++      const { node } = createFormComponent({
++        schema: constSchema,
++        uiSchema: constUiSchema,
++        formData: { confirm: 'bar' },
++      });
++
++      expect(node.querySelector('input[type=checkbox]')).not.toBeChecked();
++    });
++
++    it('should start checked when the const is populated as a default', () => {
++      const { node } = createFormComponent({ schema: constSchema, uiSchema: constUiSchema });
++
++      expect(node.querySelector('input[type=checkbox]')).toBeChecked();
++    });
++
++    it('should set the const when checked and clear the value when unchecked', () => {
++      const { node, onChange } = createFormComponent({
++        schema: constSchema,
++        uiSchema: constUiSchema,
++        experimental_defaultFormStateBehavior: { constAsDefaults: 'never' },
++      });
++
++      fireEvent.click(node.querySelector('input[type=checkbox]')!);
++      expectToHaveBeenCalledWithFormData(onChange, { confirm: 'foo' }, 'root_confirm');
++      expect(node.querySelector('input[type=checkbox]')).toBeChecked();
++
++      fireEvent.click(node.querySelector('input[type=checkbox]')!);
++      expectToHaveBeenCalledWithFormData(onChange, { confirm: undefined }, 'root_confirm');
++      expect(node.querySelector('input[type=checkbox]')).not.toBeChecked();
++    });
++
++    it('should pass the const to onBlur and onFocus', () => {
++      const onBlur = vi.fn();
++      const onFocus = vi.fn();
++      const { node } = createFormComponent({
++        schema: constSchema,
++        uiSchema: constUiSchema,
++        formData: { confirm: 'foo' },
++        onBlur,
++        onFocus,
++      });
++      const input = node.querySelector('input[type=checkbox]')!;
++
++      fireEvent.focus(input);
++      fireEvent.blur(input);
++
++      expect(onFocus).toHaveBeenLastCalledWith('root_confirm', 'foo');
++      expect(onBlur).toHaveBeenLastCalledWith('root_confirm', 'foo');
++    });
++
++    it('should report a required const as missing until it is checked', async () => {
++      const { node, onError } = createFormComponent({
++        schema: { ...constSchema, required: ['confirm'] },
++        uiSchema: constUiSchema,
++        experimental_defaultFormStateBehavior: { constAsDefaults: 'never' },
++        noHtml5Validate: true,
++      });
++
++      expect(node.querySelector('input[type=checkbox]')).toBeRequired();
++
++      await submitForm(node, user);
++
++      expect(onError).toHaveBeenLastCalledWith([expect.objectContaining({ name: 'required', property: 'confirm' })]);
++    });
++  });
++
+   describe('DateTimeWidget', () => {
+     it('should render an datetime-local field', () => {
+       const { node } = createFormComponent({
+diff --git a/packages/docs/docs/usage/widgets.md b/packages/docs/docs/usage/widgets.md
+index 63bf425..3577de8 100644
+--- a/packages/docs/docs/usage/widgets.md
++++ b/packages/docs/docs/usage/widgets.md
+@@ -68,6 +68,7 @@ uiSchema:
+ - `textarea`: a `textarea` element is used;
+ - `password`: an `input[type=password]` element is used;
+ - `color`: an `input[type=color]` element is used;
++- `checkbox`: only for a string with a `const`; checking the box sets the value to the `const` and unchecking it clears the value (with the default `constAsDefaults: 'always'` [form state behavior](../api-reference/form-props.md#constasdefaults), the `const` is populated as a default, so the box starts checked);
+ - by default, a regular `input[type=text]` element is used.
+ 
+ ### String formats
+diff --git a/packages/playground/src/samples/widgets.tsx b/packages/playground/src/samples/widgets.tsx
+index a3b622a..cf414c2 100644
+--- a/packages/playground/src/samples/widgets.tsx
++++ b/packages/playground/src/samples/widgets.tsx
+@@ -144,6 +144,12 @@ const widgets: Sample = {
+         default: 'I am also read-only.',
+         readOnly: true,
+       },
++      confirmation: {
++        type: 'string',
++        title: 'Confirmation (checkbox for a string const)',
++        description: 'Checking it sets the value to "confirmed"; unchecking removes it',
++        const: 'confirmed',
++      },
+       widgetOptions: {
+         title: 'Custom widget with options',
+         type: 'string',
+@@ -228,6 +234,9 @@ const widgets: Sample = {
+     readonly: {
+       'ui:readonly': true,
+     },
++    confirmation: {
++      'ui:widget': 'checkbox',
++    },
+     widgetOptions: {
+       'ui:widget': ({
+         value,
+-- 
+2.43.0
+

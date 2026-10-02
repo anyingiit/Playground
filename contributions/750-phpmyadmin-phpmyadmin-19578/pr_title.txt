@@ -1,0 +1,1 @@
+Fix #19578 - Add DELIMITER to the query shown after saving a routine, event or trigger

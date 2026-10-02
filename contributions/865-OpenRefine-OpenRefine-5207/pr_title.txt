@@ -1,0 +1,1 @@
+Add a hidden characters facet to the customized facets menu

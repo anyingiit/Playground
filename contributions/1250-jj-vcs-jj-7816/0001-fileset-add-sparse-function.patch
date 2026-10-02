@@ -1,0 +1,515 @@
+From 6ef763124189055872ed9bf6e22e72c4d82841c9 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:30:43 +0000
+Subject: [PATCH] fileset: add `sparse()` function
+
+This adds a `sparse()` fileset function that matches the files within the
+current working copy's sparse patterns. It makes it easy to focus on the
+sparse checkout, for example `jj log -r 'files(sparse())'` only shows
+revisions that touch files in the sparse checkout.
+
+The sparse patterns are loaded by `WorkspaceCommandEnvironment::new()` and
+passed to the fileset parser through `FilesetParseContext` (and
+`RevsetWorkspaceContext` for `files()` in revsets). Where no sparse patterns
+are available, such as in filesets loaded from config, `sparse()` is an
+error.
+
+Closes #7816
+---
+ CHANGELOG.md                     |   5 ++
+ cli/src/cli_util.rs              |  12 ++++
+ cli/src/commit_templater.rs      |   5 ++
+ cli/tests/test_sparse_command.rs |  76 +++++++++++++++++++++++
+ docs/filesets.md                 |   4 ++
+ lib/src/fileset.rs               | 100 +++++++++++++++++++++++++++----
+ lib/src/revset.rs                |   8 ++-
+ lib/tests/test_revset.rs         |   1 +
+ 8 files changed, 197 insertions(+), 14 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 53adb58..04aac00 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -30,6 +30,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+ 
+ ### New features
+ 
++* New fileset function `sparse()` matches files within the working copy's
++  sparse patterns. For example, `jj log -r 'files(sparse())'` shows only
++  revisions that touch the sparse checkout.
++  [#7816](https://github.com/jj-vcs/jj/issues/7816)
++
+ * Added the `TreeEntry.normal_value()` template method and the `TreeValue` type
+   to access resolved tree values, formatted as their full object IDs, including
+   Git submodule commit IDs.
+diff --git a/cli/src/cli_util.rs b/cli/src/cli_util.rs
+index f26ae8a..bcfc4ef 100644
+--- a/cli/src/cli_util.rs
++++ b/cli/src/cli_util.rs
+@@ -951,6 +951,7 @@ pub struct WorkspaceCommandEnvironment {
+     path_converter: RepoPathUiConverter,
+     working_copy_shared_with_git: bool,
+     workspace_name: WorkspaceNameBuf,
++    sparse_patterns: Option<Vec<RepoPathBuf>>,
+     immutable_heads_expression: Arc<UserRevsetExpression>,
+     short_prefixes_expression: Option<Arc<UserRevsetExpression>>,
+     conflict_marker_style: ConflictMarkerStyle,
+@@ -972,6 +973,13 @@ impl WorkspaceCommandEnvironment {
+         let working_copy_shared_with_git = crate::git_util::is_colocated_git_workspace(workspace)?;
+         #[cfg(not(feature = "git"))]
+         let working_copy_shared_with_git = false;
++        // The sparse patterns are used only by the `sparse()` fileset
++        // function. If they can't be read, the function will report an error.
++        let sparse_patterns = workspace
++            .working_copy()
++            .sparse_patterns()
++            .ok()
++            .map(|patterns| patterns.to_vec());
+         let mut env = Self {
+             command: command.clone(),
+             settings: settings.clone(),
+@@ -982,6 +990,7 @@ impl WorkspaceCommandEnvironment {
+             path_converter,
+             working_copy_shared_with_git,
+             workspace_name: workspace.workspace_name().to_owned(),
++            sparse_patterns,
+             immutable_heads_expression: RevsetExpression::root(),
+             short_prefixes_expression: None,
+             conflict_marker_style: settings.get("ui.conflict-marker-style")?,
+@@ -1030,6 +1039,7 @@ impl WorkspaceCommandEnvironment {
+         FilesetParseContext {
+             aliases_map: &self.fileset_aliases_map,
+             path_converter: &self.path_converter,
++            sparse_patterns: self.sparse_patterns.as_deref(),
+         }
+     }
+ 
+@@ -1042,6 +1052,7 @@ impl WorkspaceCommandEnvironment {
+         FilesetParseContext {
+             aliases_map: &self.fileset_aliases_map,
+             path_converter: &ROOT_PATH_CONVERTER,
++            sparse_patterns: None,
+         }
+     }
+ 
+@@ -1049,6 +1060,7 @@ impl WorkspaceCommandEnvironment {
+         let workspace_context = RevsetWorkspaceContext {
+             path_converter: &self.path_converter,
+             workspace_name: &self.workspace_name,
++            sparse_patterns: self.sparse_patterns.as_deref(),
+         };
+         let now = if let Some(timestamp) = self.settings.commit_timestamp() {
+             chrono::Local
+diff --git a/cli/src/commit_templater.rs b/cli/src/commit_templater.rs
+index 2c1dacc..31b119d 100644
+--- a/cli/src/commit_templater.rs
++++ b/cli/src/commit_templater.rs
+@@ -208,6 +208,10 @@ impl<'repo> CommitTemplateLanguage<'repo> {
+         FilesetParseContext {
+             aliases_map: self.revset_parse_context.fileset_aliases_map,
+             path_converter: self.path_converter,
++            sparse_patterns: self
++                .revset_parse_context
++                .workspace
++                .and_then(|workspace| workspace.sparse_patterns),
+         }
+     }
+ }
+@@ -3181,6 +3185,7 @@ mod tests {
+                 workspace: Some(RevsetWorkspaceContext {
+                     path_converter: &self.path_converter,
+                     workspace_name: self.test_workspace.workspace.workspace_name(),
++                    sparse_patterns: None,
+                 }),
+             };
+             let mut language = CommitTemplateLanguage::new(
+diff --git a/cli/tests/test_sparse_command.rs b/cli/tests/test_sparse_command.rs
+index 7ac469c..2ca705d 100644
+--- a/cli/tests/test_sparse_command.rs
++++ b/cli/tests/test_sparse_command.rs
+@@ -214,3 +214,79 @@ fn test_sparse_editor_avoids_unc() -> TestResult {
+     assert_eq!(edited_path, dunce::simplified(&edited_path));
+     Ok(())
+ }
++
++#[test]
++fn test_sparse_fileset_function() {
++    let test_env = TestEnvironment::default();
++    test_env.run_jj_in(".", ["git", "init", "repo"]).success();
++    let work_dir = test_env.work_dir("repo");
++
++    work_dir.write_file("foo.txt", "foo\n");
++    work_dir.write_file("bar.txt", "bar\n");
++    work_dir
++        .run_jj(["commit", "-m", "add foo and bar"])
++        .success();
++    work_dir.write_file("bar.txt", "bar 2\n");
++    work_dir.run_jj(["commit", "-m", "modify bar"]).success();
++    work_dir.write_file("foo.txt", "foo 2\n");
++    work_dir.run_jj(["commit", "-m", "modify foo"]).success();
++
++    // By default, sparse() matches everything
++    let output = work_dir.run_jj(["file", "list", "sparse()"]);
++    insta::assert_snapshot!(output, @"
++    bar.txt
++    foo.txt
++    [EOF]
++    ");
++
++    work_dir
++        .run_jj(["sparse", "set", "--clear", "--add", "foo.txt"])
++        .success();
++    let output = work_dir.run_jj(["file", "list", "-r@-", "sparse()"]);
++    insta::assert_snapshot!(output, @"
++    foo.txt
++    [EOF]
++    ");
++
++    // Revisions which don't touch the sparse patterns can be filtered out
++    let output = work_dir.run_jj([
++        "log",
++        "--no-graph",
++        "-r",
++        "files(sparse())",
++        "-T",
++        "description",
++    ]);
++    insta::assert_snapshot!(output, @"
++    modify foo
++    add foo and bar
++    [EOF]
++    ");
++
++    // sparse() can be combined with other patterns
++    let output = work_dir.run_jj(["file", "list", "-r@-", "~sparse()"]);
++    insta::assert_snapshot!(output, @"
++    bar.txt
++    [EOF]
++    ");
++
++    // With no sparse patterns, sparse() matches nothing
++    work_dir.run_jj(["sparse", "set", "--clear"]).success();
++    let output = work_dir.run_jj(["file", "list", "-r@-", "sparse()"]);
++    insta::assert_snapshot!(output, @"");
++
++    // There's no working copy to resolve sparse() against in config
++    let output = work_dir.run_jj(["status", "--config=snapshot.auto-track='sparse()'"]);
++    insta::assert_snapshot!(output, @"
++    ------- stderr -------
++    Error: Failed to parse fileset: Sparse patterns are not available in this context
++    Caused by:  --> 1:1
++      |
++    1 | sparse()
++      | ^----^
++      |
++      = Sparse patterns are not available in this context
++    [EOF]
++    [exit status: 1]
++    ");
++}
+diff --git a/docs/filesets.md b/docs/filesets.md
+index e82a966..b3913ae 100644
+--- a/docs/filesets.md
++++ b/docs/filesets.md
+@@ -85,6 +85,10 @@ You can also specify patterns by using functions.
+ 
+ * `all()`: Matches everything.
+ * `none()`: Matches nothing.
++* `sparse()`: Matches files within the sparse patterns of the current working
++  copy (see `jj sparse list`). For example, `jj log -r 'files(sparse())'`
++  shows only revisions that modify files in the sparse checkout. This function
++  is not available where there is no working copy, such as in config files.
+ 
+ ## Aliases
+ 
+diff --git a/lib/src/fileset.rs b/lib/src/fileset.rs
+index b9ee3b9..5a276fe 100644
+--- a/lib/src/fileset.rs
++++ b/lib/src/fileset.rs
+@@ -506,7 +506,7 @@ fn union_all_matchers(matchers: &mut [Option<Box<dyn Matcher>>]) -> Box<dyn Matc
+ 
+ type FilesetFunction = fn(
+     &mut FilesetDiagnostics,
+-    &RepoPathUiConverter,
++    &FilesetParseContext,
+     &FunctionCallNode,
+ ) -> FilesetParseResult<FilesetExpression>;
+ 
+@@ -514,24 +514,38 @@ static BUILTIN_FUNCTION_MAP: LazyLock<HashMap<&str, FilesetFunction>> = LazyLock
+     // Not using maplit::hashmap!{} or custom declarative macro here because
+     // code completion inside macro is quite restricted.
+     let mut map: HashMap<&str, FilesetFunction> = HashMap::new();
+-    map.insert("none", |_diagnostics, _path_converter, function| {
++    map.insert("none", |_diagnostics, _context, function| {
+         function.expect_no_arguments()?;
+         Ok(FilesetExpression::none())
+     });
+-    map.insert("all", |_diagnostics, _path_converter, function| {
++    map.insert("all", |_diagnostics, _context, function| {
+         function.expect_no_arguments()?;
+         Ok(FilesetExpression::all())
+     });
++    map.insert("sparse", |_diagnostics, context, function| {
++        function.expect_no_arguments()?;
++        let sparse_patterns = context.sparse_patterns.ok_or_else(|| {
++            FilesetParseError::expression(
++                "Sparse patterns are not available in this context",
++                function.name_span,
++            )
++        })?;
++        let expressions = sparse_patterns
++            .iter()
++            .map(|path| FilesetExpression::prefix_path(path.clone()))
++            .collect();
++        Ok(FilesetExpression::union_all(expressions))
++    });
+     map
+ });
+ 
+ fn resolve_function(
+     diagnostics: &mut FilesetDiagnostics,
+-    path_converter: &RepoPathUiConverter,
++    context: &FilesetParseContext,
+     function: &FunctionCallNode,
+ ) -> FilesetParseResult<FilesetExpression> {
+     if let Some(func) = BUILTIN_FUNCTION_MAP.get(function.name) {
+-        func(diagnostics, path_converter, function)
++        func(diagnostics, context, function)
+     } else {
+         Err(FilesetParseError::new(
+             FilesetParseErrorKind::NoSuchFunction {
+@@ -545,9 +559,10 @@ fn resolve_function(
+ 
+ fn resolve_expression(
+     diagnostics: &mut FilesetDiagnostics,
+-    path_converter: &RepoPathUiConverter,
++    context: &FilesetParseContext,
+     node: &ExpressionNode,
+ ) -> FilesetParseResult<FilesetExpression> {
++    let path_converter = context.path_converter;
+     fileset_parser::catch_aliases(diagnostics, node, |diagnostics, node| {
+         let wrap_pattern_error =
+             |err| FilesetParseError::expression("Invalid file pattern", node.span).with_source(err);
+@@ -569,14 +584,14 @@ fn resolve_expression(
+                 Ok(FilesetExpression::pattern(pattern))
+             }
+             ExpressionKind::Unary(op, arg_node) => {
+-                let arg = resolve_expression(diagnostics, path_converter, arg_node)?;
++                let arg = resolve_expression(diagnostics, context, arg_node)?;
+                 match op {
+                     UnaryOp::Negate => Ok(FilesetExpression::all().difference(arg)),
+                 }
+             }
+             ExpressionKind::Binary(op, lhs_node, rhs_node) => {
+-                let lhs = resolve_expression(diagnostics, path_converter, lhs_node)?;
+-                let rhs = resolve_expression(diagnostics, path_converter, rhs_node)?;
++                let lhs = resolve_expression(diagnostics, context, lhs_node)?;
++                let rhs = resolve_expression(diagnostics, context, rhs_node)?;
+                 match op {
+                     BinaryOp::Intersection => Ok(lhs.intersection(rhs)),
+                     BinaryOp::Difference => Ok(lhs.difference(rhs)),
+@@ -585,12 +600,12 @@ fn resolve_expression(
+             ExpressionKind::UnionAll(nodes) => {
+                 let expressions = nodes
+                     .iter()
+-                    .map(|node| resolve_expression(diagnostics, path_converter, node))
++                    .map(|node| resolve_expression(diagnostics, context, node))
+                     .try_collect()?;
+                 Ok(FilesetExpression::union_all(expressions))
+             }
+             ExpressionKind::FunctionCall(function) => {
+-                resolve_function(diagnostics, path_converter, function)
++                resolve_function(diagnostics, context, function)
+             }
+             ExpressionKind::AliasExpanded(..) => unreachable!(),
+         }
+@@ -604,6 +619,8 @@ pub struct FilesetParseContext<'a> {
+     pub aliases_map: &'a FilesetAliasesMap,
+     /// Context to resolve cwd-relative paths.
+     pub path_converter: &'a RepoPathUiConverter,
++    /// Sparse patterns of the current working copy, if available.
++    pub sparse_patterns: Option<&'a [RepoPathBuf]>,
+ }
+ 
+ /// Parses text into `FilesetExpression` without bare string fallback.
+@@ -615,7 +632,7 @@ pub fn parse(
+     let node = fileset_parser::parse_program(text)?;
+     let node = fileset_parser::expand_aliases(node, context.aliases_map)?;
+     // TODO: add basic tree substitution pass to eliminate redundant expressions
+-    resolve_expression(diagnostics, context.path_converter, &node)
++    resolve_expression(diagnostics, context, &node)
+ }
+ 
+ /// Parses text into `FilesetExpression` with bare string fallback.
+@@ -630,7 +647,7 @@ pub fn parse_maybe_bare(
+     let node = fileset_parser::parse_program_or_bare_string(text)?;
+     let node = fileset_parser::expand_aliases(node, context.aliases_map)?;
+     // TODO: add basic tree substitution pass to eliminate redundant expressions
+-    resolve_expression(diagnostics, context.path_converter, &node)
++    resolve_expression(diagnostics, context, &node)
+ }
+ 
+ #[cfg(test)]
+@@ -670,6 +687,7 @@ mod tests {
+                 cwd: PathBuf::from("/ws/cur"),
+                 base: PathBuf::from("/ws"),
+             },
++            sparse_patterns: None,
+         };
+         let parse = |text| parse_maybe_bare(&mut FilesetDiagnostics::new(), text, &context);
+ 
+@@ -737,6 +755,7 @@ mod tests {
+                 cwd: PathBuf::from("/ws/cur*"),
+                 base: PathBuf::from("/ws"),
+             },
++            sparse_patterns: None,
+         };
+         let parse = |text| parse_maybe_bare(&mut FilesetDiagnostics::new(), text, &context);
+ 
+@@ -948,6 +967,7 @@ mod tests {
+                 cwd: PathBuf::from("/ws/cur"),
+                 base: PathBuf::from("/ws"),
+             },
++            sparse_patterns: None,
+         };
+         let parse = |text| parse_maybe_bare(&mut FilesetDiagnostics::new(), text, &context);
+ 
+@@ -1069,6 +1089,7 @@ mod tests {
+                 cwd: PathBuf::from("/ws/cur*"),
+                 base: PathBuf::from("/ws"),
+             },
++            sparse_patterns: None,
+         };
+         let parse = |text| parse_maybe_bare(&mut FilesetDiagnostics::new(), text, &context);
+ 
+@@ -1166,6 +1187,7 @@ mod tests {
+                 cwd: PathBuf::from("/ws/cur"),
+                 base: PathBuf::from("/ws"),
+             },
++            sparse_patterns: None,
+         };
+         let parse = |text| parse_maybe_bare(&mut FilesetDiagnostics::new(), text, &context);
+ 
+@@ -1188,6 +1210,57 @@ mod tests {
+         Ok(())
+     }
+ 
++    #[test]
++    fn test_parse_sparse_function() -> TestResult {
++        let settings = insta_settings();
++        let _guard = settings.bind_to_scope();
++        let path_converter = RepoPathUiConverter::Fs {
++            cwd: PathBuf::from("/ws/cur"),
++            base: PathBuf::from("/ws"),
++        };
++        let parse_with = |text, sparse_patterns| {
++            let context = FilesetParseContext {
++                aliases_map: &FilesetAliasesMap::new(),
++                path_converter: &path_converter,
++                sparse_patterns,
++            };
++            parse_maybe_bare(&mut FilesetDiagnostics::new(), text, &context)
++        };
++
++        let patterns = [repo_path_buf("foo"), repo_path_buf("bar/baz")];
++        let root_patterns = [RepoPathBuf::root()];
++        insta::assert_debug_snapshot!(parse_with("sparse()", Some(&patterns))?, @r#"
++        UnionAll(
++            [
++                Pattern(PrefixPath("foo")),
++                Pattern(PrefixPath("bar/baz")),
++            ],
++        )
++        "#);
++        // Sparse patterns are relative to the workspace root, not to cwd.
++        insta::assert_debug_snapshot!(
++            parse_with("sparse() & x", Some(&patterns[..1]))?, @r#"
++        Intersection(
++            Pattern(PrefixPath("foo")),
++            Pattern(PrefixPath("cur/x")),
++        )
++        "#);
++        insta::assert_debug_snapshot!(
++            parse_with("sparse()", Some(&root_patterns))?,
++            @r#"Pattern(PrefixPath(""))"#);
++        insta::assert_debug_snapshot!(parse_with("sparse()", Some(&[]))?, @"None");
++        insta::assert_debug_snapshot!(parse_with("sparse(x)", Some(&[])).unwrap_err().kind(), @r#"
++        InvalidArguments {
++            name: "sparse",
++            message: "Expected 0 arguments",
++        }
++        "#);
++        insta::assert_debug_snapshot!(
++            parse_with("sparse()", None).unwrap_err().kind(),
++            @r#"Expression("Sparse patterns are not available in this context")"#);
++        Ok(())
++    }
++
+     #[test]
+     fn test_parse_compound_expression() -> TestResult {
+         let settings = insta_settings();
+@@ -1198,6 +1271,7 @@ mod tests {
+                 cwd: PathBuf::from("/ws/cur"),
+                 base: PathBuf::from("/ws"),
+             },
++            sparse_patterns: None,
+         };
+         let parse = |text| parse_maybe_bare(&mut FilesetDiagnostics::new(), text, &context);
+ 
+diff --git a/lib/src/revset.rs b/lib/src/revset.rs
+index 698b311..01a37ac 100644
+--- a/lib/src/revset.rs
++++ b/lib/src/revset.rs
+@@ -66,6 +66,7 @@ use crate::ref_name::WorkspaceNameBuf;
+ use crate::repo::ReadonlyRepo;
+ use crate::repo::Repo;
+ use crate::repo::RepoLoaderError;
++use crate::repo_path::RepoPathBuf;
+ use crate::revset_parser;
+ pub use crate::revset_parser::BinaryOp;
+ pub use crate::revset_parser::ExpressionKind;
+@@ -3675,9 +3676,11 @@ impl<'a> LoweringContext<'a> {
+     }
+ 
+     pub fn fileset_parse_context(&self) -> Option<FilesetParseContext<'_>> {
++        let workspace = self.workspace?;
+         Some(FilesetParseContext {
+             aliases_map: self.fileset_aliases_map,
+-            path_converter: self.workspace?.path_converter,
++            path_converter: workspace.path_converter,
++            sparse_patterns: workspace.sparse_patterns,
+         })
+     }
+ 
+@@ -3691,6 +3694,8 @@ impl<'a> LoweringContext<'a> {
+ pub struct RevsetWorkspaceContext<'a> {
+     pub path_converter: &'a RepoPathUiConverter,
+     pub workspace_name: &'a WorkspaceName,
++    /// Sparse patterns of the working copy, if available.
++    pub sparse_patterns: Option<&'a [RepoPathBuf]>,
+ }
+ 
+ #[cfg(test)]
+@@ -3750,6 +3755,7 @@ mod tests {
+         let workspace_ctx = RevsetWorkspaceContext {
+             path_converter: &path_converter,
+             workspace_name,
++            sparse_patterns: None,
+         };
+         let mut aliases_map = RevsetAliasesMap::new();
+         for (decl, defn) in aliases {
+diff --git a/lib/tests/test_revset.rs b/lib/tests/test_revset.rs
+index bcc77ee..d648d2e 100644
+--- a/lib/tests/test_revset.rs
++++ b/lib/tests/test_revset.rs
+@@ -1109,6 +1109,7 @@ fn resolve_commit_ids_in_workspace(
+     let workspace_ctx = RevsetWorkspaceContext {
+         path_converter: &path_converter,
+         workspace_name: workspace.workspace_name(),
++        sparse_patterns: None,
+     };
+     let context = RevsetParseContext {
+         aliases_map: &RevsetAliasesMap::default(),
+-- 
+2.43.0
+

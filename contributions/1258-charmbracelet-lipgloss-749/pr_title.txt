@@ -1,0 +1,1 @@
+fix: detect the default Writer's color profile lazily

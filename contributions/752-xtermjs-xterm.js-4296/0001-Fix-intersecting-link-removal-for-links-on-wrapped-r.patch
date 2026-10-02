@@ -1,0 +1,99 @@
+From 490da3837544a1d717177e89ce784f0b4c6a85e9 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:24:02 +0000
+Subject: [PATCH] Fix intersecting link removal for links on wrapped rows
+
+_removeIntersectingLinks tracked occupied cells by x only and widened
+links that start or end on another row to the full row width. Links on
+different rows of the same wrapped line could therefore collide on x
+alone, and the lower priority one was dropped.
+
+Key occupied cells by their absolute offset (y * cols + x) over the
+whole link range instead.
+
+Fixes #4296
+---
+ src/browser/Linkifier.test.ts | 22 ++++++++++++++++++++++
+ src/browser/Linkifier.ts      | 19 +++++++++++--------
+ 2 files changed, 33 insertions(+), 8 deletions(-)
+
+diff --git a/src/browser/Linkifier.test.ts b/src/browser/Linkifier.test.ts
+index 5f8b075..ca0c05d 100644
+--- a/src/browser/Linkifier.test.ts
++++ b/src/browser/Linkifier.test.ts
+@@ -126,4 +126,26 @@ describe('Linkifier2', () => {
+     linkifier.linkLeave({ classList: { add: () => { } } } as any, multiLineLink, {} as any);
+   });
+ 
++  it('should keep links on different wrapped rows that share x ranges', () => {
++    const createLink = (startX: number, startY: number, endX: number, endY: number): ILink => ({
++      text: 'foo',
++      range: { start: { x: startX, y: startY }, end: { x: endX, y: endY } },
++      activate: () => { }
++    });
++    const wrappedLink = createLink(5, 1, 10, 2);
++    const secondRowLink = createLink(20, 2, 30, 2);
++    const overlappingLink = createLink(8, 2, 12, 2);
++    const linkProviderService = new LinkProviderService();
++    linkProviderService.registerLinkProvider({ provideLinks: (y, callback) => callback([wrappedLink]) });
++    linkProviderService.registerLinkProvider({ provideLinks: (y, callback) => callback([secondRowLink, overlappingLink]) });
++    const dom = new jsdom.JSDOM();
++    const wrappedLinkifier = new TestLinkifier2(dom.window.document.createElement('div'), null!, null!, bufferService, linkProviderService) as any;
++    wrappedLinkifier._isMouseOut = false;
++
++    wrappedLinkifier._askForLink({ x: 1, y: 1 }, false);
++
++    const replies = wrappedLinkifier._activeProviderReplies;
++    assert.deepEqual(replies.get(0).map((e: { link: ILink }) => e.link), [wrappedLink]);
++    assert.deepEqual(replies.get(1).map((e: { link: ILink }) => e.link), [secondRowLink]);
++  });
+ });
+diff --git a/src/browser/Linkifier.ts b/src/browser/Linkifier.ts
+index 9581fb2..037519d 100644
+--- a/src/browser/Linkifier.ts
++++ b/src/browser/Linkifier.ts
+@@ -143,30 +143,33 @@ export class Linkifier extends Disposable implements ILinkifier2 {
+           // If all providers have responded, remove lower priority links that intersect ranges of
+           // higher priority links
+           if (this._activeProviderReplies?.size === this._linkProviderService.linkProviders.length) {
+-            this._removeIntersectingLinks(position.y, this._activeProviderReplies);
++            this._removeIntersectingLinks(this._activeProviderReplies);
+           }
+         });
+       }
+     }
+   }
+ 
+-  private _removeIntersectingLinks(y: number, replies: Map<Number, ILinkWithState[] | undefined>): void {
++  private _removeIntersectingLinks(replies: Map<Number, ILinkWithState[] | undefined>): void {
++    // Cells are keyed by their absolute buffer offset so links on different rows of a wrapped line
++    // only intersect when they actually share a cell
+     const occupiedCells = new Set<number>();
++    const cols = this._bufferService.cols;
+     for (let i = 0; i < replies.size; i++) {
+       const providerReply = replies.get(i);
+       if (!providerReply) {
+         continue;
+       }
+       for (let i = 0; i < providerReply.length; i++) {
+-        const linkWithState = providerReply[i];
+-        const startX = linkWithState.link.range.start.y < y ? 0 : linkWithState.link.range.start.x;
+-        const endX = linkWithState.link.range.end.y > y ? this._bufferService.cols : linkWithState.link.range.end.x;
+-        for (let x = startX; x <= endX; x++) {
+-          if (occupiedCells.has(x)) {
++        const range = providerReply[i].link.range;
++        const start = range.start.y * cols + range.start.x;
++        const end = range.end.y * cols + range.end.x;
++        for (let cell = start; cell <= end; cell++) {
++          if (occupiedCells.has(cell)) {
+             providerReply.splice(i--, 1);
+             break;
+           }
+-          occupiedCells.add(x);
++          occupiedCells.add(cell);
+         }
+       }
+     }
+-- 
+2.43.0
+

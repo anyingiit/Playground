@@ -1,0 +1,78 @@
+From 71cf8362da66151fa976a9185a2c2ed41ce5cf68 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:37:40 +0000
+Subject: [PATCH] Fix Bitbucket Server repo slug with context path or /scm/
+ segment
+
+Some CI sources (e.g. Bitrise, Appcircle) build repo_slug from the whole
+clone URL path, so a Bitbucket Server URL like
+https://host/bitbucket/scm/PROJ/repo.git yields "bitbucket/scm/PROJ/repo".
+The Bitbucket Server request source took the first two segments and called
+the API for project "bitbucket" / repo "scm". Use the last two segments
+instead, since Bitbucket Server repositories are always PROJECT/REPO.
+
+Fixes #1327
+---
+ CHANGELOG.md                                      |  1 +
+ lib/danger/request_sources/bitbucket_server.rb    |  6 +++++-
+ .../request_sources/bitbucket_server_spec.rb      | 15 +++++++++++++++
+ 3 files changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 63a4c68..cfb7354 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -11,6 +11,7 @@
+ ## master
+ 
+ <!-- Your comment below here -->
++* Fix Bitbucket Server project/repo detection when the repository URL has a context path or `/scm/` segment (e.g. on Bitrise) - [@anyingiit](https://github.com/anyingiit) [#1327](https://github.com/danger/danger/issues/1327)
+ <!-- Your comment above here -->
+ 
+ ## 9.6.1
+diff --git a/lib/danger/request_sources/bitbucket_server.rb b/lib/danger/request_sources/bitbucket_server.rb
+index 801e528..ca0884d 100644
+--- a/lib/danger/request_sources/bitbucket_server.rb
++++ b/lib/danger/request_sources/bitbucket_server.rb
+@@ -34,7 +34,11 @@ module Danger
+         self.ci_source = ci_source
+         self.dismiss_out_of_range_messages = environment["DANGER_BITBUCKETSERVER_DISMISS_OUT_OF_RANGE_MESSAGES"] == "true"
+ 
+-        project, slug = ci_source.repo_slug.split("/")
++        # Bitbucket Server repositories are always PROJECT/REPO, but some CI sources
++        # (e.g. Bitrise, Appcircle) derive repo_slug from the whole clone URL path,
++        # which may include a context path and/or the "/scm/" segment
++        # (e.g. "bitbucket/scm/PROJ/repo"). Only the last two segments matter.
++        project, slug = ci_source.repo_slug.split("/").last(2)
+         @api = BitbucketServerAPI.new(project, slug, ci_source.pull_request_id, environment)
+         @code_insights = CodeInsightsAPI.new(project, slug, environment)
+       end
+diff --git a/spec/lib/danger/request_sources/bitbucket_server_spec.rb b/spec/lib/danger/request_sources/bitbucket_server_spec.rb
+index d934909..fd66966 100644
+--- a/spec/lib/danger/request_sources/bitbucket_server_spec.rb
++++ b/spec/lib/danger/request_sources/bitbucket_server_spec.rb
+@@ -10,6 +10,21 @@ RSpec.describe Danger::RequestSources::BitbucketServer, host: :bitbucket_server
+     it "should not raise uninitialized constant error" do
+       expect { described_class.new(stub_ci, env) }.not_to raise_error
+     end
++
++    it "uses the last two segments of a repo slug that contains a context path and /scm/" do
++      ci = Danger::Bitrise.new(
++        "BITRISE_PULL_REQUEST" => "2080",
++        "GIT_REPOSITORY_URL" => "https://stash.example.com/bitbucket/scm/PROJ/repo.git"
++      )
++      expect(ci.repo_slug).to eq("bitbucket/scm/PROJ/repo")
++
++      url = "https://stash.example.com/rest/api/1.0/projects/PROJ/repos/repo/pull-requests/2080"
++      WebMock.stub_request(:get, url).to_return(File.new("spec/fixtures/bitbucket_server_api/pr_response.json"))
++
++      bs = described_class.new(ci, env)
++      bs.fetch_details
++      expect(bs.pr_json[:id]).to eq(2080)
++    end
+   end
+ 
+   describe "#host" do
+-- 
+2.43.0
+

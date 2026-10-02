@@ -1,0 +1,163 @@
+From 2b2376121fdf6ccd4a539b311110a71741546122 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 23:06:48 +0000
+Subject: [PATCH] Fix formatting of delegated constructor calls with multiline
+ arguments
+
+When an argument passed to callThisConstructor() or callSuperConstructor()
+renders to more than one line (e.g. a lambda), emit every argument on its
+own indented line with a trailing comma, the same way multiline parameter
+lists are emitted. Calls whose arguments all fit on one line are unchanged.
+
+Fixes #1762.
+---
+ docs/changelog.md                             |  1 +
+ .../kotlin/com/squareup/kotlinpoet/FunSpec.kt | 22 ++++-
+ .../com/squareup/kotlinpoet/TypeSpecTest.kt   | 83 +++++++++++++++++++
+ 3 files changed, 103 insertions(+), 3 deletions(-)
+
+diff --git a/docs/changelog.md b/docs/changelog.md
+index e713860..0168c75 100644
+--- a/docs/changelog.md
++++ b/docs/changelog.md
+@@ -5,6 +5,7 @@ Change Log
+ 
+  * Fix: Carriage returns are no longer lost in `%S` and `%P` string literals. (#2380)
+  * Fix: `Class.asClassName()` no longer drops the package slot of a class in the default package. (#2382)
++ * Fix: Delegated constructor calls (`callThisConstructor()`/`callSuperConstructor()`) with a multiline argument now put each argument on its own indented line. (#1762)
+ 
+ ## Version 2.4.0
+ 
+diff --git a/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/FunSpec.kt b/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/FunSpec.kt
+index 8931a59..97f29f9 100644
+--- a/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/FunSpec.kt
++++ b/kotlinpoet/src/jvmMain/kotlin/com/squareup/kotlinpoet/FunSpec.kt
+@@ -182,12 +182,28 @@ private constructor(
+     }
+ 
+     if (delegateConstructor != null) {
+-      codeWriter.emitCode(
+-        delegateConstructorArguments.joinToCode(prefix = " : $delegateConstructor(", suffix = ")")
+-      )
++      emitDelegateConstructorCall(codeWriter, delegateConstructor)
+     }
+   }
+ 
++  private fun emitDelegateConstructorCall(codeWriter: CodeWriter, delegateConstructor: String) {
++    val arguments = delegateConstructorArguments.map { it.trimTrailingNewLine() }
++    // An argument that spans several lines (a lambda, for example) can't be wrapped sensibly
++    // inline, so in that case every argument goes on its own indented line, like a multiline
++    // parameter list.
++    if (arguments.none { '\n' in it.toString() }) {
++      codeWriter.emitCode(arguments.joinToCode(prefix = " : $delegateConstructor(", suffix = ")"))
++      return
++    }
++    codeWriter.emitCode(
++      arguments.joinToCode(
++        separator = ",\n",
++        prefix = "·:·$delegateConstructor(\n⇥",
++        suffix = ",\n⇤)",
++      )
++    )
++  }
++
+   public val isConstructor: Boolean
+     get() = name.isConstructor
+ 
+diff --git a/kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/TypeSpecTest.kt b/kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/TypeSpecTest.kt
+index 6ecf1fa..2d66c2f 100644
+--- a/kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/TypeSpecTest.kt
++++ b/kotlinpoet/src/jvmTest/kotlin/com/squareup/kotlinpoet/TypeSpecTest.kt
+@@ -4190,6 +4190,89 @@ class TypeSpecTest {
+       )
+   }
+ 
++  // https://github.com/square/kotlinpoet/issues/1762
++  @Test
++  fun constructorDelegationWithMultilineArgument() {
++    val type =
++      TypeSpec.classBuilder("HelloWorld")
++        .addFunction(
++          FunSpec.constructorBuilder()
++            .addParameter("x".repeat(30), String::class)
++            .addParameter("y".repeat(30), String::class)
++            .callThisConstructor(
++              CodeBlock.of("x".repeat(30)),
++              CodeBlock.of("y".repeat(30)),
++              CodeBlock.of("x".repeat(30)),
++              CodeBlock.of("y".repeat(30)),
++              buildCodeBlock {
++                beginControlFlow("thisIsAMethodThatUsesALambdaAndReturnsSomethingForTheConstructor")
++                addStatement("z".repeat(30) + "()")
++                endControlFlow()
++              },
++            )
++            .build()
++        )
++        .build()
++
++    assertThat(toString(type))
++      .isEqualTo(
++        """
++        |package com.squareup.tacos
++        |
++        |import kotlin.String
++        |
++        |public class HelloWorld {
++        |  public constructor(xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx: String, yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy: String) : this(
++        |    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,
++        |    yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy,
++        |    xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,
++        |    yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy,
++        |    thisIsAMethodThatUsesALambdaAndReturnsSomethingForTheConstructor {
++        |      zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz()
++        |    },
++        |  )
++        |}
++        |"""
++          .trimMargin()
++      )
++  }
++
++  @Test
++  fun superConstructorDelegationWithNestedMultilineArgument() {
++    // The newlines are only visible once the nested block passed via a positional placeholder
++    // is rendered.
++    val lambda = CodeBlock.of("%N·{\n⇥%S\n⇤}", "run", "taco")
++    val type =
++      TypeSpec.classBuilder("Taco")
++        .superclass(ClassName("com.squareup.tacos", "Food"))
++        .addFunction(
++          FunSpec.constructorBuilder()
++            .addParameter("name", String::class)
++            .callSuperConstructor(CodeBlock.of("name"), CodeBlock.of("%1L", lambda))
++            .build()
++        )
++        .build()
++
++    assertThat(toString(type))
++      .isEqualTo(
++        """
++        |package com.squareup.tacos
++        |
++        |import kotlin.String
++        |
++        |public class Taco : Food {
++        |  public constructor(name: String) : super(
++        |    name,
++        |    run {
++        |      "taco"
++        |    },
++        |  )
++        |}
++        |"""
++          .trimMargin()
++      )
++  }
++
+   @Test
+   fun internalFunForbiddenInInterface() {
+     val type = TypeSpec.interfaceBuilder("ITaco")
+-- 
+2.43.0
+

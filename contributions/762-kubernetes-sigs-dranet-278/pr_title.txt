@@ -1,0 +1,1 @@
+Validate host-derived network config before checkpointing

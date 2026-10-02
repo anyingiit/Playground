@@ -1,0 +1,185 @@
+From 11f049c5ab968df8e9f1277fc2c431fe255f9674 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:35:55 +0000
+Subject: [PATCH] Report failed compiler downloads and exit non-zero
+
+compilers/download.py dropped downloads that raised an exception from
+the results, so a run with a failed download still logged e.g.
+'Updated 213 / 213 compiler(s)' and exited 0.
+
+Record exceptions (and failed manifest requests) as failures, log which
+compilers failed, and exit with status 1 when any download failed.
+
+Fixes #2118
+---
+ backend/compilers/download.py                 | 34 +++++++--
+ .../coreapp/tests/test_compiler_download.py   | 74 +++++++++++++++++++
+ 2 files changed, 102 insertions(+), 6 deletions(-)
+ create mode 100644 backend/coreapp/tests/test_compiler_download.py
+
+diff --git a/backend/compilers/download.py b/backend/compilers/download.py
+index 8e18e8e..feacd44 100755
+--- a/backend/compilers/download.py
++++ b/backend/compilers/download.py
+@@ -143,7 +143,10 @@ def get_compiler_raw(
+     getter = requests if session is None else session
+     resp = getter.get(image_url, headers=headers, timeout=10)
+     if resp.status_code != 200:
+-        return None
++        logger.error(
++            "Unable to get image index for %s: HTTP %s", docker_image, resp.status_code
++        )
++        return False
+     data = resp.json()
+ 
+     # Grab the first image manifest, and download it.
+@@ -162,7 +165,12 @@ def get_compiler_raw(
+     )
+     resp = getter.get(url, headers=headers, timeout=10)
+     if resp.status_code != 200:
+-        return None
++        logger.error(
++            "Unable to get image manifest for %s: HTTP %s",
++            docker_image,
++            resp.status_code,
++        )
++        return False
+     data = resp.json()
+ 
+     with tempfile.TemporaryDirectory() as temp_dir:
+@@ -254,7 +262,8 @@ class DownloadThread(threading.Thread):
+             try:
+                 self.process_item(item)
+             except Exception as e:
+-                logger.error("Exception thrown while processing item: %s", e)
++                logger.error("Exception thrown while processing %s: %s", item, e)
++                self.results_queue.put((item, False))
+             finally:
+                 self.download_queue.task_done()
+ 
+@@ -271,7 +280,7 @@ class DownloadThread(threading.Thread):
+             session=self.session,
+         )
+ 
+-        self.results_queue.put(result)
++        self.results_queue.put((item, result))
+ 
+ 
+ def main():
+@@ -393,13 +402,26 @@ def main():
+ 
+     end = datetime.datetime.now()
+ 
+-    compilers_downloaded = len(list(filter(lambda x: x, results)))
++    # get_compiler_raw returns True on download, None when there was nothing
++    # to do and False on failure (exceptions are recorded as False too)
++    compilers_downloaded = sum(1 for _, result in results if result is True)
++    failed = sorted(
++        f"{platform_id}/{compiler_id}"
++        for (platform_id, compiler_id), result in results
++        if result is False
++    )
+     logger.info(
+         "Updated %i / %i compiler(s) in %.2f second(s)",
+         compilers_downloaded,
+         len(results),
+         (end - start).total_seconds(),
+     )
++    if failed:
++        logger.error(
++            "%i compiler(s) failed to download: %s", len(failed), ", ".join(failed)
++        )
++        return 1
++    return 0
+ 
+ 
+ if __name__ == "__main__":
+@@ -409,4 +431,4 @@ if __name__ == "__main__":
+         format=("%(asctime)s.%(msecs)03d %(levelname)s %(funcName)s %(message)s"),
+         datefmt="%Y-%m-%d %H:%M:%S",
+     )
+-    main()
++    sys.exit(main())
+diff --git a/backend/coreapp/tests/test_compiler_download.py b/backend/coreapp/tests/test_compiler_download.py
+new file mode 100644
+index 0000000..feb3f00
+--- /dev/null
++++ b/backend/coreapp/tests/test_compiler_download.py
+@@ -0,0 +1,74 @@
++import importlib.util
++import sys
++from pathlib import Path
++from types import ModuleType
++from typing import Any
++from unittest.mock import patch
++
++from django.test import SimpleTestCase
++
++
++def load_download_module() -> ModuleType:
++    path = Path(__file__).resolve().parents[2] / "compilers" / "download.py"
++    spec = importlib.util.spec_from_file_location("compilers_download", path)
++    assert spec is not None and spec.loader is not None
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++class CompilerDownloadTests(SimpleTestCase):
++    def setUp(self) -> None:
++        self.download = load_download_module()
++
++    def run_main(self, results: dict[str, Any]) -> tuple[Any, list[str]]:
++        def fake_get_compiler_raw(
++            platform_id: str, compiler_id: str, **kwargs: Any
++        ) -> bool | None:
++            result = results[compiler_id]
++            if isinstance(result, Exception):
++                raise result
++            return result
++
++        argv = [
++            "download.py",
++            "--compilers-dir",
++            "/nonexistent",
++            "--platforms",
++            "gba",
++            "--compilers",
++            *results.keys(),
++            "--threads",
++            "2",
++        ]
++        with (
++            patch.object(sys, "argv", argv),
++            patch.object(self.download.platform, "system", return_value="Linux"),
++            patch.object(
++                self.download, "get_compiler_raw", side_effect=fake_get_compiler_raw
++            ),
++            self.assertLogs(self.download.logger, level="INFO") as logs,
++        ):
++            ret = self.download.main()
++        return ret, logs.output
++
++    def test_failed_downloads_are_reported(self) -> None:
++        ret, output = self.run_main(
++            {
++                "agbcc": True,
++                "agbccpp": ConnectionError("Connection aborted."),
++                "gcc2.96": False,
++            }
++        )
++        self.assertEqual(ret, 1)
++        summary = [line for line in output if "Updated" in line]
++        self.assertEqual(len(summary), 1)
++        self.assertIn("Updated 1 / 3 compiler(s)", summary[0])
++        self.assertTrue(any("2 compiler(s) failed" in line for line in output), output)
++
++    def test_successful_run_exits_zero(self) -> None:
++        ret, output = self.run_main({"agbcc": True, "agbccpp": None})
++        self.assertEqual(ret, 0)
++        self.assertTrue(
++            any("Updated 1 / 2 compiler(s)" in line for line in output), output
++        )
+-- 
+2.43.0
+

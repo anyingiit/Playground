@@ -1,0 +1,88 @@
+From 057f0289f620f371f9d66893634f1f9174970d62 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:20:51 +0000
+Subject: [PATCH] fix: handle circular objects passed to done()
+
+Calling done() with a plain object that contains a circular reference
+made JSON.stringify throw "Converting circular structure to JSON", which
+hid the real "done() invoked with non-Error" failure. Fall back to
+Mocha's own stringify (which marks cycles as [Circular]) when
+JSON.stringify throws.
+
+Closes #2598
+---
+ lib/runnable.js             | 19 ++++++++++++++++---
+ test/unit/runnable.spec.cjs | 22 ++++++++++++++++++++++
+ 2 files changed, 38 insertions(+), 3 deletions(-)
+
+diff --git a/lib/runnable.js b/lib/runnable.js
+index db55c03..8fa0247 100644
+--- a/lib/runnable.js
++++ b/lib/runnable.js
+@@ -394,9 +394,7 @@ class Runnable extends EventEmitter {
+         if (err) {
+           if (Object.prototype.toString.call(err) === "[object Object]") {
+             return done(
+-              new Error(
+-                "done() invoked with non-Error: " + JSON.stringify(err),
+-              ),
++              new Error("done() invoked with non-Error: " + safeStringify(err)),
+             );
+           }
+           return done(new Error("done() invoked with non-Error: " + err));
+@@ -472,4 +470,19 @@ class Runnable extends EventEmitter {
+   }
+ }
+ 
++/**
++ * `JSON.stringify` the given value, falling back to Mocha's own `stringify`
++ * (which handles circular references) if that throws.
++ * @param {*} value - Value to stringify
++ * @returns {string}
++ * @private
++ */
++function safeStringify(value) {
++  try {
++    return JSON.stringify(value);
++  } catch {
++    return utils.stringify(value);
++  }
++}
++
+ export { Runnable };
+diff --git a/test/unit/runnable.spec.cjs b/test/unit/runnable.spec.cjs
+index d4b34a0..db4ab2c 100644
+--- a/test/unit/runnable.spec.cjs
++++ b/test/unit/runnable.spec.cjs
+@@ -448,6 +448,28 @@ describe("Runnable(title, fn)", function () {
+         });
+       });
+ 
++      describe("when done() is invoked with a circular non-Error object", function () {
++        it("should invoke the callback with a descriptive Error", function (done) {
++          var runnable = new Runnable("foo", function (done) {
++            var obj = { error: "Test error" };
++            obj.self = obj;
++            done(obj);
++          });
++
++          runnable.run(function (err) {
++            expect(err, "to be an", Error);
++            expect(
++              err.message,
++              "to begin with",
++              "done() invoked with non-Error: ",
++            );
++            expect(err.message, "to contain", '"error": "Test error"');
++            expect(err.message, "to contain", '"self": [Circular]');
++            done();
++          });
++        });
++      });
++
+       describe("when done() is invoked with a string", function () {
+         it("should invoke the callback", function (done) {
+           var runnable = new Runnable("foo", function (done) {
+-- 
+2.43.0
+

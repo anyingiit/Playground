@@ -1,0 +1,1 @@
+Fix formatting of delegated constructor calls with multiline arguments

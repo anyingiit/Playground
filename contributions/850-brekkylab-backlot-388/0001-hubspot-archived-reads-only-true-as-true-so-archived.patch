@@ -1,0 +1,70 @@
+From 6bb249a2185e5519e9d3fe5361e978d3b7f21f8f Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:20:12 +0000
+Subject: [PATCH] hubspot: archived reads only true as true, so archived=1 and
+ archived=yes serve the active records
+
+---
+ backlot/routers/hubspot.py |  7 ++++---
+ tests/test_hubspot.py      | 27 +++++++++++++++++++++++++++
+ 2 files changed, 31 insertions(+), 3 deletions(-)
+
+diff --git a/backlot/routers/hubspot.py b/backlot/routers/hubspot.py
+index 9f1e763..95a042b 100644
+--- a/backlot/routers/hubspot.py
++++ b/backlot/routers/hubspot.py
+@@ -155,9 +155,10 @@ def _clamp(raw, default: int, cap: int) -> int:
+ 
+ 
+ def _flag(raw) -> bool:
+-    """`archived=1` must not silently serve the un-archived view; accept the spellings a raw caller
+-    plausibly sends (the official client always sends `true`/`false`)."""
+-    return str(raw or "").strip().lower() in {"true", "1", "yes"}
++    """Only `true` selects the archived view. Measured against api.hubapi.com (2026-10-01, #388):
++    `archived=true` and `archived=TRUE` serve the archived contact, while `1`, `yes`, `abc`, an
++    empty value and an absent one all serve the active contacts."""
++    return str(raw or "").strip().lower() == "true"
+ 
+ 
+ def _props(row) -> dict:
+diff --git a/tests/test_hubspot.py b/tests/test_hubspot.py
+index 35164bc..d695663 100644
+--- a/tests/test_hubspot.py
++++ b/tests/test_hubspot.py
+@@ -27,6 +27,33 @@ def test_admin_hubspot_crawls_all(client, admin_h, ro_conn):
+     assert all(r["archived"] is True for r in archived)
+ 
+ 
++@pytest.mark.parametrize(
++    "value, archived",
++    [
++        ("true", True),
++        ("TRUE", True),
++        ("1", False),
++        ("yes", False),
++        ("abc", False),
++        ("", False),
++        (None, False),
++    ],
++)
++def test_hubspot_archived_reads_only_true_as_true(client, admin_h, value, archived):
++    # Measured on api.hubapi.com's /crm/v3/objects/contacts (2026-10-01, #388): `true` and `TRUE`
++    # serve the archived view; `1`, `yes`, `abc`, an empty value and an absent one all serve the
++    # active records. The listing route is shared by every object type, so companies stand in here.
++    params = {"limit": 100, **({"archived": value} if value is not None else {})}
++    r = client.get("/hubspot/crm/v3/objects/companies", headers=admin_h, params=params)
++    assert r.status_code == 200
++    names = [rec["properties"]["name"] for rec in r.json()["results"]]
++    if archived:
++        assert names == ["Defunct Labs"]
++    else:
++        assert len(names) == 3 and "Defunct Labs" not in names
++    assert all(rec["archived"] is archived for rec in r.json()["results"])
++
++
+ def test_hubspot_list_cursor_pages_without_overlap(client, admin_h):
+     """The cursor path itself: pages of two over the three non-archived companies, no repeats, no
+     gaps, and the walk ends by `paging.next` disappearing rather than by a page coming back empty."""
+-- 
+2.43.0
+

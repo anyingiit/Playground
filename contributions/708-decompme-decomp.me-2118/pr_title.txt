@@ -1,0 +1,1 @@
+Report failed compiler downloads and exit non-zero

@@ -1,0 +1,131 @@
+From 26eadf411b7b2edd0e9da851dd8440f03c5fbe30 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:57:08 +0000
+Subject: [PATCH] Respect null values in DataFrame
+ ElementwiseEquals/ElementwiseNotEquals
+
+PrimitiveDataFrameColumn comparisons compared the raw buffer values and
+ignored the validity bitmap, so a null (stored as default(T)) compared
+equal to 0. ElementwiseEquals/ElementwiseNotEquals now decide rows where
+an operand is null by validity only: null == null is true, null == value
+is false (and the inverse for NotEquals). This applies to column/column
+and column/scalar comparisons, including mixed column types.
+
+Fixes #6820
+---
+ ...imitiveColumnContainer.BinaryOperations.cs | 39 +++++++++++++++++++
+ .../PrimitiveDataFrameColumnTests.cs          | 38 ++++++++++++++++++
+ 2 files changed, 77 insertions(+)
+
+diff --git a/src/Microsoft.Data.Analysis/PrimitiveColumnContainer.BinaryOperations.cs b/src/Microsoft.Data.Analysis/PrimitiveColumnContainer.BinaryOperations.cs
+index 2388905..a8b0c43 100644
+--- a/src/Microsoft.Data.Analysis/PrimitiveColumnContainer.BinaryOperations.cs
++++ b/src/Microsoft.Data.Analysis/PrimitiveColumnContainer.BinaryOperations.cs
+@@ -144,6 +144,8 @@ namespace Microsoft.Data.Analysis
+                 index += leftSpan.Length;
+             }
+ 
++            ApplyNullEqualitySemantics(operation, right, ret);
++
+             return ret;
+         }
+ 
+@@ -186,9 +188,46 @@ namespace Microsoft.Data.Analysis
+                 index += leftSpan.Length;
+             }
+ 
++            ApplyNullEqualitySemantics(operation, null, ret);
++
+             return ret;
+         }
+ 
++        /// <summary>
++        /// Values of null elements are not meaningful, so the result of ElementwiseEquals/ElementwiseNotEquals for rows
++        /// where at least one operand is null is determined by validity only: two nulls are equal, null and a value are not.
++        /// </summary>
++        /// <param name="operation">The comparison operation that was applied.</param>
++        /// <param name="right">The right container, or <see langword="null"/> if the right operand is a (non null) scalar value.</param>
++        /// <param name="ret">The container with comparison results to fix.</param>
++        private void ApplyNullEqualitySemantics(ComparisonOperation operation, PrimitiveColumnContainer<T> right, PrimitiveColumnContainer<bool> ret)
++        {
++            if (operation != ComparisonOperation.ElementwiseEquals && operation != ComparisonOperation.ElementwiseNotEquals)
++                return;
++
++            if (NullCount == 0 && (right == null || right.NullCount == 0))
++                return;
++
++            bool isEquals = operation == ComparisonOperation.ElementwiseEquals;
++
++            long rowIndex = 0;
++            for (int i = 0; i < this.Buffers.Count; i++)
++            {
++                var length = this.Buffers[i].Length;
++                var leftValidity = this.NullBitMapBuffers[i].ReadOnlySpan;
++                var rightValidity = right == null ? ReadOnlySpan<byte>.Empty : right.NullBitMapBuffers[i].ReadOnlySpan;
++
++                for (int j = 0; j < length; j++, rowIndex++)
++                {
++                    bool isLeftValid = BitUtility.GetBit(leftValidity, j);
++                    bool isRightValid = right == null || BitUtility.GetBit(rightValidity, j);
++
++                    if (!isLeftValid || !isRightValid)
++                        ret[rowIndex] = (isLeftValid == isRightValid) == isEquals;
++                }
++            }
++        }
++
+         private static void ValidityElementwiseAnd(ReadOnlySpan<byte> left, ReadOnlySpan<byte> right, Span<byte> destination)
+         {
+             for (var i = 0; i < left.Length; i++)
+diff --git a/test/Microsoft.Data.Analysis.Tests/PrimitiveDataFrameColumnTests.cs b/test/Microsoft.Data.Analysis.Tests/PrimitiveDataFrameColumnTests.cs
+index 0111a7a..d58e1ba 100644
+--- a/test/Microsoft.Data.Analysis.Tests/PrimitiveDataFrameColumnTests.cs
++++ b/test/Microsoft.Data.Analysis.Tests/PrimitiveDataFrameColumnTests.cs
+@@ -526,6 +526,44 @@ namespace Microsoft.Data.Analysis.Tests
+             Assert.Equal(5, filteredNullDf.Columns["index"][1]);
+         }
+ 
++        [Fact]
++        public void TestElementwiseEqualsWithNulls()
++        {
++            var left = new Int32DataFrameColumn("Left", new int?[] { 0, 2, null, null, 3 });
++            var right = new Int32DataFrameColumn("Right", new int?[] { null, 2, 0, null, 4 });
++
++            var equals = left.ElementwiseEquals(right);
++            Assert.Equal(new bool?[] { false, true, false, true, false }, equals);
++            Assert.Equal(0, equals.NullCount);
++
++            var notEquals = left.ElementwiseNotEquals(right);
++            Assert.Equal(new bool?[] { true, false, true, false, true }, notEquals);
++            Assert.Equal(0, notEquals.NullCount);
++        }
++
++        [Fact]
++        public void TestElementwiseEqualsWithNullsAndDifferentColumnTypes()
++        {
++            var left = new Int32DataFrameColumn("Left", new int?[] { 0, 2, null, null });
++            var right = new DoubleDataFrameColumn("Right", new double?[] { null, 2, 0, null });
++
++            Assert.Equal(new bool?[] { false, true, false, true }, left.ElementwiseEquals(right));
++            Assert.Equal(new bool?[] { true, false, true, false }, left.ElementwiseNotEquals(right));
++        }
++
++        [Fact]
++        public void TestElementwiseEqualsScalarWithNulls()
++        {
++            var column = new Int32DataFrameColumn("Int", new int?[] { 0, null, 2 });
++
++            Assert.Equal(new bool?[] { true, false, false }, column.ElementwiseEquals(0));
++            Assert.Equal(new bool?[] { false, true, true }, column.ElementwiseNotEquals(0));
++
++            // Different scalar type (requires conversion)
++            Assert.Equal(new bool?[] { true, false, false }, column.ElementwiseEquals(0.0));
++            Assert.Equal(new bool?[] { false, true, true }, column.ElementwiseNotEquals(0.0));
++        }
++
+         [Fact]
+         public void Test_ArithmeticsAddWithNull()
+         {
+-- 
+2.43.0
+

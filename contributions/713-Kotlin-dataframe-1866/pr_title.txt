@@ -1,0 +1,1 @@
+Inline `AnyCol`, `AnyColumnReference`, `AnyColumnGroupAccessor`, `StringCol` and `ColumnGroupReference` type aliases in public API

@@ -1,0 +1,1 @@
+sftp: wait for ssh's stderr before reporting a failed session start

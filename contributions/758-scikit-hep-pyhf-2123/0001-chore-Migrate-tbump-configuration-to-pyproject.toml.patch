@@ -1,0 +1,300 @@
+From 7ebe0be6b77e840162996561f41d257b7c1c4049 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 18:43:13 +0000
+Subject: [PATCH] chore: Migrate tbump configuration to pyproject.toml
+
+* Move the tbump configuration from tbump.toml to the [tool.tbump] table
+  of pyproject.toml and remove tbump.toml. The self-referencing file entry
+  now points at pyproject.toml, keeping the search restriction so only the
+  tbump git message template line is bumped.
+* Read the release version from [tool.tbump.version] in
+  ci/validate-version.py and the release-tag workflow.
+* Update the release docs, release workflow PR body, and release checklist
+  issue template to refer to pyproject.toml.
+
+Closes #2123
+---
+ .github/ISSUE_TEMPLATE/~release-checklist.md |  2 +-
+ .github/workflows/release-prepare.yml        |  2 +-
+ .github/workflows/release-tag.yml            | 10 ++--
+ ci/validate-version.py                       |  8 +--
+ docs/development.rst                         | 19 +++---
+ pyproject.toml                               | 63 ++++++++++++++++++++
+ tbump.toml                                   | 61 -------------------
+ 7 files changed, 85 insertions(+), 80 deletions(-)
+ delete mode 100644 tbump.toml
+
+diff --git a/.github/ISSUE_TEMPLATE/~release-checklist.md b/.github/ISSUE_TEMPLATE/~release-checklist.md
+index 6c5f12d..12bf15a 100644
+--- a/.github/ISSUE_TEMPLATE/~release-checklist.md
++++ b/.github/ISSUE_TEMPLATE/~release-checklist.md
+@@ -56,7 +56,7 @@ ## After Release
+ * [ ] Verify that the release is installable from both [PyPI](https://pypi.org/project/pyhf/) and [conda-forge](https://github.com/conda-forge/pyhf-feedstock).
+ * [ ] Send the drafted [``pyhf-announcements``](https://groups.google.com/group/pyhf-announcements/) email out from the ``pyhf-announcements`` account email.
+ * [ ] Share the release on both personal and team social media accounts.
+-* [ ] For a patch release, forward port the release notes and the `tbump.toml` version information from the release branch to the default branch.
++* [ ] For a patch release, forward port the release notes and the `[tool.tbump]` version information in `pyproject.toml` from the release branch to the default branch.
+    - c.f. PR https://github.com/scikit-hep/pyhf/pull/2217 and PR https://github.com/scikit-hep/pyhf/pull/2218 as examples from `pyhf` `v0.7.2`.
+ * [ ] Make a release for the [`pyhf` tutorial](https://github.com/pyhf/pyhf-tutorial/releases) corresponding to the **previous release** number. This release represents the last version of the tutorial that is guaranteed to work with previous release API.
+ * [ ] Update the [tutorial](https://github.com/pyhf/pyhf-tutorial) to use the new release number and API.
+diff --git a/.github/workflows/release-prepare.yml b/.github/workflows/release-prepare.yml
+index ee4dc1d..97d6779 100644
+--- a/.github/workflows/release-prepare.yml
++++ b/.github/workflows/release-prepare.yml
+@@ -91,7 +91,7 @@ jobs:
+         git push --force --set-upstream origin "${branch}"
+ 
+         cat > "${RUNNER_TEMP}/pull_request_body.md" <<EOF
+-        Bump version from the latest release to v${VERSION} in all files managed by tbump.toml.
++        Bump version from the latest release to v${VERSION} in all files managed by tbump (configured in pyproject.toml).
+ 
+         Reviewing this pull request is the release "dry run":
+         * [ ] Verify the new version is the intended release version.
+diff --git a/.github/workflows/release-tag.yml b/.github/workflows/release-tag.yml
+index e425a0c..91532f9 100644
+--- a/.github/workflows/release-tag.yml
++++ b/.github/workflows/release-tag.yml
+@@ -1,8 +1,8 @@
+ name: Tag release
+ 
+-# No inputs: the version tagged is the one in tbump.toml on the dispatched
+-# branch, set by the merged release preparation pull request, so the tag can
+-# never disagree with the bumped files.
++# No inputs: the version tagged is the [tool.tbump] version in pyproject.toml on
++# the dispatched branch, set by the merged release preparation pull request, so
++# the tag can never disagree with the bumped files.
+ on:
+   workflow_dispatch:
+ 
+@@ -40,10 +40,10 @@ jobs:
+         fetch-depth: 0
+         token: ${{ secrets.ACCESS_TOKEN }}
+ 
+-    - name: Read version from tbump.toml
++    - name: Read version from pyproject.toml
+       id: version
+       run: |
+-        version="$(python3 -c 'import tomllib; print(tomllib.load(open("tbump.toml", "rb"))["version"]["current"])')"
++        version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["tool"]["tbump"]["version"]["current"])')"
+         echo "version=${version}" >> "$GITHUB_OUTPUT"
+ 
+     # The changes in the release are summarized by the auto-generated GitHub
+diff --git a/ci/validate-version.py b/ci/validate-version.py
+index 39b5dac..cbb88f9 100644
+--- a/ci/validate-version.py
++++ b/ci/validate-version.py
+@@ -19,16 +19,16 @@ def main():
+     )
+     args = parser.parse_args()
+ 
+-    with Path("tbump.toml").open("rb") as manifest:
+-        version_config = tomllib.load(manifest)["version"]
++    with Path("pyproject.toml").open("rb") as manifest:
++        version_config = tomllib.load(manifest)["tool"]["tbump"]["version"]
+ 
+-    # Validate with the tbump.toml version regex, which tbump compiles in
++    # Validate with the tbump version regex, which tbump compiles in
+     # verbose mode, to fail with a clear error here before tbump runs
+     # (packaging.version.Version would otherwise accept versions tbump
+     # rejects, e.g. a leading "v")
+     if not re.fullmatch(version_config["regex"], args.version, flags=re.VERBOSE):
+         error_message = (
+-            f"ERROR: {args.version} does not match the tbump.toml release"
++            f"ERROR: {args.version} does not match the tbump release"
+             " version format X.Y.Z or X.Y.ZrcN (with no leading v)."
+         )
+         raise SystemExit(error_message)
+diff --git a/docs/development.rst b/docs/development.rst
+index 39420ab..8df8365 100644
+--- a/docs/development.rst
++++ b/docs/development.rst
+@@ -209,15 +209,16 @@ The maintainer needs to:
+ 
+ The workflow validates that the version is newer than the current version on the
+ selected branch and opens a release preparation pull request that bumps the version
+-of all files defined in `tbump.toml
+-<https://github.com/scikit-hep/pyhf/blob/main/tbump.toml>`__ to it.
++of all files defined in the ``[tool.tbump]`` table of `pyproject.toml
++<https://github.com/scikit-hep/pyhf/blob/main/pyproject.toml>`__ to it.
+ The pull request serves as the release dry run.
+ The maintainer should verify the new version and the diff of the bumped files and let
+ the CI validate the changes before merging.
+ 
+ .. note::
+ 
+-  The version validation is relative to the version recorded in ``tbump.toml``,
++  The version validation is relative to the version recorded in the
++  ``[tool.tbump]`` table of ``pyproject.toml``,
+   which merging a release preparation pull request updates.
+   If a release is abandoned after its release preparation pull request has been
+   merged, but before the release tag has been created, revert the release
+@@ -231,8 +232,9 @@ After the release preparation pull request has been merged, a maintainer runs th
+ `Tag release`_ GitHub Actions workflow through workflow dispatch on the release
+ branch.
+ The workflow requires approval through the ``release-tag`` GitHub Actions
+-environment, and then creates an annotated tag for the version defined in
+-``tbump.toml`` and pushes the tag to the release branch.
++environment, and then creates an annotated tag for the version defined in the
++``[tool.tbump]`` table of ``pyproject.toml`` and pushes the tag to the release
++branch.
+ 
+ The ``release-prepare`` and ``release-tag`` `GitHub Actions environments
+ <https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments>`__
+@@ -283,9 +285,10 @@ Creating the release branch from the release tag makes the tag reachable from
+ the branch, which ``hatch-vcs`` requires to correctly derive the release series
+ versions for the distributions built from the branch (e.g. dev versions for
+ untagged commits).
+-As the ``tbump.toml`` on the release branch records the latest release of its
+-release series, the version validation of a patch release prepared from the
+-branch is automatically scoped to the release series.
++As the ``[tool.tbump]`` table of ``pyproject.toml`` on the release branch
++records the latest release of its release series, the version validation of a
++patch release prepared from the branch is automatically scoped to the release
++series.
+ 
+ Patch releases follow the same release procedure as all other releases, with
+ the ``release/vX.Y.x`` branch selected when running the `Prepare release`_ and
+diff --git a/pyproject.toml b/pyproject.toml
+index 160bac3..caa0b8f 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -149,6 +149,69 @@ exclude = [
+ [tool.hatch.build.targets.wheel]
+ packages = ["src/pyhf"]
+ 
++[tool.tbump]
++github_url = "https://github.com/scikit-hep/pyhf/"
++
++[tool.tbump.version]
++current = "0.7.6"
++
++# Example of a semver regexp.
++# Make sure this matches current_version before
++# using tbump
++regex = '''
++  (?P<major>\d+)
++  \.
++  (?P<minor>\d+)
++  \.
++  (?P<patch>\d+)
++  (rc
++    (?P<candidate>\d+)
++  )?
++  '''
++
++[tool.tbump.git]
++# The current version will get updated when tbump is run
++message_template = "Bump version: 0.7.6 → {new_version}"
++tag_template = "v{new_version}"
++
++# For each file to patch, add a [[tool.tbump.file]] config
++# section containing the path of the file, relative to the
++# pyproject.toml location.
++[[tool.tbump.file]]
++src = "pyproject.toml"
++# Restrict search to make it explicit why pyproject.toml
++# is even included as a file to bump, as it will get
++# its tool.tbump.version.current attribute bumped anyway.
++search = "Bump version: {current_version} → "
++
++[[tool.tbump.file]]
++src = "src/pyhf/utils.py"
++# Guard SCHEMA_VERSION
++# This search is just identifying the line to restrict the
++# regex to, but all matches in the line will get bumped.
++search = "pyhf: v{current_version}"
++
++[[tool.tbump.file]]
++src = "README.rst"
++
++[[tool.tbump.file]]
++src = "src/pyhf/data/citation.bib"
++
++[[tool.tbump.file]]
++src = ".zenodo.json"
++
++[[tool.tbump.file]]
++src = "CITATION.cff"
++
++[[tool.tbump.file]]
++src = "docs/jupyterlite/jupyterlite.py"
++
++[[tool.tbump.field]]
++# the name of the field
++name = "candidate"
++# the default value to use, if there is no match
++default = ""
++
+ [tool.pytest.ini_options]
+ minversion = "6.0"
+ xfail_strict = true
+diff --git a/tbump.toml b/tbump.toml
+deleted file mode 100644
+index 5752239..0000000
+--- a/tbump.toml
++++ /dev/null
+@@ -1,61 +0,0 @@
+-github_url = "https://github.com/scikit-hep/pyhf/"
+-
+-[version]
+-current = "0.7.6"
+-
+-# Example of a semver regexp.
+-# Make sure this matches current_version before
+-# using tbump
+-regex = '''
+-  (?P<major>\d+)
+-  \.
+-  (?P<minor>\d+)
+-  \.
+-  (?P<patch>\d+)
+-  (rc
+-    (?P<candidate>\d+)
+-  )?
+-  '''
+-
+-[git]
+-# The current version will get updated when tbump is run
+-message_template = "Bump version: 0.7.6 → {new_version}"
+-tag_template = "v{new_version}"
+-
+-# For each file to patch, add a [[file]] config
+-# section containing the path of the file, relative to the
+-# tbump.toml location.
+-[[file]]
+-src = "tbump.toml"
+-# Restrict search to make it explicit why tbump.toml
+-# is even included as a file to bump, as it will get
+-# its version.current attribute bumped anyway.
+-search = "Bump version: {current_version} → "
+-
+-[[file]]
+-src = "src/pyhf/utils.py"
+-# Guard SCHEMA_VERSION
+-# This search is just identifying the line to restrict the
+-# regex to, but all matches in the line will get bumped.
+-search = "pyhf: v{current_version}"
+-
+-[[file]]
+-src = "README.rst"
+-
+-[[file]]
+-src = "src/pyhf/data/citation.bib"
+-
+-[[file]]
+-src = ".zenodo.json"
+-
+-[[file]]
+-src = "CITATION.cff"
+-
+-[[file]]
+-src = "docs/jupyterlite/jupyterlite.py"
+-
+-[[field]]
+-# the name of the field
+-name = "candidate"
+-# the default value to use, if there is no match
+-default = ""
+-- 
+2.43.0
+

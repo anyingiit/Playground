@@ -1,0 +1,116 @@
+From 3a1ce78f435f0fda95ccaed186d82d1c2105882b Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 1 Oct 2026 20:20:01 +0000
+Subject: [PATCH] Add a hidden characters facet to the customized facets menu
+
+The new "Hidden characters facet" lists the escape codes (such as
+\u00A0) of the invisible characters found in the cells of a column,
+so that rows containing them can be selected and cleaned up.
+
+The character set follows the invisible characters highlighted by
+VS Code (hediet/vscode-unicode-data), plus the C0/C1 control
+characters. Tab, line feed and the regular space are left out.
+
+Closes #5207.
+---
+ .../hidden-chars-facet.cy.js                  | 41 +++++++++++++++++++
+ .../modules/core/langs/translation-en.json    |  1 +
+ .../scripts/views/data-table/menu-facets.js   | 22 ++++++++++
+ 3 files changed, 64 insertions(+)
+ create mode 100644 main/tests/cypress/cypress/e2e/project/grid/column/facet/customized-facets/hidden-chars-facet.cy.js
+
+diff --git a/main/tests/cypress/cypress/e2e/project/grid/column/facet/customized-facets/hidden-chars-facet.cy.js b/main/tests/cypress/cypress/e2e/project/grid/column/facet/customized-facets/hidden-chars-facet.cy.js
+new file mode 100644
+index 0000000..3dc2d73
+--- /dev/null
++++ b/main/tests/cypress/cypress/e2e/project/grid/column/facet/customized-facets/hidden-chars-facet.cy.js
+@@ -0,0 +1,41 @@
++describe(__filename, function () {
++  it('Lists the hidden characters found in a column', function () {
++    // build the values from code points, so that the invisible characters stay visible in this file
++    const nbsp = String.fromCodePoint(0x00a0);
++    const zeroWidthSpace = String.fromCodePoint(0x200b);
++    const byteOrderMark = String.fromCodePoint(0xfeff);
++    const fixture = [
++      ['Text'],
++      ['no' + nbsp + 'break'],
++      ['plain text'],
++      ['zero' + zeroWidthSpace + 'width' + byteOrderMark],
++      ['two' + nbsp + 'non' + nbsp + 'breaking'],
++      ['tab\there'],
++    ];
++    cy.loadAndVisitProject(fixture);
++    cy.columnActionClick('Text', ['Facet', 'Customized facets', 'Hidden characters facet']);
++
++    // regular spaces and tabs are not reported, and rows without hidden characters are not listed
++    cy.getFacetContainer('Text')
++      .find('.facet-choice')
++      .then(($choices) => {
++        const counts = {};
++        $choices.each((i, choice) => {
++          const label = Cypress.$(choice).find('.facet-choice-label').text();
++          counts[label] = Cypress.$(choice).find('.facet-choice-count').text();
++        });
++        expect(counts).to.deep.equal({
++          '\\u00A0': '2',
++          '\\u200B': '1',
++          '\\uFEFF': '1',
++        });
++      });
++
++    // Wait to ensure the facet choice click handlers are set up
++    // Ref:  window.setTimeout(wireEvents, 100); in list-facet.js
++    // eslint-disable-next-line cypress/no-unnecessary-waiting
++    cy.wait(150);
++    cy.getFacetContainer('Text').contains('a.facet-choice-label', '\\u00A0').click();
++    cy.get('#summary-bar').contains('2 matching rows');
++  });
++});
+diff --git a/main/webapp/modules/core/langs/translation-en.json b/main/webapp/modules/core/langs/translation-en.json
+index 24d90bb..d90058e 100644
+--- a/main/webapp/modules/core/langs/translation-en.json
++++ b/main/webapp/modules/core/langs/translation-en.json
+@@ -647,6 +647,7 @@
+     "core-views/text-length-facet": "Text length facet",
+     "core-views/log-length-facet": "Log of text length facet",
+     "core-views/unicode-facet": "Unicode char-code facet",
++    "core-views/hidden-chars-facet": "Hidden characters facet",
+     "core-views/facet-error": "Facet by error",
+     "core-views/facet-blank": "Facet by blank (null or empty string)",
+     "core-views/facet-null": "Facet by null",
+diff --git a/main/webapp/modules/core/scripts/views/data-table/menu-facets.js b/main/webapp/modules/core/scripts/views/data-table/menu-facets.js
+index dcbae83..48c37ad 100644
+--- a/main/webapp/modules/core/scripts/views/data-table/menu-facets.js
++++ b/main/webapp/modules/core/scripts/views/data-table/menu-facets.js
+@@ -261,6 +261,28 @@ DataTableColumnHeaderUI.extendMenu(function(column, columnHeaderUI, menu) {
+             );
+           }
+         },
++        {
++          id: "core/hidden-chars-facet",
++          label: $.i18n('core-views/hidden-chars-facet'),
++          click: function() {
++            // Lists the escape codes (such as \u00A0) of the invisible characters found in each cell.
++            // The character set follows the invisible characters highlighted by VS Code
++            // (https://github.com/hediet/vscode-unicode-data), plus the C0/C1 control characters.
++            // Tab, line feed and the regular space are deliberately left out.
++            var hiddenChars = "[\\u0000-\\u0008\\u000B-\\u001F\\u007F-\\u00A0\\u00AD\\u034F\\u061C\\u115F\\u1160" +
++                "\\u17B4\\u17B5\\u180B-\\u180F\\u1CBB\\u1CBC\\u2000-\\u200F\\u2028-\\u202F\\u205F-\\u206F" +
++                "\\u2800\\u3000\\u3164\\uFE00-\\uFE0F\\uFEFF\\uFFA0\\uFFF0-\\uFFF8\\uFFFC" +
++                "\\x{1D173}-\\x{1D17A}\\x{E0000}-\\x{E007F}\\x{E0100}-\\x{E01EF}]";
++            ui.browsingEngine.addFacet(
++                "list",
++                {
++                  "name": column.name,
++                  "columnName": column.name,
++                  "expression": "forEach(value.find(/" + hiddenChars + "/), c, c.escape('javascript'))"
++                }
++            );
++          }
++        },
+         {},
+         {
+           id: "core/error-facet",
+-- 
+2.43.0
+

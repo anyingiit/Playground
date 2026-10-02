@@ -1,0 +1,1 @@
+Fix UnboundLocalError when system() is interrupted during spawn 🤖🤖

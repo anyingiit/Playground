@@ -1,0 +1,1 @@
+docs(lib): document the Logos derive macro in rustdoc
