@@ -90,3 +90,4 @@
 | 426 | [OpenCHAMI/ochami#188](https://github.com/OpenCHAMI/ochami/issues/188) | 待提交（base `main`；无需认领；DCO：补丁已带 anyingiit 的 Signed-off-by；无 CLA；Go；CI 可能还检查提交签名，本地有签名配置则重签；可与 427 同时提交） |
 | 394 | [zerobrewhq/zerobrew#348](https://github.com/zerobrewhq/zerobrew/issues/348) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS；与 393 同仓库、不同文件，可任意顺序提交） |
 | 282 | [TNG/ArchUnit#154](https://github.com/TNG/ArchUnit/issues/154) + [#190](https://github.com/TNG/ArchUnit/issues/190) | 待提交（base `main`；无需认领；**需 DCO `--signoff`**；无 CLA；Java；高星；复核 PASS） |
+| 427 | [OpenCHAMI/ochami#186](https://github.com/OpenCHAMI/ochami/issues/186) | 待提交（base `main`；无需认领；DCO 已签；无 CLA；Go；与 426 同仓库互不冲突；CI 可能查提交签名；复核 PASS） |
