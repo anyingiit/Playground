@@ -1,0 +1,1 @@
+fix(oop-lib): check the requested argument in getArgumentAsTypeRef fallback

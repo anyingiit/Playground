@@ -1,0 +1,57 @@
+From d3c8fae04abe1ac78f02af5daa1144a7e303258c Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:58:39 +0000
+Subject: [PATCH] fix(oop-lib): check the requested argument in
+ getArgumentAsTypeRef fallback
+
+The fallback branch of `getArgumentAsTypeRef(index)` always validated
+argument 1 instead of `index`. For `new_object/3`, which resolves its
+type from argument 0, a non-type first argument was therefore reported
+as a type error on the constructor-argument list. `cast/3` only worked
+because it happens to use index 1.
+
+Validate `index` instead and add a regression test for `new_object/3`.
+
+Closes #947
+---
+ .../solve/libs/oop/primitives/PrimitiveExtensions.kt   |  2 +-
+ .../it/unibo/tuprolog/solve/libs/oop/TestOOPLib.kt     | 10 ++++++++++
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/oop-lib/src/commonMain/kotlin/it/unibo/tuprolog/solve/libs/oop/primitives/PrimitiveExtensions.kt b/oop-lib/src/commonMain/kotlin/it/unibo/tuprolog/solve/libs/oop/primitives/PrimitiveExtensions.kt
+index b17b0a6..e0e8d52 100644
+--- a/oop-lib/src/commonMain/kotlin/it/unibo/tuprolog/solve/libs/oop/primitives/PrimitiveExtensions.kt
++++ b/oop-lib/src/commonMain/kotlin/it/unibo/tuprolog/solve/libs/oop/primitives/PrimitiveExtensions.kt
+@@ -121,7 +121,7 @@ fun <C : ExecutionContext> Solve.Request<C>.getArgumentAsTypeRef(index: Int): Ty
+             findRefFromAlias(arg.castToStruct()) as? TypeRef
+         }
+         else -> {
+-            ensuringArgumentIsTypeRef(1)
++            ensuringArgumentIsTypeRef(index)
+             null
+         }
+     }
+diff --git a/oop-lib/src/jvmTest/kotlin/it/unibo/tuprolog/solve/libs/oop/TestOOPLib.kt b/oop-lib/src/jvmTest/kotlin/it/unibo/tuprolog/solve/libs/oop/TestOOPLib.kt
+index c38cca3..e884a60 100644
+--- a/oop-lib/src/jvmTest/kotlin/it/unibo/tuprolog/solve/libs/oop/TestOOPLib.kt
++++ b/oop-lib/src/jvmTest/kotlin/it/unibo/tuprolog/solve/libs/oop/TestOOPLib.kt
+@@ -40,6 +40,16 @@ class TestOOPLib {
+         assertIs<TypeError>((solution as? Solution.Halt)?.exception, "$solution")
+     }
+ 
++    @Test
++    fun typeErrorsOfNewObjectBlameTheTypeArgument() {
++        val solver = Solver.prolog.solverWithDefaultBuiltins(otherLibraries = Runtime.of(OOPLib))
++        val notAType = Struct.of("foo", Integer.of(1))
++        val solution = solver.solveOnce(Struct.of("new_object", notAType, List.empty(), Var.of("L")))
++        val error = assertIs<TypeError>((solution as? Solution.Halt)?.exception, "$solution")
++        assertEquals(TypeError.Expected.TYPE_REFERENCE, error.expectedType)
++        assertEquals(notAType, error.culprit)
++    }
++
+     @Test
+     fun callsMatchingNoOverloadRaiseExistenceErrors() {
+         val solver = Solver.prolog.solverWithDefaultBuiltins(otherLibraries = Runtime.of(OOPLib))
+-- 
+2.43.0
+
