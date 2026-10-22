@@ -1,3 +1,5 @@
+> **跳过（2026-10-22 复查）**：issue 已关闭（completed），yorzi 的 #1015。未提交。
+
 # crmne/ruby_llm #1004 — 流式 SSE 事件跨网络读取被拆分时被丢弃或误报为 ServerError
 
 | 项 | 值 |

@@ -1,3 +1,5 @@
+> **跳过（2026-10-22 复查）**：issue 已关闭（completed）。未提交。
+
 # unstablebuild/rune #153: windowconverttab 名称可选，默认使用随机 petname
 
 | 项 | 值 |

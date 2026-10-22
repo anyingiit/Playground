@@ -1,3 +1,5 @@
+> **跳过（2026-10-22 复查）**：issue 已关闭（completed）。未提交。
+
 # mitsuhiko/minijinja#956 — Rendering loops forever when an iterator's __next__ keeps raising (Python bindings)
 
 | 项 | 值 |

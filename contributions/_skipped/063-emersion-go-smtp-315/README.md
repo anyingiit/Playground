@@ -1,3 +1,5 @@
+> **跳过（2026-10-22 复查）**：出现竞争 PR #320（SashaMIT，2026-10-11，open）。未提交。
+
 # emersion/go-smtp#315 — BDAT chunk discard missing
 
 | 项 | 值 |

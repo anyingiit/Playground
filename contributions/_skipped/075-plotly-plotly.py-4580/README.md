@@ -1,3 +1,5 @@
+> **跳过（2026-10-22 复查）**：出现竞争 PR #5825（shivenaggarwal，2026-10-18，open）。未提交。
+
 # plotly/plotly.py #4580 — px.scatter: per-point `opacity` 数组与 `color` 一起用时错位
 
 | 项 | 值 |

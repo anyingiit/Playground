@@ -1,3 +1,5 @@
+> **跳过（2026-10-22 复查）**：issue 已关闭（completed），nabobalis 处理。未提交。
+
 # astropy/astropy#15557 — SlicedLowLevelWCS does not handle negative indexing correctly
 
 | 项目 | 内容 |

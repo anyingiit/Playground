@@ -1,3 +1,5 @@
+> **跳过（2026-10-22 复查）**：issue 已关闭（completed），维护者 wcampbell0x2a 的 #687 修复。未提交。
+
 # sharksforarms/deku#655 — id_pat 变体在 enum 使用 `id = "..."` 时首字段 ctx 未被写出
 
 | 项 | 值 |

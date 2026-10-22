@@ -1,3 +1,5 @@
+> **跳过（2026-10-22 复查）**：出现竞争 PR #615（T-J-L，2026-10-06，open）。未提交。
+
 # parquet-go/parquet-go#602 — GenericWriter.Reset clears path_in_schema
 
 | 项 | 值 |

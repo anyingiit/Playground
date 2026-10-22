@@ -1,3 +1,5 @@
+> **跳过（2026-10-22 复查）**：issue 已关闭（completed），维护者 LaurenzV 的 #1387/#1389 修复。未提交。
+
 # LaurenzV/hayro #1347 — Stack overflow in Pdf::new on deeply nested arrays
 
 | 项 | 值 |

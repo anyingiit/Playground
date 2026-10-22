@@ -1,3 +1,5 @@
+> **跳过（2026-10-22 复查）**：issue 已于 2026-10 关闭（completed），修复为 mglaman 的 #526。未提交。
+
 # modelcontextprotocol/php-sdk #523 — Let a framework integration opt out of the HTTP edge middleware without a warning
 
 | 项目 | 内容 |

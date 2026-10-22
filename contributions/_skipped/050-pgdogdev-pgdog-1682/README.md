@@ -1,3 +1,5 @@
+> **跳过（2026-10-22 复查）**：issue 已关闭（completed），维护者 levkk 的 #1729 修复；另有 BABTUNA 的 #1721。未提交。
+
 # pgdogdev/pgdog#1682 — RESET ALL in a multi-statement query panics the client's task
 
 | 项 | 值 |
