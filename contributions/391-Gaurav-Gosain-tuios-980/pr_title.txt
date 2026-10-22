@@ -1,0 +1,1 @@
+fix(input): stop copy mode ^ and $ on the line text
