@@ -30,3 +30,4 @@
 | 332 | [crazy-goat/tikv-php#662](https://github.com/crazy-goat/tikv-php/issues/662) | **已提交** [#740](https://github.com/crazy-goat/tikv-php/pull/740) |
 | 274 | [dry-rb/dry-validation#741](https://github.com/dry-rb/dry-validation/issues/741) | **已提交** [#524](https://github.com/dry-rb/dry-schema/pull/524) |
 | 248 | [open-nexus-OS/open-nexus-OS#47](https://github.com/open-nexus-OS/open-nexus-OS/issues/47) | 待提交：base `main`；**需先在 issue 评论认领**；**CLA**（cla-assistant，PR 下评论签署后编辑一次 PR 描述触发重跑）；无 DCO；不加 `--signoff`/`--trailer`（仓库禁 Co-authored-by） |
+| 212 | [troessner/reek#1476](https://github.com/troessner/reek/issues/1476) | 待提交（base `master`；无需认领；无 DCO/CLA；复核 PASS（两轮）；与 211 同仓库、互不冲突） |
