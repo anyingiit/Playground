@@ -1,0 +1,1 @@
+Use parent gateway database URLs in slice db providers

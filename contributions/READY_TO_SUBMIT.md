@@ -64,3 +64,4 @@
 | 424 | [wiktor-k/ssh-agent-lib#116](https://github.com/wiktor-k/ssh-agent-lib/issues/116) | **已提交** [#117](https://github.com/wiktor-k/ssh-agent-lib/pull/117) |
 | 303 | [melihbirim/csvql#259](https://github.com/melihbirim/csvql/issues/259) | **已提交** [#264](https://github.com/melihbirim/csvql/pull/264) |
 | 215 | [vcr/vcr#1006](https://github.com/vcr/vcr/issues/1006) | 待提交（base `master`；无需认领；无 DCO/CLA；无 PR 模板；复核 PASS） |
+| 280 | [hanami/hanami#1626](https://github.com/hanami/hanami/issues/1626) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；高星；复核 PASS；开 PR 后可把 CHANGELOG 的 #1626 改成 PR 号） |
