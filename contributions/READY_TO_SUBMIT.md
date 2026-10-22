@@ -13,3 +13,4 @@
 | 242 | [getsotto/sotto#696](https://github.com/getsotto/sotto/issues/696) | 待提交（base `main`；无需认领；DCO 已在 commit 中签；无 CLA；复核 PASS） |
 | 241 | [ZcashFoundation/zebra#11892](https://github.com/ZcashFoundation/zebra/issues/11892) | 待提交（base `main`；建议先在 issue 评论认领；无 DCO/CLA；**PR 正文禁止 "Generated with" 页脚**；复核 PASS） |
 | 243 | [XAGI-Lab/melra#388](https://github.com/XAGI-Lab/melra/issues/388) | 待提交（base `main`；无需认领；DCO 已在 commit 中签；无 CLA；复核 PASS） |
+| 210 | [hgrecco/pint#2502](https://github.com/hgrecco/pint/issues/2502) | 待提交（base `master`；无需认领；无 DCO/CLA；PR 模板为 checklist；复核 PASS） |

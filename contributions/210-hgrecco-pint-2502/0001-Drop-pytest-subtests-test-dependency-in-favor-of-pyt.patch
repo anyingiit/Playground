@@ -1,0 +1,40 @@
+From 97e547a69c3e9e5febde1db5f0403e10a9d042dc Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:30:21 +0000
+Subject: [PATCH] Drop pytest-subtests test dependency in favor of pytest>=9
+ (#2502)
+
+pytest 9.0 integrated pytest-subtests and the plugin repository was archived. Require pytest>=9 in the test extra so the built-in subtests fixture is always available.
+---
+ CHANGES        | 1 +
+ pyproject.toml | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGES b/CHANGES
+index 8c1e0a6..c65dd4f 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -8,6 +8,7 @@ Pint Changelog
+ - Fix `to_compact` raising `ValueError` on arrays with no finite non-zero value (#2504)
+ - Format numpy array magnitudes with the Typst (`T`) and zero (`Tz`) formatters (#2494)
+ - Fix LaTeX formatting of arrays not displaying values (#1887)
++- Drop the archived `pytest-subtests` test dependency; the `test` extra now requires pytest>=9, which ships the `subtests` fixture (#2502)
+ 
+ 
+ 0.26.2 (2026-10-19)
+diff --git a/pyproject.toml b/pyproject.toml
+index db7bb26..6f7dfbd 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -37,7 +37,7 @@ packages = ["pint"]
+ include = ["pint/default_en.txt", "pint/constants_en.txt"]
+ 
+ [project.optional-dependencies]
+-test = ["pytest", "pytest-cov", "pytest-subtests", "pytest-benchmark"]
++test = ["pytest>=9", "pytest-cov", "pytest-benchmark"]
+ test-mpl = ["pytest-mpl"]
+ test-all = ["pint[test, test-mpl]"]
+ codspeed = ["pint[test-all]", "pytest-codspeed"]
+-- 
+2.43.0
+

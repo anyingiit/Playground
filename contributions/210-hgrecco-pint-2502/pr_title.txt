@@ -1,0 +1,1 @@
+Drop pytest-subtests test dependency in favor of pytest>=9
