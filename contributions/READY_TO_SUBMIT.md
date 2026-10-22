@@ -86,9 +86,9 @@
 | 337 | [synolia/SyliusMaintenancePlugin#54](https://github.com/synolia/SyliusMaintenancePlugin/issues/54) | **已提交** [#55](https://github.com/synolia/SyliusMaintenancePlugin/pull/55) |
 | 281 | [ruby/rdoc#1857](https://github.com/ruby/rdoc/issues/1857) | **已提交** [#1862](https://github.com/ruby/rdoc/pull/1862) |
 | 425 | [BSC-ES/autosubmit#3104](https://github.com/BSC-ES/autosubmit/issues/3104) | **已提交** [#3371](https://github.com/BSC-ES/autosubmit/pull/3371) |
-| 426 | [OpenCHAMI/ochami#188](https://github.com/OpenCHAMI/ochami/issues/188) | 待提交（base `main`；无需认领；DCO：补丁已带 anyingiit 的 Signed-off-by；无 CLA；Go；CI 可能还检查提交签名，本地有签名配置则重签；可与 427 同时提交） |
-| 394 | [zerobrewhq/zerobrew#348](https://github.com/zerobrewhq/zerobrew/issues/348) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS；与 393 同仓库、不同文件，可任意顺序提交） |
-| 282 | [TNG/ArchUnit#154](https://github.com/TNG/ArchUnit/issues/154) + [#190](https://github.com/TNG/ArchUnit/issues/190) | 待提交（base `main`；无需认领；**需 DCO `--signoff`**；无 CLA；Java；高星；复核 PASS） |
-| 427 | [OpenCHAMI/ochami#186](https://github.com/OpenCHAMI/ochami/issues/186) | 待提交（base `main`；无需认领；DCO 已签；无 CLA；Go；与 426 同仓库互不冲突；CI 可能查提交签名；复核 PASS） |
-| 338 | [thephpleague/openapi-psr7-validator#273](https://github.com/thephpleague/openapi-psr7-validator/issues/273) | master | 无需认领；无 DCO、无 CLA |
+| 426 | [OpenCHAMI/ochami#188](https://github.com/OpenCHAMI/ochami/issues/188) | **已提交** [#214](https://github.com/OpenCHAMI/ochami/pull/214) |
+| 394 | [zerobrewhq/zerobrew#348](https://github.com/zerobrewhq/zerobrew/issues/348) | **已提交** [#481](https://github.com/zerobrewhq/zerobrew/pull/481) |
+| 282 | [TNG/ArchUnit#154](https://github.com/TNG/ArchUnit/issues/154) + [#190](https://github.com/TNG/ArchUnit/issues/190) | **已提交** [#1769](https://github.com/TNG/ArchUnit/pull/1769) |
+| 427 | [OpenCHAMI/ochami#186](https://github.com/OpenCHAMI/ochami/issues/186) | **已提交** [#215](https://github.com/OpenCHAMI/ochami/pull/215) |
+| 338 | [thephpleague/openapi-psr7-validator#273](https://github.com/thephpleague/openapi-psr7-validator/issues/273) | **已提交** [#275](https://github.com/thephpleague/openapi-psr7-validator/pull/275) |
 | 283 | [devonfw/IDEasy#1214](https://github.com/devonfw/IDEasy/issues/1214) | 待提交（base `main`；建议先在 issue 留言认领；**需签 CLA（cla-assistant）**；无 DCO；Java；新锐；复核 PASS；**正文禁止 AI 署名**） |
