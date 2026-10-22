@@ -100,7 +100,7 @@
 | 340 | [stevearc/oil.nvim#754](https://github.com/stevearc/oil.nvim/issues/754) | **已提交** [#793](https://github.com/stevearc/oil.nvim/pull/793) |
 | 432 | [bpmn-io/dmn-migrate#60](https://github.com/bpmn-io/dmn-migrate/issues/60) | **已提交** [#63](https://github.com/bpmn-io/dmn-migrate/pull/63)（CLA 待签） |
 | 341 | [nvim-orgmode/orgmode#1171](https://github.com/nvim-orgmode/orgmode/issues/1171) | **已提交** [#1201](https://github.com/nvim-orgmode/orgmode/pull/1201) |
-| 284 | [tuProlog/2p-kt#945](https://github.com/tuProlog/2p-kt/issues/945) | 待提交（base `master`；无需认领；无 DCO/CLA；Kotlin；自由；复核 PASS；注意：我们已有 2p-kt #1044 待审，外部 PR 10/5 起仍未审，合并慢，优先级低于其他仓库） |
-| 342 | [stevearc/conform.nvim#877](https://github.com/stevearc/conform.nvim/issues/877) | master | 无需认领；无 DCO、无 CLA；Lua；高星；复核 PASS |
+| 284 | [tuProlog/2p-kt#945](https://github.com/tuProlog/2p-kt/issues/945) | **已提交** [#1046](https://github.com/tuProlog/2p-kt/pull/1046) |
+| 342 | [stevearc/conform.nvim#877](https://github.com/stevearc/conform.nvim/issues/877) | **已提交** [#905](https://github.com/stevearc/conform.nvim/pull/905) |
 | 433 | [tuProlog/2p-kt#1005](https://github.com/tuProlog/2p-kt/issues/1005) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Kotlin；同仓库第 2 个（421 已提交为 #1044）；复核 PASS） |
-| 434 | [bpmn-io/bpmn-to-image#65](https://github.com/bpmn-io/bpmn-to-image/issues/65) | 待提交（base `main`；无需认领；**需签 bpmn-io CLA assistant**（与 432 同一 CLA）；纯 README 文档；用 `Related to #65` 不关闭 issue；PR 模板标题/清单勿改；复核 PASS） |
+| 434 | [bpmn-io/bpmn-to-image#65](https://github.com/bpmn-io/bpmn-to-image/issues/65) | **已提交** [#70](https://github.com/bpmn-io/bpmn-to-image/pull/70) |
