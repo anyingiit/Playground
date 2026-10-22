@@ -49,3 +49,4 @@
 | 250 | [femboypuppy/Tessera-Notes#38](https://github.com/femboypuppy/Tessera-Notes/issues/38) | 待提交：base `main`；**需先在 issue 评论认领**（CONTRIBUTING 要求，注明 PR 已就绪）；无 DCO/CLA；不加 `--signoff`/`--trailer`；复核 PASS |
 | 391 | [Gaurav-Gosain/tuios#980](https://github.com/Gaurav-Gosain/tuios/issues/980) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；新锐；复核 PASS；用仓库自己的 PR 模板） |
 | 392 | [Gaurav-Gosain/tuios#585](https://github.com/Gaurav-Gosain/tuios/issues/585) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；新锐；复核 PASS；与 391 同仓库，391 合并后用 alt-0001-on-top-of-391.patch） |
+| 393 | [zerobrewhq/zerobrew#414](https://github.com/zerobrewhq/zerobrew/issues/414) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS；同仓库已有我们的 #479，不冲突） |
