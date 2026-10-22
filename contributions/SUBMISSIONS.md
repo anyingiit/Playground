@@ -67,6 +67,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 060 | [glebm/i18n-tasks#746](https://github.com/glebm/i18n-tasks/issues/746) | [glebm/i18n-tasks#759](https://github.com/glebm/i18n-tasks/pull/759) | 已关闭（10-10，davidwessman）：因合并冲突由维护者以同名 #763 重新提交并合并，修复已进上游。无需操作 |
 | 061 | [cashapp/licensee#545](https://github.com/cashapp/licensee/issues/545) | [cashapp/licensee#636](https://github.com/cashapp/licensee/pull/636) | ✅ 已合并（2026-10-03，JakeWharton） |
 | 062 | [open-policy-agent/conftest#1022](https://github.com/open-policy-agent/conftest/issues/1022) | [open-policy-agent/conftest#1437](https://github.com/open-policy-agent/conftest/pull/1437) | 待 review；CI 通过 |
+| 064 | [GREsau/schemars#536](https://github.com/GREsau/schemars/issues/536) | [GREsau/schemars#543](https://github.com/GREsau/schemars/pull/543) | 10-22 提交，待 review |
 | 065 | [gosnmp/gosnmp#591](https://github.com/gosnmp/gosnmp/issues/591) | [gosnmp/gosnmp#624](https://github.com/gosnmp/gosnmp/pull/624) | ✅ 已合并（2026-10-21，SuperQ） |
 | 066 | [suzuki-shunsuke/pinact#1448](https://github.com/suzuki-shunsuke/pinact/issues/1448) | [suzuki-shunsuke/pinact#1745](https://github.com/suzuki-shunsuke/pinact/pull/1745) | 待 review；CI 通过 |
 | 067 | [embedded-graphics/embedded-graphics#821](https://github.com/embedded-graphics/embedded-graphics/issues/821) | [embedded-graphics/embedded-graphics#830](https://github.com/embedded-graphics/embedded-graphics/pull/830) | 待 review；CI 未运行 |

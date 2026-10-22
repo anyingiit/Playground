@@ -24,7 +24,7 @@
 | 061 | [cashapp/licensee#545](https://github.com/cashapp/licensee/issues/545) | 自由 | DCO、**已提交** | `contributions/061-cashapp-licensee-545` |
 | 062 | [open-policy-agent/conftest#1022](https://github.com/open-policy-agent/conftest/issues/1022) | 自由 | DCO、**已提交** | `contributions/062-open-policy-agent-conftest-1022` |
 | 063 | [emersion/go-smtp#315](https://github.com/emersion/go-smtp/issues/315) | 自由 | DCO、**已跳过（10-22）** | `contributions/_skipped/063-emersion-go-smtp-315` |
-| 064 | [GREsau/schemars#536](https://github.com/GREsau/schemars/issues/536) | 自由 | DCO | `contributions/064-GREsau-schemars-536` |
+| 064 | [GREsau/schemars#536](https://github.com/GREsau/schemars/issues/536) | 自由 | DCO 、**已提交** | `contributions/064-GREsau-schemars-536` |
 | 065 | [gosnmp/gosnmp#591](https://github.com/gosnmp/gosnmp/issues/591) | 自由 | DCO、**已提交** | `contributions/065-gosnmp-gosnmp-591` |
 | 066 | [suzuki-shunsuke/pinact#1448](https://github.com/suzuki-shunsuke/pinact/issues/1448) | 自由 | 先认领、DCO、**已提交** | `contributions/066-suzuki-shunsuke-pinact-1448` |
 | 067 | [embedded-graphics/embedded-graphics#821](https://github.com/embedded-graphics/embedded-graphics/issues/821) | 自由 | DCO、**已提交** | `contributions/067-embedded-graphics-embedded-graphics-821` |

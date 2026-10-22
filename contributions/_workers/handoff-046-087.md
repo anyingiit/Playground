@@ -16,7 +16,7 @@
 | # | 上游 | 补丁 | 测试（在最新上游上） | 下一步 |
 |---|---|---|---|---|
 | 058 | arxanas/git-branchless (master) | 原补丁可直接打上 | 未重跑 | 跑 `cargo test -p git-branchless-revset` 后提交 |
-| 064 | GREsau/schemars (master) | 原补丁 | ✅ 红（4 个 default:: 失败）→ 绿（5/5） | 可直接提交 |
+| 064 | GREsau/schemars (master) | 原补丁 | ✅ 红（4 个 default:: 失败）→ 绿（5/5） | **已提交** GREsau/schemars#543 |
 | 076 | gkampitakis/go-snaps (main) | 原补丁 | 绿：snaps 包 11 个 TestSummary/TestDiff 失败，与 base 完全相同（环境颜色输出导致），新测试通过 | 可提交 |
 | 078 | image-rs/image-png (master) | 原补丁 | 未重跑 | 跑 `cargo test --workspace --all-targets` 后提交 |
 | 087 | jnsahaj/lumen (main) | 原补丁 | ✅ 绿 `cargo test --locked --bin lumen php` 2 passed；红：去掉实现后测试编译失败（unresolved `tree_sitter_php`），10-01 的 README 另有断言级红 | 可提交 |
