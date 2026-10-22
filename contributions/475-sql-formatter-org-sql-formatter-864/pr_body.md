@@ -28,7 +28,7 @@ FROM
 As you noted in the issue, `INTO` appears in other places too, so I checked those:
 
 - `INSERT INTO` is matched as a whole phrase first, so it is unchanged (the existing tests pass).
-- `MERGE INTO` was formatted on one line before. With `INTO` as a clause alone it would have become `MERGE` / `INTO` on two lines, so I also added `MERGE INTO` as a clause. It now formats as `MERGE INTO` followed by the indented rest. (Open PR #993 adds fuller MERGE support with the same `'MERGE INTO'` entry, so the two should merge without trouble.)
+- `MERGE INTO` was formatted on one line before. With `INTO` as a clause alone it would have become `MERGE` / `INTO` on two lines, so I also added `MERGE INTO` as a clause. It now formats as `MERGE INTO` followed by the indented rest. (Open PR #993 adds fuller MERGE support with the same `'MERGE INTO'` entry. Whichever lands second will have a trivial conflict in that list, and #993 would need to adjust the small MERGE test added here. I'm happy to resolve that.)
 - `RETURNING ... INTO var` and `SELECT ... INTO STRICT var` (PL/pgSQL forms) also put `INTO` on its own line, which reads consistently with the above.
 - `IMPORT FOREIGN SCHEMA ... FROM SERVER s INTO local_schema` now puts `INTO` on its own line instead of after `SERVER s`.
 
