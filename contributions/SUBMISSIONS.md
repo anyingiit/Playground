@@ -86,6 +86,8 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 155 | [pmxt-dev/pmxt#2353](https://github.com/pmxt-dev/pmxt/issues/2353) | [pmxt-dev/pmxt#2586](https://github.com/pmxt-dev/pmxt/pull/2586) | 2026-10-22 提交 |
 | 169 | [hanami/hanami#1284](https://github.com/hanami/hanami/issues/1284) | [hanami/hanami-cli#464](https://github.com/hanami/hanami-cli/pull/464) | 2026-10-22 提交；CHANGELOG 已填 PR 号 |
 | 170 | [ruby-grape/grape#2487](https://github.com/ruby-grape/grape/issues/2487) | [ruby-grape/grape#3041](https://github.com/ruby-grape/grape/pull/3041) | 2026-10-22 提交；CHANGELOG 已填 PR 号 |
+| 202 | [vega/altair#3502](https://github.com/vega/altair/issues/3502) | [vega/altair#4193](https://github.com/vega/altair/pull/4193) | 2026-10-22 提交（独立复核 PASS） |
+| 208 | [image-rs/image-png#584](https://github.com/image-rs/image-png/issues/584) | [image-rs/image-png#722](https://github.com/image-rs/image-png/pull/722) | 2026-10-22 提交（独立复核 PASS） |
 
 ## 接续说明（2026-09-25 快照）
 
