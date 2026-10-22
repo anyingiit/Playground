@@ -1,0 +1,121 @@
+From ada15c8804d0fdf82200331e9a3ec099b687b884 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 03:02:03 +0800
+Subject: [PATCH] fix: Raise a helpful error when layering or faceting a
+ `Chart` with `resolve`
+
+A unit `Chart` with `resolve_scale`/`resolve_axis`/`resolve_legend`
+renders fine on its own and in a concat, but Vega-Lite does not allow
+`resolve` on a unit spec inside a layer or facet. Previously this failed
+with a confusing `SchemaValidationError` about `mark` / `resolve` not
+being a parameter of `LayerChart` / `UnitSpecWithFrame`.
+
+Raise a `TypeError` up front that tells the user to layer or facet first
+and then resolve on the compound chart.
+
+Closes #3502
+---
+ altair/vegalite/v6/api.py     | 22 ++++++++++++++++++++
+ tests/vegalite/v6/test_api.py | 39 +++++++++++++++++++++++++++++++++++
+ 2 files changed, 61 insertions(+)
+
+diff --git a/altair/vegalite/v6/api.py b/altair/vegalite/v6/api.py
+index 71cf04d..3ef8ea9 100644
+--- a/altair/vegalite/v6/api.py
++++ b/altair/vegalite/v6/api.py
+@@ -4299,6 +4299,26 @@ def _check_if_valid_subspec(
+             raise TypeError(msg)
+ 
+ 
++def _check_if_unit_chart_has_resolve(
++    spec: Any, action: Literal["layer", "facet"]
++) -> None:
++    """
++    Raise a `TypeError` if `spec` is a unit `Chart` with a `resolve` property.
++
++    `resolve` is only valid on single charts at the top level or inside a concat;
++    Vega-Lite does not allow it on a unit spec inside a layer or facet.
++    """
++    if isinstance(spec, Chart) and spec._get("resolve") is not Undefined:
++        verb = {"layer": "layered", "facet": "faceted"}[action]
++        target = {"layer": "charts", "facet": "chart"}[action]
++        msg = (
++            f"Charts with a 'resolve' property cannot be {verb}. "
++            f"Instead, {action} the {target} before calling `resolve_scale`, "
++            f"`resolve_axis` or `resolve_legend` on the {verb} chart."
++        )
++        raise TypeError(msg)
++
++
+ def _check_if_can_be_layered(spec: LayerType) -> None:
+     """Raise a `TypeError` if `spec` cannot be layered."""
+ 
+@@ -4313,6 +4333,7 @@ def _check_if_can_be_layered(spec: LayerType) -> None:
+             if encoding._get(channel) is not Undefined:
+                 msg = f"Faceted {base_msg} faceting."
+                 raise TypeError(msg)
++    _check_if_unit_chart_has_resolve(spec, "layer")
+     if isinstance(spec, (Chart, LayerChart)):
+         return
+     elif is_chart_type(spec) or _get_any(
+@@ -5015,6 +5036,7 @@ class FacetChart(TopLevelMixin, core.TopLevelFacetSpec):
+             msg = f"{type(self).__name__!r} requires a `spec`, but got: {spec!r}"
+             raise TypeError(msg)
+         _check_if_valid_subspec(spec, "FacetChart")
++        _check_if_unit_chart_has_resolve(spec, "facet")
+         _spec_as_list = [spec]
+         params, _spec_as_list = _combine_subchart_params(params, _spec_as_list)
+         spec = _spec_as_list[0]
+diff --git a/tests/vegalite/v6/test_api.py b/tests/vegalite/v6/test_api.py
+index 7434dd6..9671abe 100644
+--- a/tests/vegalite/v6/test_api.py
++++ b/tests/vegalite/v6/test_api.py
+@@ -1940,6 +1940,45 @@ def test_resolve(chart_type):
+     }
+ 
+ 
++def test_resolve_on_unit_chart_layer_facet_errors():
++    # https://github.com/vega/altair/issues/3502
++    chart = (
++        alt.Chart("data.csv")
++        .mark_point()
++        .encode(x="x:Q", y="y:Q", color="c:N")
++        .resolve_scale(color="independent")
++    )
++    simple_chart = alt.Chart("data.csv").mark_point()
++
++    # A unit chart with `resolve` still works on its own and in concat.
++    chart.to_dict()
++    alt.concat(chart).to_dict()
++
++    layer_msg = (
++        r"Charts with a .resolve. property cannot be layered.+layer the charts before"
++    )
++    with pytest.raises(TypeError, match=layer_msg):
++        alt.layer(chart)
++    with pytest.raises(TypeError, match=layer_msg):
++        chart + simple_chart
++    with pytest.raises(TypeError, match=layer_msg):
++        alt.layer(simple_chart) + chart
++
++    facet_msg = (
++        r"Charts with a .resolve. property cannot be faceted.+facet the chart before"
++    )
++    with pytest.raises(TypeError, match=facet_msg):
++        chart.facet("c:N")
++    with pytest.raises(TypeError, match=facet_msg):
++        alt.FacetChart(data="data.csv", spec=chart, facet=alt.Facet("c:N"))
++
++    # Resolving after layering / faceting is the supported way.
++    (simple_chart + simple_chart).resolve_scale(color="independent").to_dict()
++    simple_chart.encode(color="c:N").facet("c:N").resolve_scale(
++        color="independent"
++    ).to_dict()
++
++
+ # TODO: test vconcat, hconcat, concat, facet_encoding when schema allows them.
+ # This is blocked by https://github.com/vega/vega-lite/issues/5261
+ @pytest.mark.parametrize("chart_type", ["chart", "layer"])
+-- 
+2.45.0
+
