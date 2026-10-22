@@ -39,7 +39,7 @@
 | 422 | [BSC-ES/autosubmit#3240](https://github.com/BSC-ES/autosubmit/issues/3240) | **已提交** [#3370](https://github.com/BSC-ES/autosubmit/pull/3370) |
 | 301 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278) | **已提交** [#2334](https://github.com/seladb/PcapPlusPlus/pull/2334) |
 | 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278) | **已提交** [#2335](https://github.com/seladb/PcapPlusPlus/pull/2335) |
-| 360 | [helix-editor/helix#3115](https://github.com/helix-editor/helix/issues/3115) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；gherkin 默认接 cucumber-language-server，纯 languages.toml + 生成文档） |
-| 334 | [Euro-Office/eurooffice-nextcloud#173](https://github.com/Euro-Office/eurooffice-nextcloud/issues/173) | 待提交（base `main`；无需认领；无 DCO/CLA；Conventional Commits 标题；复核 PASS） |
-| 335 | [Euro-Office/eurooffice-nextcloud#151](https://github.com/Euro-Office/eurooffice-nextcloud/issues/151) | 待提交（base `main`；无需认领；无 DCO/CLA；Conventional Commits 标题；复核 PASS） |
+| 360 | [helix-editor/helix#3115](https://github.com/helix-editor/helix/issues/3115) | **已提交** [#16404](https://github.com/helix-editor/helix/pull/16404) |
+| 334 | [Euro-Office/eurooffice-nextcloud#173](https://github.com/Euro-Office/eurooffice-nextcloud/issues/173) | **已提交** [#250](https://github.com/Euro-Office/eurooffice-nextcloud/pull/250) |
+| 335 | [Euro-Office/eurooffice-nextcloud#151](https://github.com/Euro-Office/eurooffice-nextcloud/issues/151) | **已提交** [#251](https://github.com/Euro-Office/eurooffice-nextcloud/pull/251) |
 | 277 | [ruby/rdoc#1567](https://github.com/ruby/rdoc/issues/1567) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Ruby；复核 PASS；**按仓库 AGENTS.md，正文不加 AI 声明段**） |
