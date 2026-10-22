@@ -1,0 +1,1 @@
+fix(metadata): confirm deletion before resolving client and token

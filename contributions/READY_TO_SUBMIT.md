@@ -87,3 +87,4 @@
 | 337 | [synolia/SyliusMaintenancePlugin#54](https://github.com/synolia/SyliusMaintenancePlugin/issues/54) | **已提交** [#55](https://github.com/synolia/SyliusMaintenancePlugin/pull/55) |
 | 281 | [ruby/rdoc#1857](https://github.com/ruby/rdoc/issues/1857) | **已提交** [#1862](https://github.com/ruby/rdoc/pull/1862) |
 | 425 | [BSC-ES/autosubmit#3104](https://github.com/BSC-ES/autosubmit/issues/3104) | **已提交** [#3371](https://github.com/BSC-ES/autosubmit/pull/3371) |
+| 426 | [OpenCHAMI/ochami#188](https://github.com/OpenCHAMI/ochami/issues/188) | 待提交（base `main`；无需认领；DCO：补丁已带 anyingiit 的 Signed-off-by；无 CLA；Go；CI 可能还检查提交签名，本地有签名配置则重签；可与 427 同时提交） |
