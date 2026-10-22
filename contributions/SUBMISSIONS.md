@@ -132,3 +132,4 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | # | PR |
 |---|---|
 | 187 | https://github.com/ErugoOSS/Erugo/pull/294 |
+| 188 | https://github.com/Forceu/barcodebuddy-docker/pull/39 |

@@ -1,0 +1,244 @@
+From 60cf122a8a78b6ccd5a92274bffc3cc505ce6cb3 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 02:56:57 +0800
+Subject: [PATCH] Update base image to Alpine 3.24 and PHP 8.3
+
+Alpine 3.15 reached end of life in November 2023 and its php8 package
+is frozen at 8.0.25. PHP 8.0 itself has been end of life since November
+2023, so rebuilding the image can no longer pick up security fixes,
+including the fixes for CVE-2026-109618 and CVE-2026-109619 (PHP2Shell,
+remote code execution in PHP-FPM).
+
+Alpine 3.24 ships php83 8.3.36, which contains both fixes. Switch the
+php8 packages to php83 (php8-redis is now php83-pecl-redis), move the
+PHP config overlay to /etc/php83, and point the supervisor at the
+php83 / php-fpm83 binaries and /etc/php83/php.ini. libressl3.4-libssl
+no longer exists on Alpine 3.24 and nothing in the image links against
+it, so it is dropped.
+---
+ Dockerfile                                    | 45 +++++++++----------
+ Dockerfile.dev                                | 45 +++++++++----------
+ .../{php8 => php83}/conf.d/bbuddy-local.ini   |  0
+ supervisor/cronjobs/cronjobs.go               |  2 +-
+ supervisor/environment/environment.go         |  2 +-
+ supervisor/services/services.go               |  6 +--
+ 6 files changed, 49 insertions(+), 51 deletions(-)
+ rename root/etc/{php8 => php83}/conf.d/bbuddy-local.ini (100%)
+
+diff --git a/Dockerfile b/Dockerfile
+index bc27ae7..3f18150 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -8,7 +8,7 @@ COPY supervisor/ /compile
+ RUN cd /compile && CGO_ENABLED=0 go build -o /compile/supervisor .
+ 
+ 
+-FROM alpine:3.15
++FROM alpine:3.24
+ 
+ RUN apk add ca-certificates curl && mkdir /app && touch /app/.isdocker
+ 
+@@ -32,28 +32,27 @@ RUN \
+ 	coreutils \
+ 	curl \
+ 	evtest \
+-	libressl3.4-libssl \
+ 	nano \
+ 	nginx \
+ 	openssl \
+-	php8 \
+-	php8-curl \
+-	php8-fileinfo \
+-	php8-fpm \
+-	php8-gettext \
+-	php8-json \
+-	php8-mbstring \
+-	php8-openssl \
+-	php8-pdo \
+-	php8-pdo_sqlite \
+-	php8-redis \
+-	php8-session \
+-	php8-simplexml \
+-	php8-sockets \
+-	php8-sqlite3 \
+-	php8-xml \
+-	php8-xmlwriter \
+-	php8-zlib \
++	php83 \
++	php83-curl \
++	php83-fileinfo \
++	php83-fpm \
++	php83-gettext \
++	php83-json \
++	php83-mbstring \
++	php83-openssl \
++	php83-pdo \
++	php83-pdo_sqlite \
++	php83-pecl-redis \
++	php83-session \
++	php83-simplexml \
++	php83-sockets \
++	php83-sqlite3 \
++	php83-xml \
++	php83-xmlwriter \
++	php83-zlib \
+ 	procps \
+ 	redis \
+ 	screen \
+@@ -66,8 +65,8 @@ RUN \
+  chown redis:redis /etc/redis.conf && \
+  useradd -d /config -s /bin/false barcodebuddy && \
+  chmod 755 /etc && \
+- chown barcodebuddy:barcodebuddy -R /var/log/php8 && \
+- ln -s /usr/bin/php8 /usr/bin/php && \
++ chown barcodebuddy:barcodebuddy -R /var/log/php83 && \
++ ln -s /usr/bin/php83 /usr/bin/php && \
+  ln -s /config /data
+ 
+ 
+@@ -96,7 +95,7 @@ RUN \
+    sed -i 's/[[:blank:]]*const[[:blank:]]*IS_DOCKER[[:blank:]]*=[[:blank:]]*false;/const IS_DOCKER = true;/g' /app/bbuddy/config-dist.php && \
+  echo "Set disable_coredump false" > /etc/sudo.conf && \
+ sed -i 's/SCRIPT_LOCATION=.*/SCRIPT_LOCATION="\/app\/bbuddy\/index.php"/g' /app/bbuddy/example/grabInput.sh && \
+- sed -i 's/pm.max_children = 5/pm.max_children = 20/g' /etc/php8/php-fpm.d/www.conf && \
++ sed -i 's/pm.max_children = 5/pm.max_children = 20/g' /etc/php83/php-fpm.d/www.conf && \
+ sed -i 's/WWW_USER=.*/WWW_USER="barcodebuddy"/g' /app/bbuddy/example/grabInput.sh && \
+ sed -i 's/IS_DOCKER=.*/IS_DOCKER=true/g' /app/bbuddy/example/grabInput.sh && \
+ sed -i 's/const DEFAULT_USE_REDIS =.*/const DEFAULT_USE_REDIS = "1";/g' /app/bbuddy/incl/db.inc.php && \
+diff --git a/Dockerfile.dev b/Dockerfile.dev
+index 311a84c..2c9c189 100644
+--- a/Dockerfile.dev
++++ b/Dockerfile.dev
+@@ -8,7 +8,7 @@ COPY supervisor/ /compile
+ RUN cd /compile && CGO_ENABLED=0 go build -o /compile/supervisor .
+ 
+ 
+-FROM alpine:3.15
++FROM alpine:3.24
+ 
+ RUN apk add ca-certificates curl && mkdir /app && touch /app/.isdocker
+ 
+@@ -33,28 +33,27 @@ RUN \
+ 	curl \
+ 	evtest \
+ 	git \
+-	libressl3.4-libssl \
+ 	nano \
+ 	nginx \
+ 	openssl \
+-	php8 \
+-	php8-curl \
+-	php8-fileinfo \
+-	php8-fpm \
+-	php8-gettext \
+-	php8-json \
+-	php8-mbstring \
+-	php8-openssl \
+-	php8-pdo \
+-	php8-pdo_sqlite \
+-	php8-redis \
+-	php8-session \
+-	php8-simplexml \
+-	php8-sockets \
+-	php8-sqlite3 \
+-	php8-xml \
+-	php8-xmlwriter \
+-	php8-zlib \
++	php83 \
++	php83-curl \
++	php83-fileinfo \
++	php83-fpm \
++	php83-gettext \
++	php83-json \
++	php83-mbstring \
++	php83-openssl \
++	php83-pdo \
++	php83-pdo_sqlite \
++	php83-pecl-redis \
++	php83-session \
++	php83-simplexml \
++	php83-sockets \
++	php83-sqlite3 \
++	php83-xml \
++	php83-xmlwriter \
++	php83-zlib \
+ 	procps \
+ 	redis \
+ 	screen \
+@@ -67,8 +66,8 @@ RUN \
+  chown redis:redis /etc/redis.conf && \
+  useradd -d /config -s /bin/false barcodebuddy && \
+  chmod 755 /etc && \
+- chown barcodebuddy:barcodebuddy -R /var/log/php8 && \
+- ln -s /usr/bin/php8 /usr/bin/php && \
++ chown barcodebuddy:barcodebuddy -R /var/log/php83 && \
++ ln -s /usr/bin/php83 /usr/bin/php && \
+  ln -s /config /data
+ 
+ 
+@@ -89,7 +88,7 @@ RUN \
+    sed -i 's/[[:blank:]]*const[[:blank:]]*IS_DOCKER[[:blank:]]*=[[:blank:]]*false;/const IS_DOCKER = true;/g' /app/bbuddy/config-dist.php && \
+  echo "Set disable_coredump false" > /etc/sudo.conf && \
+ sed -i 's/SCRIPT_LOCATION=.*/SCRIPT_LOCATION="\/app\/bbuddy\/index.php"/g' /app/bbuddy/example/grabInput.sh && \
+- sed -i 's/pm.max_children = 5/pm.max_children = 20/g' /etc/php8/php-fpm.d/www.conf && \
++ sed -i 's/pm.max_children = 5/pm.max_children = 20/g' /etc/php83/php-fpm.d/www.conf && \
+ sed -i 's/WWW_USER=.*/WWW_USER="barcodebuddy"/g' /app/bbuddy/example/grabInput.sh && \
+ sed -i 's/IS_DOCKER=.*/IS_DOCKER=true/g' /app/bbuddy/example/grabInput.sh && \
+ sed -i 's/const DEFAULT_USE_REDIS =.*/const DEFAULT_USE_REDIS = "1";/g' /app/bbuddy/incl/db.inc.php && \
+diff --git a/root/etc/php8/conf.d/bbuddy-local.ini b/root/etc/php83/conf.d/bbuddy-local.ini
+similarity index 100%
+rename from root/etc/php8/conf.d/bbuddy-local.ini
+rename to root/etc/php83/conf.d/bbuddy-local.ini
+diff --git a/supervisor/cronjobs/cronjobs.go b/supervisor/cronjobs/cronjobs.go
+index b293de3..4bbeddf 100644
+--- a/supervisor/cronjobs/cronjobs.go
++++ b/supervisor/cronjobs/cronjobs.go
+@@ -39,7 +39,7 @@ func (j *cronjob) Stop() {
+ 
+ func Start() {
+ 	bbCron := cronjob{
+-		Executable:      "/usr/bin/php8",
++		Executable:      "/usr/bin/php83",
+ 		Parameters:      []string{"/app/bbuddy/cron.php"},
+ 		User:            "barcodebuddy",
+ 		IntervalSeconds: 120,
+diff --git a/supervisor/environment/environment.go b/supervisor/environment/environment.go
+index cbb5651..65d7d29 100644
+--- a/supervisor/environment/environment.go
++++ b/supervisor/environment/environment.go
+@@ -43,7 +43,7 @@ func parseMain() {
+ }
+ 
+ func parseTimezone() {
+-	const filePath = "/etc/php8/php.ini"
++	const filePath = "/etc/php83/php.ini"
+ 	var timezone = os.Getenv("TZ")
+ 	if timezone == "" {
+ 		fmt.Println("No timezone specified. To set timezone, set environment variable TZ")
+diff --git a/supervisor/services/services.go b/supervisor/services/services.go
+index 1e6b2bc..d10b60a 100644
+--- a/supervisor/services/services.go
++++ b/supervisor/services/services.go
+@@ -56,8 +56,8 @@ func Start() {
+ 		MaxRestarts: 0,
+ 	})
+ 	services = append(services, service{
+-		Name:        "PHP-fpm8",
+-		Executable:  "/usr/sbin/php-fpm8",
++		Name:        "PHP-fpm83",
++		Executable:  "/usr/sbin/php-fpm83",
+ 		Parameters:  []string{"-F"},
+ 		User:        "barcodebuddy",
+ 		ShowOutput:  false,
+@@ -74,7 +74,7 @@ func Start() {
+ 	})
+ 	services = append(services, service{
+ 		Name:        "Websocket Server",
+-		Executable:  "/usr/bin/php8",
++		Executable:  "/usr/bin/php83",
+ 		Parameters:  []string{"/app/bbuddy/wsserver.php"},
+ 		User:        "barcodebuddy",
+ 		ShowOutput:  false,
+-- 
+2.45.0
+
