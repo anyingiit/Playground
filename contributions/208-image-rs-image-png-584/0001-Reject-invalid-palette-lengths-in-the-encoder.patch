@@ -1,0 +1,135 @@
+From 63621ec2a388ecebaa37a7552c4d355169a2ec95 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 03:00:44 +0800
+Subject: [PATCH] Reject invalid palette lengths in the encoder
+
+A PLTE chunk must hold 1 to 256 RGB entries. The encoder wrote whatever
+was passed to set_palette, so e.g. a 1024-byte palette produced an
+invalid PNG. write_header now returns an InvalidPaletteLength format
+error for empty palettes, palettes longer than 768 bytes, and lengths
+that are not a multiple of 3.
+
+Fixes #584
+---
+ CHANGES.md     |  5 +++++
+ src/encoder.rs | 53 ++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 58 insertions(+)
+
+diff --git a/CHANGES.md b/CHANGES.md
+index 3c8c597..983c809 100644
+--- a/CHANGES.md
++++ b/CHANGES.md
+@@ -9,6 +9,10 @@
+ 
+ ### Fixes
+ 
++* Reject palettes that are empty, longer than 256 entries, or whose length is
++  not a multiple of 3 with an `InvalidPaletteLength` format error from
++  `Encoder::write_header`. Previously the encoder wrote such a palette as-is,
++  producing an invalid `PLTE` chunk. ([#584])
+ * Reject `Encoder::with_info` calls whose `info.interlaced` is `true` with
+   a clear `InterlacedEncodingUnsupported` format error. Previously the IHDR
+   was written with `interlace_method = 1` but `write_image_data` wrote
+@@ -46,6 +50,7 @@
+ * Fixed and improved intra-doc links in documentation comments. ([#665])
+ * Fixed nightly `portable_simd` build. ([#675])
+ 
++[#584]: https://github.com/image-rs/image-png/issues/584
+ [#630]: https://github.com/image-rs/image-png/pull/630
+ [#632]: https://github.com/image-rs/image-png/pull/632
+ [#633]: https://github.com/image-rs/image-png/pull/633
+diff --git a/src/encoder.rs b/src/encoder.rs
+index 80a2055..fa5116d 100644
+--- a/src/encoder.rs
++++ b/src/encoder.rs
+@@ -41,6 +41,7 @@ enum FormatErrorKind {
+     ZeroHeight,
+     InvalidColorCombination(BitDepth, ColorType),
+     NoPalette,
++    InvalidPaletteLength(usize),
+     // TODO: wait, what?
+     WrittenTooMuch(usize),
+     NotAnimated,
+@@ -88,6 +89,11 @@ impl fmt::Display for FormatError {
+                 depth, color
+             ),
+             NoPalette => write!(fmt, "can't write indexed image without palette"),
++            InvalidPaletteLength(len) => write!(
++                fmt,
++                "invalid palette length of {} bytes, must be a multiple of 3 between 3 and 768",
++                len
++            ),
+             WrittenTooMuch(index) => write!(fmt, "wrong data size, got {} bytes too many", index),
+             NotAnimated => write!(fmt, "not an animation"),
+             OutOfBounds => write!(
+@@ -253,6 +259,10 @@ impl<'a, W: Write> Encoder<'a, W> {
+ 
+     /// Sets the raw byte contents of the PLTE chunk. This method accepts
+     /// both borrowed and owned byte data.
++    ///
++    /// The palette must contain between 1 and 256 RGB entries, i.e. its length
++    /// must be a multiple of 3 between 3 and 768 bytes. Otherwise
++    /// [`write_header`](Self::write_header) returns an error.
+     pub fn set_palette<T: Into<Cow<'a, [u8]>>>(&mut self, palette: T) {
+         self.info.palette = Some(palette.into());
+     }
+@@ -609,6 +619,16 @@ impl<W: Write> Writer<W> {
+             ));
+         }
+ 
++        // The PLTE chunk holds 1 to 256 RGB entries of 3 bytes each.
++        if let Some(palette) = &info.palette {
++            let len = palette.len();
++            if len == 0 || len % 3 != 0 || len > 256 * 3 {
++                return Err(EncodingError::Format(
++                    FormatErrorKind::InvalidPaletteLength(len).into(),
++                ));
++            }
++        }
++
+         // `write_image_data` does not apply Adam7 passes to the supplied raw
+         // pixel buffer, so advertising `interlace_method = 1` in IHDR while
+         // writing non-interlaced IDAT silently produces a corrupt PNG that
+@@ -2325,6 +2345,39 @@ mod tests {
+         );
+     }
+ 
++    #[test]
++    fn expect_error_on_invalid_palette_length() {
++        // The PLTE chunk must hold 1 to 256 entries of 3 bytes each.
++        for len in [0, 1024, 257 * 3, 4] {
++            let mut out = Vec::new();
++            let mut encoder = Encoder::new(&mut out, 1, 1);
++            encoder.set_depth(BitDepth::Eight);
++            encoder.set_color(ColorType::Indexed);
++            encoder.set_palette(vec![0u8; len]);
++            let result = encoder.write_header();
++            assert!(
++                matches!(result, Err(EncodingError::Format(_))),
++                "expected Format error for a palette of {len} bytes, got {:?}",
++                result.as_ref().err(),
++            );
++            drop(result);
++            assert!(
++                !out.windows(4).any(|w| w == b"PLTE"),
++                "no PLTE chunk should be written",
++            );
++        }
++
++        for len in [3, 256 * 3] {
++            let mut out = Vec::new();
++            let mut encoder = Encoder::new(&mut out, 1, 1);
++            encoder.set_depth(BitDepth::Eight);
++            encoder.set_color(ColorType::Indexed);
++            encoder.set_palette(vec![0u8; len]);
++            let mut writer = encoder.write_header().unwrap();
++            writer.write_image_data(&[0]).unwrap();
++        }
++    }
++
+     #[test]
+     fn can_write_header_with_valid_bit_depth_color_type_combination() -> Result<()> {
+         let output = vec![0u8; 1024];
+-- 
+2.45.0
+
