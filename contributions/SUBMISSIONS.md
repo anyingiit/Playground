@@ -175,6 +175,14 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 211 | [troessner/reek#1429](https://github.com/troessner/reek/issues/1429) | [troessner/reek#1848](https://github.com/troessner/reek/pull/1848) | 2026-10-22 提交（独立复核 PASS） |
 | 300 | [zigtools/zls#2098](https://github.com/zigtools/zls/issues/2098) | [zigtools/zls#3304](https://github.com/zigtools/zls/pull/3304) | 2026-10-22 提交（独立复核 PASS） |
 | 272 | [dry-rb/dry-schema#455](https://github.com/dry-rb/dry-schema/issues/455) | [dry-rb/dry-schema#522](https://github.com/dry-rb/dry-schema/pull/522) | 2026-10-22 提交（独立复核 PASS）；CHANGELOG 已填 PR 号 |
+| 247 | [vyncint/termlens#586](https://github.com/vyncint/termlens/issues/586) | [vyncint/termlens#605](https://github.com/vyncint/termlens/pull/605) | 2026-10-22 提交（独立复核 PASS） |
+| 273 | [dry-rb/dry-schema#468](https://github.com/dry-rb/dry-schema/issues/468) | [dry-rb/dry-schema#523](https://github.com/dry-rb/dry-schema/pull/523) | 2026-10-22 提交（独立复核 PASS）；CHANGELOG 已填 PR 号 |
+| 274 | [dry-rb/dry-validation#741](https://github.com/dry-rb/dry-validation/issues/741) | [dry-rb/dry-schema#524](https://github.com/dry-rb/dry-schema/pull/524) | 2026-10-22 提交（独立复核 PASS）；PR 开在 dry-schema；CHANGELOG 已填 PR 号 |
+| 275 | [hanami/hanami-minitest#11](https://github.com/hanami/hanami-minitest/issues/11) | [hanami/hanami-minitest#13](https://github.com/hanami/hanami-minitest/pull/13) | 2026-10-22 提交（独立复核 PASS） |
+| 330 | [crazy-goat/tikv-php#680](https://github.com/crazy-goat/tikv-php/issues/680) | [crazy-goat/tikv-php#738](https://github.com/crazy-goat/tikv-php/pull/738) | 2026-10-22 提交（独立复核 PASS） |
+| 331 | [crazy-goat/tikv-php#682](https://github.com/crazy-goat/tikv-php/issues/682) | [crazy-goat/tikv-php#739](https://github.com/crazy-goat/tikv-php/pull/739) | 2026-10-22 提交（独立复核 PASS） |
+| 332 | [crazy-goat/tikv-php#662](https://github.com/crazy-goat/tikv-php/issues/662) | [crazy-goat/tikv-php#740](https://github.com/crazy-goat/tikv-php/pull/740) | 2026-10-22 提交（独立复核 PASS） |
+| 213 | [PyCQA/pyflakes#548](https://github.com/PyCQA/pyflakes/issues/548) | — | 阻塞：开 PR 被拒（GraphQL: no permission to CreatePullRequest，仓库限协作者开 PR）；分支 anyingiit/pyflakes:del-shadowed-builtin 已推送 |
 
 备注：088 解冲突后适配上游 `formatSettingValueForEdit` 新签名，`go test ./...` 全过，回退源码则新测试编译失败（红）。099 解冲突并把上游新增的公开 `AnyCol` 用法一并展开，`:core/:dataframe-arrow` compileTestKotlin + apiCheck + ktlint 通过（未跑全量测试）。118 装了 PHP 8.5：红→绿、全量 phpunit 363 通过、phpstan 无错，已在 issue #1070 留言。121 两个改动文件上游无变化，沿用之前 sclang 红→绿结果。123 为纯改名，解冲突后无残留旧名，未本地编译（依赖太多，靠 CI）。128 已在 issue #4292 留言认领，最新 main 上红→绿。208 是协调员撤回提交员任务前已开出的。
 旧会话 9 个 PR 本地重跑：grpc-gateway、ipython（test_system_interrupt 偶发超时，重跑通过，与改动无关）、pyinstaller、OpsiMate、PathMap、xterm.js、compiler-explorer 均通过；NLog（无 dotnet）、phpmyadmin（未跑）只能看 CI。

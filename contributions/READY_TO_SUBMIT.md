@@ -21,12 +21,12 @@
 | 300 | [zigtools/zls#2098](https://github.com/zigtools/zls/issues/2098) | **已提交** [#3304](https://github.com/zigtools/zls/pull/3304) |
 | 211 | [troessner/reek#1429](https://github.com/troessner/reek/issues/1429) | **已提交** [#1848](https://github.com/troessner/reek/pull/1848) |
 | 245 | [vyncint/termlens#594](https://github.com/vyncint/termlens/issues/594) | **已提交** [#604](https://github.com/vyncint/termlens/pull/604) |
-| 273 | [dry-rb/dry-schema#468](https://github.com/dry-rb/dry-schema/issues/468)（+#424） | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；与 271/272 同改 CHANGELOG，冲突时保留全部行） |
-| 213 | [PyCQA/pyflakes#548](https://github.com/PyCQA/pyflakes/issues/548) | 待提交（base `main`；无需认领；无 DCO/CLA；复核 PASS；维护者几乎只合自己的 PR，优先级放低） |
-| 275 | [hanami/hanami-minitest#11](https://github.com/hanami/hanami-minitest/issues/11) | 待提交（base `main`；无需认领；无 DCO/CLA；纯文档；复核 PASS） |
-| 247 | [vyncint/termlens#586](https://github.com/vyncint/termlens/issues/586) | 待提交：base `main`；无需认领；无 CLA；DCO 已签（CI 强制）。**禁止 AI 署名**：不加 `--trailer`。与 245 同仓库互不依赖（CHANGELOG 不同位置） |
-| 330 | [crazy-goat/tikv-php#680](https://github.com/crazy-goat/tikv-php/issues/680) | 待提交（base `master`；无需认领；无 DCO/CLA；复核 PASS；与 331/332 同改 CHANGELOG `[Unreleased]`，后提交者可能需 rebase） |
-| 331 | [crazy-goat/tikv-php#682](https://github.com/crazy-goat/tikv-php/issues/682) | 待提交（base `master`；无需认领；无 DCO/CLA；复核 PASS） |
-| 332 | [crazy-goat/tikv-php#662](https://github.com/crazy-goat/tikv-php/issues/662) | 待提交（base `master`；无需认领；无 DCO/CLA；复核 PASS） |
-| 274 | [dry-rb/dry-validation#741](https://github.com/dry-rb/dry-validation/issues/741)（PR 开在 **dry-rb/dry-schema**） | 待提交（base dry-schema `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；与 271/272/273 同改 CHANGELOG，冲突时保留全部行） |
+| 273 | [dry-rb/dry-schema#468](https://github.com/dry-rb/dry-schema/issues/468) | **已提交** [#523](https://github.com/dry-rb/dry-schema/pull/523) |
+| 213 | [PyCQA/pyflakes#548](https://github.com/PyCQA/pyflakes/issues/548) | 阻塞：仓库不允许 anyingiit 开 PR（CreatePullRequest 权限被拒）；分支已推送到 fork，需 owner 决定 |
+| 275 | [hanami/hanami-minitest#11](https://github.com/hanami/hanami-minitest/issues/11) | **已提交** [#13](https://github.com/hanami/hanami-minitest/pull/13) |
+| 247 | [vyncint/termlens#586](https://github.com/vyncint/termlens/issues/586) | **已提交** [#605](https://github.com/vyncint/termlens/pull/605) |
+| 330 | [crazy-goat/tikv-php#680](https://github.com/crazy-goat/tikv-php/issues/680) | **已提交** [#738](https://github.com/crazy-goat/tikv-php/pull/738) |
+| 331 | [crazy-goat/tikv-php#682](https://github.com/crazy-goat/tikv-php/issues/682) | **已提交** [#739](https://github.com/crazy-goat/tikv-php/pull/739) |
+| 332 | [crazy-goat/tikv-php#662](https://github.com/crazy-goat/tikv-php/issues/662) | **已提交** [#740](https://github.com/crazy-goat/tikv-php/pull/740) |
+| 274 | [dry-rb/dry-validation#741](https://github.com/dry-rb/dry-validation/issues/741) | **已提交** [#524](https://github.com/dry-rb/dry-schema/pull/524) |
 | 248 | [open-nexus-OS/open-nexus-OS#47](https://github.com/open-nexus-OS/open-nexus-OS/issues/47) | 待提交：base `main`；**需先在 issue 评论认领**；**CLA**（cla-assistant，PR 下评论签署后编辑一次 PR 描述触发重跑）；无 DCO；不加 `--signoff`/`--trailer`（仓库禁 Co-authored-by） |
