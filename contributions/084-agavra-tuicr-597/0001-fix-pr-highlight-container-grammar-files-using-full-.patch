@@ -1,4 +1,4 @@
-From 23f2debad5adb18c403f2e2f1b76431fe8fbee71 Mon Sep 17 00:00:00 2001
+From 08440337632dc7378946330453951db59d9d4f01 Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Thu, 1 Oct 2026 17:50:04 +0000
 Subject: [PATCH] fix(pr): highlight container-grammar files using full-file
@@ -21,31 +21,31 @@ dropped instead of painting lines with the wrong spans.
 Closes #597
 ---
  AGENTS.md               |   2 +
- src/forge/pr_open.rs    | 174 ++++++++++++++++++++++++++++++++++++++--
+ src/forge/pr_open.rs    | 172 ++++++++++++++++++++++++++++++++++++++--
  src/model/diff_types.rs |   8 ++
  src/vcs/diff_parser.rs  |  64 +++++++++++++--
- 4 files changed, 233 insertions(+), 15 deletions(-)
+ 4 files changed, 231 insertions(+), 15 deletions(-)
 
 diff --git a/AGENTS.md b/AGENTS.md
-index a7092a2..fb5d36e 100644
+index bc09506..b6461bd 100644
 --- a/AGENTS.md
 +++ b/AGENTS.md
-@@ -351,6 +351,8 @@ These are non-obvious things the implementation chain hit. Worth preserving for
+@@ -359,6 +359,8 @@ These are non-obvious things the implementation chain hit. Worth preserving for
  
- 21. **`e` in PR mode must not resolve against the working tree.** PR review installs `PrNoopVcs`, so there is no local VCS to ask, and `vcs_info.root_path` is the synthetic `forge:host/owner/repo` identity — the checkout can be on any branch, or absent. Editor targets go through `App::pr_editor_target`, which reads the reviewed revision (local blob via `forge::local_git::read_blob`, else `ForgeBackend::fetch_file_content`) and only hands over the worktree file when its content matches. Related: `fetch_file_lines` runs content through `slice_context_lines`, which expands tabs, so it is never byte-faithful — anything that writes content back to disk must use `fetch_file_content`.
+ 23. **`fetch_pr_data` fans out once the PR metadata is in.** `get_pull_request_info` and `resolve_diff_base_sha` run first, then `get_pull_request_diff`, `list_pull_request_commits`, and `list_pull_request_review_metadata` run concurrently through `forge::join` (scoped threads), so opening a PR waits for the slowest of them rather than their sum. The backend must therefore be `Sync` (`create_forge_backend` returns `Box<dyn ForgeBackend + Sync>`), and test fakes record calls through `Mutex` or atomics, not `RefCell` or `Cell`. Each call still paginates sequentially, and errors keep the sequential precedence: a diff error fails the open, while commit and review-metadata failures degrade to empty. GitHub's `get_pull_request_diff` fetches `pulls/N/files` and `gh pr diff` the same way, and a file-list error wins over a patch error.
  
-+22. **Container grammars need whole-file contents in PR mode too.** `diff_parser` skips per-hunk highlighting for `needs_full_file_highlight` files (PHP, Vue, Svelte, ...), so `fetch_pr_data` attaches their old/new contents to `FilePatch::old_content`/`new_content` via `fetch_file_content`, and `parse_file_patches` runs `enhance_with_full_file_highlight` on them. A side whose contents do not match the diff lines is dropped rather than mis-painted. Regression test: `should_highlight_container_grammar_files_using_full_file_contents`.
++24. **Container grammars need whole-file contents in PR mode too.** Lazy coloring (`app/coloring.rs`) leaves `needs_full_file_highlight` files (PHP, Vue, Svelte, ...) to the whole-file pass, which the local VCS backends run at load. The forge PR path has no working tree, so `fetch_pr_data` attaches their old/new contents to `FilePatch::old_content`/`new_content` via `fetch_file_content` (alongside the diff fetch, capped at 50 files), and `parse_file_patches` runs `enhance_with_full_file_highlight` on them. A side whose contents do not match the diff lines is dropped rather than mis-painted. Regression test: `should_highlight_container_grammar_files_using_full_file_contents`.
 +
  ### Keeping Docs Updated
  
  When adding user-facing features, update the relevant documentation:
 diff --git a/src/forge/pr_open.rs b/src/forge/pr_open.rs
-index b16ef6a..413386f 100644
+index d8e957f..c5bd128 100644
 --- a/src/forge/pr_open.rs
 +++ b/src/forge/pr_open.rs
-@@ -16,11 +16,11 @@ use std::path::{Path, PathBuf};
- 
+@@ -17,11 +17,11 @@ use std::path::{Path, PathBuf};
  use crate::error::{Result, TuicrError};
+ use crate::forge::join;
  use crate::forge::traits::{
 -    ForgeBackend, PrSessionKey, PullRequestCommit, PullRequestDetails, PullRequestInfo,
 -    PullRequestReviewMetadata, PullRequestTarget,
@@ -59,17 +59,20 @@ index b16ef6a..413386f 100644
  use crate::tuicrignore;
  use crate::vcs::diff_parser::parse_file_patches;
  
-@@ -84,7 +84,8 @@ pub fn open_pull_request(
- pub fn fetch_pr_data(backend: &dyn ForgeBackend, target: PullRequestTarget) -> Result<PrFetchData> {
-     let pr_info = backend.get_pull_request_info(target)?;
+@@ -102,7 +102,11 @@ pub fn fetch_pr_data(
+     }
      let details = pr_info.details.clone();
--    let patches = backend.get_pull_request_diff(&details)?;
-+    let mut patches = backend.get_pull_request_diff(&details)?;
-+    attach_container_file_contents(backend, &details, &mut patches);
-     let commits = backend
-         .list_pull_request_commits(&details)
-         .unwrap_or_default();
-@@ -94,6 +95,57 @@ pub fn fetch_pr_data(backend: &dyn ForgeBackend, target: PullRequestTarget) -> R
+     let (patches, (commits, review_metadata)) = join(
+-        || backend.get_pull_request_diff(&details),
++        || -> Result<Vec<FilePatch>> {
++            let mut patches = backend.get_pull_request_diff(&details)?;
++            attach_container_file_contents(backend, &details, &mut patches);
++            Ok(patches)
++        },
+         || {
+             join(
+                 || backend.list_pull_request_commits(&details),
+@@ -116,6 +120,57 @@ pub fn fetch_pr_data(
      Ok((details, patches, commits, review_metadata, pr_info))
  }
  
@@ -78,9 +81,9 @@ index b16ef6a..413386f 100644
 +const MAX_CONTAINER_FILE_FETCHES: usize = 50;
 +
 +/// Fetch whole-file contents for container-grammar files (PHP, Vue, Svelte,
-+/// ...) so the parse can run the full-file highlight pass; per-hunk
-+/// highlighting cannot enter their nested grammars, so without this those
-+/// files render unstyled. Best-effort: a side that cannot be read keeps the
++/// ...) so the parse can run the full-file highlight pass; lazy per-hunk
++/// coloring cannot enter their nested grammars, so without this those files
++/// render unstyled. Best-effort: a side that cannot be read keeps the
 +/// unhighlighted fallback.
 +///
 +/// Without a local checkout each read is a forge API round trip, so at most
@@ -127,7 +130,7 @@ index b16ef6a..413386f 100644
  /// CPU-only half of the PR open path: apply `.tuicrignore` to the raw
  /// patches, then parse the hunks and build the session. Filtering before the
  /// parse keeps an ignored large file from being highlighted at all. Runs on
-@@ -185,8 +237,7 @@ pub fn pr_session_repo_path(key: &PrSessionKey) -> PathBuf {
+@@ -207,8 +262,7 @@ pub fn pr_session_repo_path(key: &PrSessionKey) -> PathBuf {
  mod tests {
      use super::*;
      use crate::forge::traits::{
@@ -137,21 +140,37 @@ index b16ef6a..413386f 100644
      };
      use crate::model::DiffLine;
      use chrono::Utc;
-@@ -221,6 +272,8 @@ mod tests {
-         details: PullRequestDetails,
-         patch: String,
-         calls: RefCell<Vec<&'static str>>,
+@@ -247,6 +301,8 @@ mod tests {
+         /// rather than the merge base the patch is taken from. `None` models
+         /// a backend that already reports the merge base (GitLab).
+         diff_base_sha: Option<String>,
 +        /// Whole-file contents served by `fetch_file_content`, per side.
 +        contents: Vec<(ForgeFileSide, &'static str)>,
      }
  
-     impl ForgeBackend for StaticBackend {
-@@ -240,6 +293,14 @@ mod tests {
+     impl StaticBackend {
+@@ -256,9 +312,15 @@ mod tests {
+                 patch: patch.to_string(),
+                 calls: Mutex::new(Vec::new()),
+                 diff_base_sha: None,
++                contents: Vec::new(),
+             }
+         }
+ 
++        fn with_contents(mut self, contents: Vec<(ForgeFileSide, &'static str)>) -> Self {
++            self.contents = contents;
++            self
++        }
++
+         fn with_diff_base_sha(mut self, sha: &str) -> Self {
+             self.diff_base_sha = Some(sha.to_string());
+             self
+@@ -287,6 +349,14 @@ mod tests {
          fn fetch_file_lines(&self, _req: ForgeFileLinesRequest) -> Result<Vec<DiffLine>> {
              unimplemented!()
          }
 +        fn fetch_file_content(&self, req: ForgeFileLinesRequest) -> Result<String> {
-+            self.calls.borrow_mut().push("fetch_file_content");
++            self.calls.lock().unwrap().push("fetch_file_content");
 +            self.contents
 +                .iter()
 +                .find(|(side, _)| *side == req.side)
@@ -161,33 +180,9 @@ index b16ef6a..413386f 100644
          fn list_review_threads(
              &self,
              _pr: &PullRequestDetails,
-@@ -289,6 +350,7 @@ index 1111111..2222222 100644
-             details: details(),
-             patch: SIMPLE_PATCH.to_string(),
-             calls: RefCell::new(Vec::new()),
-+            contents: Vec::new(),
-         };
-         let target = PullRequestTarget::with_repository(repo(), 125, "125");
-         let highlighter = SyntaxHighlighter::default();
-@@ -355,6 +417,7 @@ rename to new_name.rs
-             details: details(),
-             patch: MULTI_STATUS_PATCH.to_string(),
-             calls: RefCell::new(Vec::new()),
-+            contents: Vec::new(),
-         };
-         let target = PullRequestTarget::with_repository(repo(), 125, "125");
-         let highlighter = SyntaxHighlighter::default();
-@@ -394,6 +457,7 @@ rename to new_name.rs
-             details: details(),
-             patch: String::new(),
-             calls: RefCell::new(Vec::new()),
-+            contents: Vec::new(),
-         };
-         let target = PullRequestTarget::with_repository(repo(), 125, "125");
-         let highlighter = SyntaxHighlighter::default();
-@@ -475,4 +539,100 @@ rename to new_name.rs
- 
-         assert!(opened.diff_files.is_empty());
+@@ -807,4 +877,92 @@ rename to new_name.rs
+             &["get_pull_request"]
+         );
      }
 +
 +    const PHP_OLD: &str = "<?php\n\nfunction answer(): int\n{\n    return 41;\n}\n";
@@ -203,15 +198,6 @@ index b16ef6a..413386f 100644
 ++    return 42;
 + }
 +"##;
-+
-+    fn php_backend(contents: Vec<(ForgeFileSide, &'static str)>) -> StaticBackend {
-+        StaticBackend {
-+            details: details(),
-+            patch: PHP_PATCH.to_string(),
-+            calls: RefCell::new(Vec::new()),
-+            contents,
-+        }
-+    }
 +
 +    fn changed_line_fg_counts(opened: &OpenedPullRequest) -> Vec<Option<usize>> {
 +        opened.diff_files[0].hunks[0]
@@ -233,7 +219,7 @@ index b16ef6a..413386f 100644
 +    #[test]
 +    fn should_highlight_container_grammar_files_using_full_file_contents() {
 +        // given a PHP hunk that does not include the `<?php` opening tag
-+        let backend = php_backend(vec![
++        let backend = StaticBackend::new(details(), PHP_PATCH).with_contents(vec![
 +            (ForgeFileSide::Base, PHP_OLD),
 +            (ForgeFileSide::Head, PHP_NEW),
 +        ]);
@@ -256,7 +242,7 @@ index b16ef6a..413386f 100644
 +    fn should_not_apply_full_file_spans_when_fetched_content_does_not_match_diff() {
 +        // given a base-side file from a different revision than the diff
 +        let stale_old = "<?php\n\nfunction other(): int\n{\n    return 7;\n}\n";
-+        let backend = php_backend(vec![
++        let backend = StaticBackend::new(details(), PHP_PATCH).with_contents(vec![
 +            (ForgeFileSide::Base, stale_old),
 +            (ForgeFileSide::Head, PHP_NEW),
 +        ]);
@@ -273,17 +259,18 @@ index b16ef6a..413386f 100644
 +    #[test]
 +    fn should_not_fetch_file_contents_for_non_container_files() {
 +        // given
-+        let backend = StaticBackend {
-+            details: details(),
-+            patch: SIMPLE_PATCH.to_string(),
-+            calls: RefCell::new(Vec::new()),
-+            contents: Vec::new(),
-+        };
++        let backend = StaticBackend::new(details(), SIMPLE_PATCH);
 +        let target = PullRequestTarget::with_repository(repo(), 125, "125");
 +        // when
 +        open_pull_request(&backend, target, None, &SyntaxHighlighter::default()).unwrap();
 +        // then
-+        assert!(!backend.calls.borrow().contains(&"fetch_file_content"));
++        assert!(
++            !backend
++                .calls
++                .lock()
++                .unwrap()
++                .contains(&"fetch_file_content")
++        );
 +    }
  }
 diff --git a/src/model/diff_types.rs b/src/model/diff_types.rs
@@ -313,7 +300,7 @@ index d69e9df..0ccad10 100644
      }
  
 diff --git a/src/vcs/diff_parser.rs b/src/vcs/diff_parser.rs
-index 6b14e06..ffc2a38 100644
+index 1c95062..a63d6e9 100644
 --- a/src/vcs/diff_parser.rs
 +++ b/src/vcs/diff_parser.rs
 @@ -6,14 +6,13 @@
@@ -331,7 +318,7 @@ index 6b14e06..ffc2a38 100644
  use crate::model::FileStatus;
 -use crate::model::{DiffFile, DiffHunk, DiffLine, FilePatch, LineOrigin};
 +use crate::model::{DiffFile, DiffHunk, DiffLine, FilePatch, LineOrigin, LineSide};
- use crate::syntax::{SyntaxHighlighter, needs_full_file_highlight};
+ use crate::syntax::SyntaxHighlighter;
  
  /// Convert backend-structured file patches into renderable diff files.
 @@ -25,10 +24,59 @@ pub fn parse_file_patches(
@@ -399,5 +386,5 @@ index 6b14e06..ffc2a38 100644
  
  fn materialize_file_patch(patch: FilePatch, highlighter: &SyntaxHighlighter) -> Result<DiffFile> {
 -- 
-2.43.0
+2.45.0
 

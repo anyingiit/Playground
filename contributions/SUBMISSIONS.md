@@ -60,9 +60,11 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 046 | [symfony/ai#2430](https://github.com/symfony/ai/issues/2430) | [symfony/ai#2634](https://github.com/symfony/ai/pull/2634) | ✅ 已合并（2026-10-06，wachterjohannes） |
 | 049 | [microsoft/litebox#1222](https://github.com/microsoft/litebox/issues/1222) | [microsoft/litebox#1481](https://github.com/microsoft/litebox/pull/1481) | 已关闭（10-22，owner 确认）：上游 #1594（10-15）已在 main 落地同一修复；CLA 已签。无需操作 |
 | 052 | [eugenioenko/ttt#277](https://github.com/eugenioenko/ttt/issues/277) | [eugenioenko/ttt#698](https://github.com/eugenioenko/ttt/pull/698) | ✅ 已合并（2026-10-02） |
+| 053 | [zerobrewhq/zerobrew#357](https://github.com/zerobrewhq/zerobrew/issues/357) | [zerobrewhq/zerobrew#479](https://github.com/zerobrewhq/zerobrew/pull/479) | 10-22 提交（rustc 1.96 下红→绿） |
 | 054 | [kubecolor/kubecolor#171](https://github.com/kubecolor/kubecolor/issues/171) | [kubecolor/kubecolor#370](https://github.com/kubecolor/kubecolor/pull/370) | ✅ 已合并（2026-10-17，applejag） |
 | 056 | [stackrox/kube-linter#1241](https://github.com/stackrox/kube-linter/issues/1241) | [stackrox/kube-linter#1273](https://github.com/stackrox/kube-linter/pull/1273) | 待 review；CodeRabbit 无意见；只有 codecov/project 失败（非必需） |
 | 057 | [helm-unittest/helm-unittest#848](https://github.com/helm-unittest/helm-unittest/issues/848) | [helm-unittest/helm-unittest#941](https://github.com/helm-unittest/helm-unittest/pull/941) | ✅ 已合并（2026-10-09，quintush） |
+| 058 | [arxanas/git-branchless#498](https://github.com/arxanas/git-branchless/issues/498) | [arxanas/git-branchless#1702](https://github.com/arxanas/git-branchless/pull/1702) | 10-22 提交 |
 | 059 | [sds/overcommit#822](https://github.com/sds/overcommit/issues/822) | [sds/overcommit#900](https://github.com/sds/overcommit/pull/900) | ✅ 已合并（2026-10-15，sds） |
 | 060 | [glebm/i18n-tasks#746](https://github.com/glebm/i18n-tasks/issues/746) | [glebm/i18n-tasks#759](https://github.com/glebm/i18n-tasks/pull/759) | 已关闭（10-10，davidwessman）：因合并冲突由维护者以同名 #763 重新提交并合并，修复已进上游。无需操作 |
 | 061 | [cashapp/licensee#545](https://github.com/cashapp/licensee/issues/545) | [cashapp/licensee#636](https://github.com/cashapp/licensee/pull/636) | ✅ 已合并（2026-10-03，JakeWharton） |
@@ -73,10 +75,16 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 067 | [embedded-graphics/embedded-graphics#821](https://github.com/embedded-graphics/embedded-graphics/issues/821) | [embedded-graphics/embedded-graphics#830](https://github.com/embedded-graphics/embedded-graphics/pull/830) | 待 review；CI 未运行 |
 | 068 | [rust-embedded/heapless#492](https://github.com/rust-embedded/heapless/issues/492) | [rust-embedded/heapless#692](https://github.com/rust-embedded/heapless/pull/692) | 10-22 已 rebase 到最新 main（无冲突，linear_map 测试 17/17、fmt 通过）、force-push（2961d8e3），PR 描述改为简短版本；现在 MERGEABLE，auto-merge 已失效需维护者重开 |
 | 069 | [jam1garner/binrw#370](https://github.com/jam1garner/binrw/issues/370) | [jam1garner/binrw#372](https://github.com/jam1garner/binrw/pull/372) | 待 review；CI 未运行 |
+| 070 | [typstyle-rs/typstyle#478](https://github.com/typstyle-rs/typstyle/issues/478) | [typstyle-rs/typstyle#521](https://github.com/typstyle-rs/typstyle/pull/521) | 10-22 提交 |
 | 071 | [go-jet/jet#609](https://github.com/go-jet/jet/issues/609) | [go-jet/jet#621](https://github.com/go-jet/jet/pull/621) | ✅ 已合并（2026-10-05） |
 | 072 | [vega/altair#3619](https://github.com/vega/altair/issues/3619) | [vega/altair#4162](https://github.com/vega/altair/pull/4162) | 待 review；CI 全绿（16/16） |
 | 074 | [zitadel/oidc#967](https://github.com/zitadel/oidc/issues/967) | [zitadel/oidc#994](https://github.com/zitadel/oidc/pull/994) | 维护者 wim07101993 暂缓（10-02）：不确定是否该修，已在 issue 下开讨论；失败的 check 只是 kanban 机器人 |
+| 076 | [gkampitakis/go-snaps#156](https://github.com/gkampitakis/go-snaps/issues/156) | [gkampitakis/go-snaps#162](https://github.com/gkampitakis/go-snaps/pull/162) | 10-22 提交 |
+| 078 | [image-rs/image-png#720](https://github.com/image-rs/image-png/issues/720) | [image-rs/image-png#723](https://github.com/image-rs/image-png/pull/723) | 10-22 提交 |
+| 081 | [samber/ro#74](https://github.com/samber/ro/issues/74) | [samber/ro#474](https://github.com/samber/ro/pull/474) | 10-22 提交 |
 | 082 | [carthage-software/mago#2182](https://github.com/carthage-software/mago/issues/2182) | [carthage-software/mago#2417](https://github.com/carthage-software/mago/pull/2417) | ✅ 已合并（2026-10-03，azjezz） |
+| 084 | [agavra/tuicr#597](https://github.com/agavra/tuicr/issues/597) | [agavra/tuicr#802](https://github.com/agavra/tuicr/pull/802) | 10-22 提交（在 #712/#797 之后重新移植） |
+| 087 | [jnsahaj/lumen#156](https://github.com/jnsahaj/lumen/issues/156) | [jnsahaj/lumen#211](https://github.com/jnsahaj/lumen/pull/211) | 10-22 提交 |
 | 130 | [rjsf-team/react-jsonschema-form#3882](https://github.com/rjsf-team/react-jsonschema-form/issues/3882) | [rjsf-team/react-jsonschema-form#5622](https://github.com/rjsf-team/react-jsonschema-form/pull/5622) | 2026-10-22 提交 |
 | 140 | [marketcalls/openalgo#1849](https://github.com/marketcalls/openalgo/issues/1849) | [marketcalls/openalgo#2270](https://github.com/marketcalls/openalgo/pull/2270) | 2026-10-22 提交 |
 | 142 | [jgrossi/elephpant.me#347](https://github.com/jgrossi/elephpant.me/issues/347) | [jgrossi/elephpant.me#386](https://github.com/jgrossi/elephpant.me/pull/386) | 2026-10-22 提交 |

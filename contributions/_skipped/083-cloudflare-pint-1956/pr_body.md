@@ -30,5 +30,5 @@ Closes #1956
   - New unit cases in `internal/checks/alerts_for_test.go` (+ snapshots) and a new testscript `cmd/pint/tests/0278_alerts_for_redundant_disabled.txt`; both fail without the change and pass with it.
   - `go test -race -count=1 ./internal/checks/ ./internal/config/ ./cmd/pint/` — all pass except `TestScripts/0228_watch_pidfile_remove_error`, which also fails on `main` in my environment (runs as root, so `chmod 000` does not deny access).
   - `make format` (no changes) and `make lint` (0 issues, deadcode clean).
-- [x] `CHANGELOG.md` is updated (if applicable) — added `v0.89.0` / Added entry in `docs/changelog.md`
+- [x] `CHANGELOG.md` is updated (if applicable) — added `v0.90.0` / Added entry in `docs/changelog.md`
 - [x] Documentation is updated (if applicable) — `docs/checks/alerts/for.md` Configuration section

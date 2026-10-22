@@ -1,3 +1,5 @@
+> **跳过（2026-10-22）**：cloudflare/pint 的 `pull_request_creation_policy` 是 `collaborators_only`，外部账号开不了 PR（gh 与 REST 都被拒）。补丁已推到 anyingiit/pint 的 `alerts-for-redundant-option` 分支，需要时可在 issue 下请维护者取用。
+
 # cloudflare/pint #1956 — alerts/for: option to disable default-value check
 
 | 项 | 值 |
