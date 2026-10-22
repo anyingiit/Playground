@@ -1,0 +1,1 @@
+Remove link to missing EXAMPLES.md from README

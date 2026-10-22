@@ -21,5 +21,6 @@
 | 300 | [zigtools/zls#2098](https://github.com/zigtools/zls/issues/2098) | **已提交** [#3304](https://github.com/zigtools/zls/pull/3304) |
 | 211 | [troessner/reek#1429](https://github.com/troessner/reek/issues/1429) | **已提交** [#1848](https://github.com/troessner/reek/pull/1848) |
 | 245 | [vyncint/termlens#594](https://github.com/vyncint/termlens/issues/594) | **已提交** [#604](https://github.com/vyncint/termlens/pull/604) |
-| 273 | [dry-rb/dry-schema#468](https://github.com/dry-rb/dry-schema/issues/468) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；与 271/272 同改 CHANGELOG，冲突时保留全部行） |
+| 273 | [dry-rb/dry-schema#468](https://github.com/dry-rb/dry-schema/issues/468)（+#424） | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；与 271/272 同改 CHANGELOG，冲突时保留全部行） |
 | 213 | [PyCQA/pyflakes#548](https://github.com/PyCQA/pyflakes/issues/548) | 待提交（base `main`；无需认领；无 DCO/CLA；复核 PASS；维护者几乎只合自己的 PR，优先级放低） |
+| 275 | [hanami/hanami-minitest#11](https://github.com/hanami/hanami-minitest/issues/11) | 待提交（base `main`；无需认领；无 DCO/CLA；纯文档；复核 PASS） |

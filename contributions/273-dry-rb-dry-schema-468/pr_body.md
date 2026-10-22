@@ -33,10 +33,11 @@ I compared old and new output with `Params`, `define` and `JSON` schemas; `value
 ## Related issue
 
 Fixes #468
+Fixes #424 (same cause: with `optional(:filters).hash(FilterStruct)` and `Types::Array.of(Types::Params::Integer)`, `["m", "1"]` reported both elements as invalid; now only index 0)
 
 ## Checklist
 
-- [x] Tests pass locally: `bundle exec rspec` → 3268 examples, 0 failures, 4 pending. Of the 5 new examples in `spec/extensions/struct_spec.rb`, 4 fail without the fix and pass with it (invalid input, `array(struct)`, `maybe(struct)` with `nil`); the plain valid-input one passes either way.
+- [x] Tests pass locally: `bundle exec rspec` → 3269 examples, 0 failures, 4 pending. Of the 6 new examples in `spec/extensions/struct_spec.rb`, 5 fail without the fix and pass with it (invalid input ×2, `array(struct)`, `maybe(struct)` with `nil`, the #424 array case); the plain valid-input one passes either way.
 - [x] `bundle exec rubocop` → no offenses
 - [x] `CHANGELOG.md` updated under Unreleased / Fixed
 - [ ] Documentation — n/a (bug fix)

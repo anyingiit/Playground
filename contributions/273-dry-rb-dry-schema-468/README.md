@@ -2,7 +2,7 @@
 
 | 项 | 值 |
 |---|---|
-| Issue | https://github.com/dry-rb/dry-schema/issues/468 |
+| Issue | https://github.com/dry-rb/dry-schema/issues/468 （同时修复 #424，已验证） |
 | Tier | 自由（dry-rb） |
 | Labels | bug, help wanted |
 | Status | ✅ ready（复核 PASS，按复核意见补测试/改正文后重验，未提交） |
@@ -37,3 +37,6 @@ tools/submit_pr.sh contributions/273-dry-rb-dry-schema-468 dry-rb/dry-schema mai
 - 大量新旧对比（Params/JSON/define × value/hash/maybe/array/each；嵌套 struct、transform_keys 含 camelCase proc、默认值、attribute?、constructor 包装、key_map/json_schema/info）：合法 hash 输入输出不变；变化全是修复：array(Struct) 合法可转换元素不再误报、maybe(Struct) 接受 nil、JSON/define 下 nil 报 "must be a hash"。
 - 指出：PR 正文"合法输入输出不变"不准确 → 已按建议改写；建议补 array/maybe 两个测试 → 已补（回退 lib 时失败），CHANGELOG 同步补充。重验：struct_spec 13/0（回退 lib 13/4），全量 3268/0/4，rubocop 干净。
 - 结论：PASS（修正后）
+
+## 追加（22:55 UTC）：同时修复 #424
+#424（struct 扩展下数组里一个元素非法导致合法元素也报错，2022 年起 open、无 PR）根因相同。main 上 `["m","1"]` 报 0 和 1，修复后只报 0。新增 "struct with an array of coercible values" 用例（回退 lib 时失败）；commit 和 PR 正文加 `Fixes #424`。重验：struct_spec 14/0（回退 lib 14/5），全量 3269/0/4，rubocop 干净。

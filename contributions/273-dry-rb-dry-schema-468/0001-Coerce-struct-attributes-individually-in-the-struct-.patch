@@ -1,4 +1,4 @@
-From b709e98229f59ab80f8aec04b2c1347e25ab3c24 Mon Sep 17 00:00:00 2001
+From 6bc9675a25816b497767adc1be4f575e036e9581 Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Thu, 22 Oct 2026 19:53:19 +0000
 Subject: [PATCH] Coerce struct attributes individually in the struct extension
@@ -16,11 +16,12 @@ Drop the extra constructor and rely on the per-key types of the nested
 schema.
 
 Fixes #468
+Fixes #424
 ---
  CHANGELOG.md                        |  2 +
  lib/dry/schema/extensions/struct.rb |  1 -
- spec/extensions/struct_spec.rb      | 75 +++++++++++++++++++++++++++++
- 3 files changed, 77 insertions(+), 1 deletion(-)
+ spec/extensions/struct_spec.rb      | 93 +++++++++++++++++++++++++++++
+ 3 files changed, 95 insertions(+), 1 deletion(-)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
 index b08ada5..2cdb7cd 100644
@@ -48,10 +49,10 @@ index 24cb004..26e35fa 100644
              super
            end
 diff --git a/spec/extensions/struct_spec.rb b/spec/extensions/struct_spec.rb
-index 4ef4ef9..61e9b5f 100644
+index 4ef4ef9..b9b7dfb 100644
 --- a/spec/extensions/struct_spec.rb
 +++ b/spec/extensions/struct_spec.rb
-@@ -134,4 +134,79 @@ RSpec.describe "struct extension" do
+@@ -134,4 +134,97 @@ RSpec.describe "struct extension" do
        expect(schema.(input).errors.to_h).to eq({})
      end
    end
@@ -128,6 +129,24 @@ index 4ef4ef9..61e9b5f 100644
 +      result = schema.(foo: {date: "00", number: "42", string: "Hi!"})
 +
 +      expect(result.to_h).to eq(foo: {date: "00", number: BigDecimal("42"), string: "Hi!"})
++    end
++  end
++
++  context "struct with an array of coercible values" do
++    let(:schema) do
++      struct = Class.new(Dry::Struct) do
++        attribute? :ids, Types::Array.of(Types::Params::Integer)
++      end
++
++      Dry::Schema.Params do
++        optional(:filters).hash(struct)
++      end
++    end
++
++    it "reports errors only for invalid elements" do
++      expect(schema.(filters: {ids: %w[m 1]}).errors.to_h).to eq(
++        filters: {ids: {0 => ["must be an integer"]}}
++      )
 +    end
 +  end
  end
