@@ -1,0 +1,506 @@
+From ecc5d4dedc556e94b3516196faa76d19423a26a0 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:32:51 +0000
+Subject: [PATCH] feat(review): bind the review overlay's hunk and file keys
+
+The review overlay's ] [ } { were fixed keys. On layouts where they need
+Option, AZERTY on macOS among them, Option is often the Alt that tuios
+reads, so they could not be reached without a second Option key.
+
+They are now the review_next_hunk, review_prev_hunk, review_next_file and
+review_prev_file actions in a new [keybindings.review] section, with the
+same keys as defaults. The footer hints, the help overlay and tuios
+keybinds show the keys as bound.
+
+Closes #585
+---
+ docs/KEYBINDINGS.md                 | 22 +++++++++++--
+ internal/app/help.go                | 10 ++++--
+ internal/app/render_review.go       | 24 ++++++++++++--
+ internal/config/keybind_scopes.go   | 11 +++++++
+ internal/config/registry.go         | 21 ++++++++++--
+ internal/config/review_actions.go   | 24 ++++++++++++++
+ internal/config/userconfig.go       | 10 ++++++
+ internal/config/validation.go       |  1 +
+ internal/input/reachability_test.go | 17 +++++++++-
+ internal/input/review_input.go      | 32 +++++++++++-------
+ internal/input/review_input_test.go | 51 +++++++++++++++++++++++++++++
+ 11 files changed, 202 insertions(+), 21 deletions(-)
+ create mode 100644 internal/config/review_actions.go
+
+diff --git a/docs/KEYBINDINGS.md b/docs/KEYBINDINGS.md
+index 1264532..e33db03 100644
+--- a/docs/KEYBINDINGS.md
++++ b/docs/KEYBINDINGS.md
+@@ -1482,15 +1482,16 @@ the lines they are on. The code is coloured by its file type in the
+ active theme's colours, added and removed lines sit on green and red grounds,
+ and the words that changed in a changed line are marked. It owns every key
+ while it is open, in either mode.
+-The keys are the overlay's own, not bindings, like the scrollback browser's:
++The keys are the overlay's own, not bindings, like the scrollback browser's,
++except the hunk and file motions, which are in `[keybindings.review]`:
+ 
+ | Keys | What it does |
+ | --- | --- |
+ | `j` / `k`, arrows | Move by line; with the file list focused, move through the files |
+ | `space`, `pgdown`, `ctrl+d` / `pgup`, `ctrl+u` | Move by a page |
+ | `g` / `G` | First or last line |
+-| `]` / `[` | Next or previous hunk, going on into the next or previous file |
+-| `}` / `{` | Next or previous file |
++| `]` / `[` | Next or previous hunk, going on into the next or previous file (`review_next_hunk`, `review_prev_hunk`) |
++| `}` / `{` | Next or previous file (`review_next_file`, `review_prev_file`) |
+ | `s` | One column, or the old and new sides next to each other where the diff column is wide enough (about 120 columns of screen) |
+ | `h` / `l`, `left` / `right` | Scroll the code sideways |
+ | `tab` | Focus the file list or the diff |
+@@ -1509,6 +1510,21 @@ The keys are the overlay's own, not bindings, like the scrollback browser's:
+ In the note line and the other one-line prompts every printable key is text,
+ a paste is typed as one line, `enter` saves and `esc` drops.
+ 
++`]`, `[`, `}` and `{` need Option on some layouts, AZERTY among them, where
++Option is often the Alt key that tuios reads. To move them, bind other keys in
++the `review` section. A key bound there wins over the overlay's own key, so
++pick one the table above does not use:
++
++```toml
++[keybindings.review]
++review_next_hunk = ["n"]
++review_prev_hunk = ["p"]
++review_next_file = ["N"]
++review_prev_file = ["P"]
++```
++
++The footer and the help overlay show the keys as they are bound.
++
+ The compare view lists the attempts of the fan, with what each changed
+ against the fan's base and its last check:
+ 
+diff --git a/internal/app/help.go b/internal/app/help.go
+index 99708c5..cf5ee3f 100644
+--- a/internal/app/help.go
++++ b/internal/app/help.go
+@@ -255,9 +255,15 @@ func generateAgentBindings(registry *config.KeybindRegistry, s *config.Settings)
+ 	inbox(config.ActionMailReply, "Mailbox: reply in the open thread")
+ 	inbox(config.ActionMailFocusPane, "Mailbox: go to the pane that last wrote")
+ 	inbox(config.ActionMailNew, "Mailbox: write a new message to an agent")
+-	// The review overlay's own keys, which are not bindings, like the
++	// The review overlay's hunk and file motions, read from
++	// [keybindings.review], so a rebound key shows as it is bound.
++	review := func(action, desc string) { add(registry.GetReviewKeys(action), desc) }
++	review(config.ActionReviewNextHunk, "Review: next hunk")
++	review(config.ActionReviewPrevHunk, "Review: previous hunk")
++	review(config.ActionReviewNextFile, "Review: next file")
++	review(config.ActionReviewPrevFile, "Review: previous file")
++	// The overlay's other keys are its own and not bindings, like the
+ 	// scrollback browser's. See review_input.go.
+-	add([]string{"] [", "} {"}, "Review: next or previous hunk, next or previous file")
+ 	add([]string{"c", "C"}, "Review: a note on the line, or on the whole hunk")
+ 	add([]string{"e", "x"}, "Review: edit or resolve the note under the cursor")
+ 	add([]string{"S"}, "Review: send the unsent notes to the agent, typed when it is at rest")
+diff --git a/internal/app/render_review.go b/internal/app/render_review.go
+index a7e7f4b..cc44671 100644
+--- a/internal/app/render_review.go
++++ b/internal/app/render_review.go
+@@ -7,6 +7,7 @@ import (
+ 	"time"
+ 
+ 	"charm.land/lipgloss/v2"
++	"github.com/Gaurav-Gosain/tuios/internal/config"
+ 	"github.com/Gaurav-Gosain/tuios/internal/diffview"
+ 	"github.com/Gaurav-Gosain/tuios/internal/overlay"
+ 	"github.com/Gaurav-Gosain/tuios/internal/review"
+@@ -1057,6 +1058,21 @@ func (m *OS) reviewPromptLine(label, draft string, hints []overlay.Hint, width i
+ 	return line + keys + reviewSpaces(1, pal.Surface)
+ }
+ 
++// reviewKey is the first key the config binds a review action to, for its
++// hint, or "" when it binds the action to nothing.
++func (m *OS) reviewKey(action string) string {
++	reg := m.KeybindRegistry
++	if reg == nil {
++		reg = defaultInboxKeys()
++	}
++	for _, k := range reg.GetReviewKeys(action) {
++		if k = strings.TrimSpace(k); k != "" {
++			return k
++		}
++	}
++	return ""
++}
++
+ // reviewKeyHints are the review's keys that do something where the cursor
+ // is, most wanted first. The footer shows as many as fit, and always esc.
+ func (m *OS) reviewKeyHints() []overlay.Hint {
+@@ -1079,8 +1095,12 @@ func (m *OS) reviewKeyHints() []overlay.Hint {
+ 	if n := r.unsentNotes(); n > 0 && !against {
+ 		add("S", "send "+reviewCount(n, "note"))
+ 	}
+-	add("]", "next hunk")
+-	add("}", "next file")
++	if key := m.reviewKey(config.ActionReviewNextHunk); key != "" {
++		add(key, "next hunk")
++	}
++	if key := m.reviewKey(config.ActionReviewNextFile); key != "" {
++		add(key, "next file")
++	}
+ 	if e := r.currentFile(); e != nil && reviewSplitFits(e.file, m.reviewRowsWidth()) {
+ 		if m.reviewSplitOn(m.reviewRowsWidth()) {
+ 			add("s", "unified")
+diff --git a/internal/config/keybind_scopes.go b/internal/config/keybind_scopes.go
+index c324340..19739f6 100644
+--- a/internal/config/keybind_scopes.go
++++ b/internal/config/keybind_scopes.go
+@@ -75,6 +75,7 @@ const (
+ 	SectionMail             = "mail"
+ 	SectionTransfers        = "transfers"
+ 	SectionCopyMode         = "copy_mode"
++	SectionReview           = "review"
+ 	SectionGlobal           = "global"
+ 	SectionScript           = "script"
+ 	SectionLists            = "lists"
+@@ -94,6 +95,7 @@ const (
+ 	ScopeMail           = "mail"
+ 	ScopeTransfers      = "transfers"
+ 	ScopeCopyMode       = "copy"
++	ScopeReview         = "review"
+ 	ScopePrefix         = "prefix"
+ 	ScopePrefixWindow   = "prefix.window"
+ 	ScopePrefixMinimize = "prefix.minimize"
+@@ -200,6 +202,13 @@ func Scopes(leader string) []Scope {
+ 			Sections: []string{SectionCopyMode},
+ 			Reaches:  ReachModal,
+ 		},
++		{
++			// The review overlay owns the keyboard while it is open, so ] and
++			// [ move through its hunks and nothing else.
++			ID: ScopeReview, Name: "Review",
++			Sections: []string{SectionReview},
++			Reaches:  ReachModal,
++		},
+ 		{
+ 			ID: ScopePrefix, Name: "Prefix", Chord: leader,
+ 			Sections: []string{SectionPrefixMode},
+@@ -361,6 +370,8 @@ func (k *KeybindingsConfig) section(name string) map[string][]string {
+ 		return k.Transfers
+ 	case SectionCopyMode:
+ 		return k.CopyMode
++	case SectionReview:
++		return k.Review
+ 	case SectionGUI:
+ 		return k.GUI
+ 	}
+diff --git a/internal/config/registry.go b/internal/config/registry.go
+index ac095de..6fa0d65 100644
+--- a/internal/config/registry.go
++++ b/internal/config/registry.go
+@@ -55,7 +55,7 @@ type sectionMaps struct {
+ 	debugPrefix, tapePrefix, layoutPrefix, tuiosPrefix    map[string]string
+ 	terminalMode, global, script, sidebar, sidebarFiles   map[string]string
+ 	sidebarAgents, inbox, inboxPeek, mail, copyMode       map[string]string
+-	transfers, lists                                      map[string]string
++	transfers, lists, review                              map[string]string
+ }
+ 
+ // NewKeybindRegistry creates a new keybind registry from config
+@@ -124,6 +124,7 @@ func (r *KeybindRegistry) buildMappings() {
+ 		mail:            r.sectionKeyMap(kb.Mail),
+ 		transfers:       r.sectionKeyMap(kb.Transfers),
+ 		copyMode:        r.sectionKeyMap(kb.CopyMode),
++		review:          r.sectionKeyMap(kb.Review),
+ 	}
+ }
+ 
+@@ -377,6 +378,18 @@ func (r *KeybindRegistry) GetTransfersAction(key string) string {
+ 	return r.lookupKey(key, r.sections.transfers)
+ }
+ 
++// GetReviewAction returns the action a key runs in the review overlay, or ""
++// for a key the section does not bind. The overlay reads its other keys itself.
++func (r *KeybindRegistry) GetReviewAction(key string) string {
++	return r.lookupKey(key, r.sections.review)
++}
++
++// GetReviewKeys is GetKeys for the review overlay, for its key hints and the
++// help overlay.
++func (r *KeybindRegistry) GetReviewKeys(action string) []string {
++	return r.config.Keybindings.Review[action]
++}
++
+ // GetTransfersKeys is GetKeys for the Copies panel, for its key hints and the
+ // help overlay.
+ func (r *KeybindRegistry) GetTransfersKeys(action string) []string {
+@@ -543,7 +556,7 @@ func buildPressesByAction(r *KeybindRegistry) map[string][]string {
+ // no chord that would say so.
+ func contextOnlyScope(scope string) bool {
+ 	switch scope {
+-	case ScopeSidebar, ScopeSidebarFiles, ScopeSidebarAgents, ScopeScript, ScopeLists, ScopeInbox, ScopeInboxPeek, ScopeMail, ScopeTransfers, ScopeCopyMode:
++	case ScopeSidebar, ScopeSidebarFiles, ScopeSidebarAgents, ScopeScript, ScopeLists, ScopeInbox, ScopeInboxPeek, ScopeMail, ScopeTransfers, ScopeCopyMode, ScopeReview:
+ 		return true
+ 	case ScopeGUI:
+ 		// Only the GUI reads these keys. A terminal's help that listed
+@@ -847,6 +860,10 @@ var ActionDescriptions = map[string]string{
+ 	ActionCopyModeLineStart:      "Copy mode: go to the start of the line",
+ 	ActionCopyModeFirstNonBlank:  "Copy mode: go to the first nonblank character of the line",
+ 	ActionCopyModeLineEnd:        "Copy mode: go to the last character of the line",
++	ActionReviewNextHunk:         "Review: next hunk, going on into the next file",
++	ActionReviewPrevHunk:         "Review: previous hunk, going back into the previous file",
++	ActionReviewNextFile:         "Review: next file",
++	ActionReviewPrevFile:         "Review: previous file",
+ 
+ 	// Session lifecycle (context menu rows; no default keybinding)
+ 	"settings_sidebar":  "Sidebar settings",
+diff --git a/internal/config/review_actions.go b/internal/config/review_actions.go
+new file mode 100644
+index 0000000..5c62333
+--- /dev/null
++++ b/internal/config/review_actions.go
+@@ -0,0 +1,24 @@
++package config
++
++// The review overlay's hunk and file motions, the keys a config can bind in
++// [keybindings.review]. They are live only while the review overlay is open
++// and no note is being typed. Its other keys are its own and are not
++// bindings. ] [ } { need Option on some layouts, AZERTY among them, where
++// Option is often the Alt that tuios reads (#585).
++const (
++	ActionReviewNextHunk = "review_next_hunk"
++	ActionReviewPrevHunk = "review_prev_hunk"
++	ActionReviewNextFile = "review_next_file"
++	ActionReviewPrevFile = "review_prev_file"
++)
++
++// getDefaultReviewKeybinds returns the review overlay's bindable keys, the
++// ones it has always used.
++func getDefaultReviewKeybinds() map[string][]string {
++	return map[string][]string{
++		ActionReviewNextHunk: {"]"},
++		ActionReviewPrevHunk: {"["},
++		ActionReviewNextFile: {"}"},
++		ActionReviewPrevFile: {"{"},
++	}
++}
+diff --git a/internal/config/userconfig.go b/internal/config/userconfig.go
+index 80d469a..e29df77 100644
+--- a/internal/config/userconfig.go
++++ b/internal/config/userconfig.go
+@@ -1007,6 +1007,9 @@ type KeybindingsConfig struct {
+ 	// visual selection. Copy mode's vim motions are fixed keys and are not
+ 	// here. See getDefaultCopyModeKeybinds.
+ 	CopyMode map[string][]string `toml:"copy_mode"`
++	// Review binds are live while the review overlay is open and no note is
++	// being typed: its hunk and file motions. See getDefaultReviewKeybinds.
++	Review map[string][]string `toml:"review"`
+ 	// GUI binds are read only by a native GUI client (tuios-gpui), through
+ 	// the GUI bridge's keybinds event. They are desktop chords that need no
+ 	// leader, such as ctrl+shift+t. The terminal client never looks them up,
+@@ -1464,6 +1467,7 @@ func DefaultConfig() *UserConfig {
+ 			Mail:          getDefaultMailKeybinds(),
+ 			Transfers:     getDefaultTransfersKeybinds(),
+ 			CopyMode:      getDefaultCopyModeKeybinds(),
++			Review:        getDefaultReviewKeybinds(),
+ 			GUI:           getDefaultGUIKeybinds(),
+ 			Global: map[string][]string{
+ 				// ctrl+p is fish's history-back and vim's keyword completion, and
+@@ -3424,6 +3428,9 @@ func fillMissingKeybinds(cfg, defaultCfg *UserConfig) {
+ 	if cfg.Keybindings.CopyMode == nil {
+ 		cfg.Keybindings.CopyMode = make(map[string][]string)
+ 	}
++	if cfg.Keybindings.Review == nil {
++		cfg.Keybindings.Review = make(map[string][]string)
++	}
+ 
+ 	migrateLegacyKeybinds(cfg)
+ 	migrateSettingsComma(cfg)
+@@ -3515,6 +3522,8 @@ func fillMissingKeybinds(cfg, defaultCfg *UserConfig) {
+ 	fillMapDefaults(cfg.Keybindings.Transfers, defaultCfg.Keybindings.Transfers)
+ 	// Copy mode's section is newer than every config written before it.
+ 	fillMapDefaults(cfg.Keybindings.CopyMode, defaultCfg.Keybindings.CopyMode)
++	// The review overlay's section is newer than every config written before it.
++	fillMapDefaults(cfg.Keybindings.Review, defaultCfg.Keybindings.Review)
+ 	// The GUI section is newer than every config written before it.
+ 	fillMapDefaults(cfg.Keybindings.GUI, defaultCfg.Keybindings.GUI)
+ 
+@@ -3742,6 +3751,7 @@ func keybindSectionPairs(cfg, defaultCfg *UserConfig) []keybindSection {
+ 		{c.Mail, d.Mail},
+ 		{c.Transfers, d.Transfers},
+ 		{c.CopyMode, d.CopyMode},
++		{c.Review, d.Review},
+ 		{c.GUI, d.GUI},
+ 		{c.Global, d.Global},
+ 		{c.Script, d.Script},
+diff --git a/internal/config/validation.go b/internal/config/validation.go
+index 15a577c..2e879ef 100644
+--- a/internal/config/validation.go
++++ b/internal/config/validation.go
+@@ -783,6 +783,7 @@ func keySections(kb *KeybindingsConfig) []keySection {
+ 		{"mail", kb.Mail},
+ 		{"transfers", kb.Transfers},
+ 		{"copy_mode", kb.CopyMode},
++		{"review", kb.Review},
+ 		{"global", kb.Global},
+ 		{"script", kb.Script},
+ 		{"lists", kb.Lists},
+diff --git a/internal/input/reachability_test.go b/internal/input/reachability_test.go
+index d9ebc9c..9d325ba 100644
+--- a/internal/input/reachability_test.go
++++ b/internal/input/reachability_test.go
+@@ -162,9 +162,24 @@ func reachSections(t *testing.T) []bindingSection {
+ 		{name: "transfers", binds: k.Transfers, modes: bothModes, newOS: reachTransfersOS},
+ 		// Copy mode owns the keyboard in either mode while a pane is in it.
+ 		{name: "copy_mode", binds: k.CopyMode, modes: bothModes, newOS: reachCopyModeOS},
++		// The review overlay owns the keyboard in either mode while it is open.
++		{name: "review", binds: k.Review, modes: bothModes, newOS: reachReviewOS},
+ 	}
+ }
+ 
++// reachReviewOS is a client with the review overlay open on a diff.
++func reachReviewOS(t *testing.T) *app.OS {
++	t.Helper()
++	o, _, _ := reviewInputOS(t)
++	k := config.DefaultConfig().Keybindings
++	o = pressRun(t, o, k.LeaderKey)
++	o = pressRun(t, o, "v")
++	if !o.ReviewOpen() {
++		t.Fatal("ctrl+b v did not open the review on the test pane")
++	}
++	return o
++}
++
+ // reachCopyModeOS is a client whose focused pane is in copy mode, which is the
+ // only state the copy_mode section answers in.
+ func reachCopyModeOS(t *testing.T) *app.OS {
+@@ -805,7 +820,7 @@ func TestEveryDescribedActionIsHandled(t *testing.T) {
+ 	// below does not name it; runCopyModeAction runs it through its constant.
+ 	handled := map[string]bool{app.HoldModeAction: true, config.ActionCopyModeFirstNonBlank: true}
+ 	k := config.DefaultConfig().Keybindings
+-	for _, section := range []map[string][]string{k.Inbox, k.InboxPeek, k.Mail, k.SidebarAgents, k.CopyMode, k.Transfers, k.Lists} {
++	for _, section := range []map[string][]string{k.Inbox, k.InboxPeek, k.Mail, k.SidebarAgents, k.CopyMode, k.Transfers, k.Lists, k.Review} {
+ 		for action := range section {
+ 			handled[action] = true
+ 		}
+diff --git a/internal/input/review_input.go b/internal/input/review_input.go
+index b433f71..77c237e 100644
+--- a/internal/input/review_input.go
++++ b/internal/input/review_input.go
+@@ -3,17 +3,19 @@ package input
+ import (
+ 	tea "charm.land/bubbletea/v2"
+ 	"github.com/Gaurav-Gosain/tuios/internal/app"
++	"github.com/Gaurav-Gosain/tuios/internal/config"
+ )
+ 
+ // handleReviewInput handles a key while the review overlay is open. It owns
+ // every key, in either mode, wherever it was opened from: a key meant for the
+ // diff must not reach a pane, the Inbox or the rail underneath.
+ //
+-// The keys are the overlay's own, not bindings, like the scrollback browser's:
++// The keys are the overlay's own, not bindings, like the scrollback browser's,
++// except the hunk and file motions, which [keybindings.review] binds:
+ //
+ //	j k, arrows      move by line (through the files with the list focused)
+-//	] [              next and previous hunk
+-//	} {              next and previous file
++//	] [              next and previous hunk (review_next_hunk, review_prev_hunk)
++//	} {              next and previous file (review_next_file, review_prev_file)
+ //	tab              the file list or the diff
+ //	enter            in the file list: open that file
+ //	c, C             a note on the line, or on the whole hunk
+@@ -76,6 +78,22 @@ func handleReviewInput(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
+ 		}
+ 		return o, nil
+ 	}
++	if action := lookupAction(o, msg, overlayKeys(o).GetReviewAction); action != "" {
++		switch action {
++		case config.ActionReviewNextHunk:
++			o.ReviewHunk(1)
++		case config.ActionReviewPrevHunk:
++			o.ReviewHunk(-1)
++		case config.ActionReviewNextFile:
++			o.ReviewFile(1)
++		case config.ActionReviewPrevFile:
++			o.ReviewFile(-1)
++		default:
++			return o, nil
++		}
++		o.NoteAction(action)
++		return o, nil
++	}
+ 	switch key {
+ 	case "j", "down":
+ 		o.ReviewMove(1)
+@@ -89,14 +107,6 @@ func handleReviewInput(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
+ 		o.ReviewEdge(false)
+ 	case "G", "end":
+ 		o.ReviewEdge(true)
+-	case "]":
+-		o.ReviewHunk(1)
+-	case "[":
+-		o.ReviewHunk(-1)
+-	case "}":
+-		o.ReviewFile(1)
+-	case "{":
+-		o.ReviewFile(-1)
+ 	case "tab":
+ 		o.ReviewToggleFocus()
+ 	case "enter":
+diff --git a/internal/input/review_input_test.go b/internal/input/review_input_test.go
+index 01d99ef..008aa46 100644
+--- a/internal/input/review_input_test.go
++++ b/internal/input/review_input_test.go
+@@ -74,3 +74,54 @@ func TestReviewKeyOnAnOlderDaemonReachesThePane(t *testing.T) {
+ 		t.Fatalf("ctrl+b v on an older daemon typed %q into the pane, want v", *typed)
+ 	}
+ }
++
++// TestReviewMotionsFollowTheirBindings: the hunk and file motions are the
++// review section's keys (#585). Bound elsewhere, the new key moves and the
++// old one no longer does.
++func TestReviewMotionsFollowTheirBindings(t *testing.T) {
++	o := reachReviewOS(t)
++	cfg := config.DefaultConfig()
++	cfg.Keybindings.Review[config.ActionReviewNextHunk] = []string{"n"}
++	cfg.Keybindings.Review[config.ActionReviewNextFile] = []string{"N"}
++	o.KeybindRegistry = config.NewKeybindRegistry(cfg)
++
++	before := len(o.RecentActions())
++	o = pressRun(t, o, "]")
++	o = pressRun(t, o, "}")
++	if got := o.RecentActions()[before:]; len(got) != 0 {
++		t.Fatalf("] and } still ran %v after they were unbound", got)
++	}
++	o = pressRun(t, o, "n")
++	o = pressRun(t, o, "N")
++	got := o.RecentActions()[before:]
++	want := []string{config.ActionReviewNextHunk, config.ActionReviewNextFile}
++	if len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
++		t.Fatalf("n then N ran %v, want %v", got, want)
++	}
++	if !o.ReviewOpen() {
++		t.Fatal("the review closed")
++	}
++	// [ and { keep their defaults.
++	o = pressRun(t, o, "[")
++	if got := o.RecentActions(); got[len(got)-1] != config.ActionReviewPrevHunk {
++		t.Fatalf("[ ran %v, want %s last", got, config.ActionReviewPrevHunk)
++	}
++}
++
++// TestReviewMotionKeysAreTextInANote: while a note is typed, ] is text for
++// the note, not the next-hunk motion.
++func TestReviewMotionKeysAreTextInANote(t *testing.T) {
++	o := reachReviewOS(t)
++	o = pressRun(t, o, "c")
++	if !o.ReviewEditing() {
++		t.Fatal("c did not open a note on the diff line")
++	}
++	before := len(o.RecentActions())
++	o = pressRun(t, o, "]")
++	if got := o.RecentActions()[before:]; len(got) != 0 {
++		t.Fatalf("] in a note ran %v", got)
++	}
++	if !o.ReviewEditing() {
++		t.Fatal("] in a note closed the note")
++	}
++}
+-- 
+2.43.0
+

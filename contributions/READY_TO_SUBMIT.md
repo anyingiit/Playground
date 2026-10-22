@@ -41,3 +41,4 @@
 | 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（QUIC） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS） |
 | 360 | [helix-editor/helix#3115](https://github.com/helix-editor/helix/issues/3115) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；gherkin 默认接 cucumber-language-server，纯 languages.toml + 生成文档） |
 | 391 | [Gaurav-Gosain/tuios#980](https://github.com/Gaurav-Gosain/tuios/issues/980) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；新锐；复核 PASS；用仓库自己的 PR 模板） |
+| 392 | [Gaurav-Gosain/tuios#585](https://github.com/Gaurav-Gosain/tuios/issues/585) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；新锐；复核 PASS；与 391 同仓库，391 合并后用 alt-0001-on-top-of-391.patch） |
