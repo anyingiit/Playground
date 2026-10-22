@@ -1,0 +1,131 @@
+From d7a83b9ad518ef7511f1628ec722237303af0c1f Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 23:14:37 +0000
+Subject: [PATCH] feat(core): add IsolationLevel enum for transaction isolation
+ levels
+
+Maps DEFAULT, READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ and
+SERIALIZABLE to their Spring/JDBC integer values, with a cached
+from(int) lookup that falls back to DEFAULT, for the transaction
+diagnostics model (#506).
+
+Closes #524
+---
+ .../model/transaction/IsolationLevel.java     | 59 +++++++++++++++++++
+ .../model/transaction/IsolationLevelTest.java | 38 ++++++++++++
+ 2 files changed, 97 insertions(+)
+ create mode 100644 spring-lens-core/src/main/java/com/sdlcpro/springlens/model/transaction/IsolationLevel.java
+ create mode 100644 spring-lens-core/src/test/java/com/sdlcpro/springlens/model/transaction/IsolationLevelTest.java
+
+diff --git a/spring-lens-core/src/main/java/com/sdlcpro/springlens/model/transaction/IsolationLevel.java b/spring-lens-core/src/main/java/com/sdlcpro/springlens/model/transaction/IsolationLevel.java
+new file mode 100644
+index 0000000..9f3ac9a
+--- /dev/null
++++ b/spring-lens-core/src/main/java/com/sdlcpro/springlens/model/transaction/IsolationLevel.java
+@@ -0,0 +1,59 @@
++package com.sdlcpro.springlens.model.transaction;
++
++/**
++ * Isolation level of a Spring transaction, mapped to the integer constants shared by Spring's
++ * {@code TransactionDefinition} and JDBC's {@code java.sql.Connection}.
++ */
++public enum IsolationLevel {
++    /** Use the default isolation level of the underlying datastore. */
++    DEFAULT(-1),
++    /** Dirty reads, non-repeatable reads and phantom reads can occur. */
++    READ_UNCOMMITTED(1),
++    /** Dirty reads are prevented; non-repeatable reads and phantom reads can occur. */
++    READ_COMMITTED(2),
++    /** Dirty reads and non-repeatable reads are prevented; phantom reads can occur. */
++    REPEATABLE_READ(4),
++    /** Dirty reads, non-repeatable reads and phantom reads are prevented. */
++    SERIALIZABLE(8);
++
++    private static final IsolationLevel[] VALUES;
++
++    private final int value;
++
++    static {
++        VALUES = values();
++    }
++
++    IsolationLevel(int value) {
++        this.value = value;
++    }
++
++    /**
++     * Returns the integer value of this isolation level.
++     *
++     * @return the Spring/JDBC isolation constant, or {@code -1} for {@link #DEFAULT}
++     */
++    public final int value() {
++        return this.value;
++    }
++
++    /**
++     * Returns the isolation level for the given integer value.
++     *
++     * @param value a Spring/JDBC isolation constant
++     * @return the matching isolation level, or {@link #DEFAULT} if the value isn't a supported level
++     */
++    public static IsolationLevel from(int value) {
++        if (value < 0 || value > 8) {
++            return DEFAULT;
++        }
++
++        for (IsolationLevel level : VALUES) {
++            if (level.value == value) {
++                return level;
++            }
++        }
++
++        return DEFAULT;
++    }
++}
+diff --git a/spring-lens-core/src/test/java/com/sdlcpro/springlens/model/transaction/IsolationLevelTest.java b/spring-lens-core/src/test/java/com/sdlcpro/springlens/model/transaction/IsolationLevelTest.java
+new file mode 100644
+index 0000000..e2a854d
+--- /dev/null
++++ b/spring-lens-core/src/test/java/com/sdlcpro/springlens/model/transaction/IsolationLevelTest.java
+@@ -0,0 +1,38 @@
++package com.sdlcpro.springlens.model.transaction;
++
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.CsvSource;
++import org.junit.jupiter.params.provider.ValueSource;
++
++import static org.assertj.core.api.Assertions.assertThat;
++
++class IsolationLevelTest {
++
++    @ParameterizedTest
++    @CsvSource({
++            "-1, DEFAULT",
++            "1, READ_UNCOMMITTED",
++            "2, READ_COMMITTED",
++            "4, REPEATABLE_READ",
++            "8, SERIALIZABLE"
++    })
++    void shouldMapValueToLevel(int value, IsolationLevel expected) {
++        assertThat(IsolationLevel.from(value)).isEqualTo(expected);
++        assertThat(expected.value()).isEqualTo(value);
++    }
++
++    @ParameterizedTest
++    @ValueSource(ints = {Integer.MIN_VALUE, -2, 0, 3, 5, 6, 7, 9, 16, Integer.MAX_VALUE})
++    void shouldFallBackToDefaultForUnsupportedValues(int value) {
++        assertThat(IsolationLevel.from(value)).isEqualTo(IsolationLevel.DEFAULT);
++    }
++
++    @Test
++    void shouldMatchJdbcConnectionConstants() {
++        assertThat(IsolationLevel.READ_UNCOMMITTED.value()).isEqualTo(java.sql.Connection.TRANSACTION_READ_UNCOMMITTED);
++        assertThat(IsolationLevel.READ_COMMITTED.value()).isEqualTo(java.sql.Connection.TRANSACTION_READ_COMMITTED);
++        assertThat(IsolationLevel.REPEATABLE_READ.value()).isEqualTo(java.sql.Connection.TRANSACTION_REPEATABLE_READ);
++        assertThat(IsolationLevel.SERIALIZABLE.value()).isEqualTo(java.sql.Connection.TRANSACTION_SERIALIZABLE);
++    }
++}
+-- 
+2.43.0
+
