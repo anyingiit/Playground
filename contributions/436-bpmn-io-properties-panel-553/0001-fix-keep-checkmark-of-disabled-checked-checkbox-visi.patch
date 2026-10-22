@@ -1,0 +1,94 @@
+From 127e6eb5a3c19dee5217ab653d62660490655f5e Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:06:59 +0000
+Subject: [PATCH] fix: keep checkmark of disabled checked checkbox visible
+
+The `:disabled` checkbox rule overrides the accent background of the
+`:checked` rule with the near-white disabled surface, but keeps the
+white checkmark, so a checked, disabled checkbox looks unchecked.
+
+Give checked, disabled checkboxes a muted grey background via the new
+`--checkbox-checked-disabled-background-color` token (defaulting to
+`--input-disabled-color`) and verify the checkmark contrast in the
+styling spec.
+
+Closes #553
+---
+ src/assets/properties-panel.css |  7 +++++++
+ test/spec/styling.spec.js       | 37 +++++++++++++++++++++++++++++++++
+ 2 files changed, 44 insertions(+)
+
+diff --git a/src/assets/properties-panel.css b/src/assets/properties-panel.css
+index 4da65c5..86b9960 100644
+--- a/src/assets/properties-panel.css
++++ b/src/assets/properties-panel.css
+@@ -122,6 +122,7 @@
+   --checkbox-background-color: var(--input-background-color);
+   --checkbox-checked-background-color: var(--bio-primary);
+   --checkbox-checked-border-color: var(--bio-primary);
++  --checkbox-checked-disabled-background-color: var(--input-disabled-color);
+ 
+   --input-focus-background-color: var(--bio-primary-surface);
+   --input-focus-border-color: var(--bio-primary);
+@@ -713,6 +714,12 @@ select.bio-properties-panel-input {
+   background-color: var(--input-disabled-background-color);
+ }
+ 
++/* keep the white checkmark visible: the disabled background is near-white */
++.bio-properties-panel-input[type="checkbox"]:checked:disabled {
++  border-color: var(--checkbox-checked-disabled-background-color);
++  background-color: var(--checkbox-checked-disabled-background-color);
++}
++
+ .bio-properties-panel-checkbox > .bio-properties-panel-label {
+   display: inline-block;
+   font-size: var(--text-size-base);
+diff --git a/test/spec/styling.spec.js b/test/spec/styling.spec.js
+index c4592e6..864e079 100644
+--- a/test/spec/styling.spec.js
++++ b/test/spec/styling.spec.js
+@@ -282,4 +282,41 @@ describe('styling (CSS)', function() {
+     expect(results.violations).to.be.empty;
+   });
+ 
++
++  it('checked disabled checkbox keeps its checkmark visible', function() {
++
++    // given
++    container.innerHTML = `
++      <input class="bio-properties-panel-input" type="checkbox" checked disabled />
++    `;
++
++    const checkbox = container.querySelector('input');
++
++    // when
++    const { backgroundColor } = getComputedStyle(checkbox);
++
++    // then
++    // the checkmark is drawn in white; require WCAG non-text contrast (3:1)
++    expect(contrastRatio(backgroundColor, 'rgb(255, 255, 255)')).to.be.at.least(3);
++  });
++
+ });
++
++
++// helpers //////////
++
++function relativeLuminance(color) {
++  const [ r, g, b ] = color.match(/\d+(\.\d+)?/g).slice(0, 3).map(channel => {
++    const value = Number(channel) / 255;
++
++    return value <= 0.03928 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
++  });
++
++  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
++}
++
++function contrastRatio(a, b) {
++  const [ lighter, darker ] = [ relativeLuminance(a), relativeLuminance(b) ].sort((x, y) => y - x);
++
++  return (lighter + 0.05) / (darker + 0.05);
++}
+-- 
+2.43.0
+

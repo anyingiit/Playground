@@ -1,0 +1,1 @@
+fix: keep checkmark of disabled checked checkbox visible
