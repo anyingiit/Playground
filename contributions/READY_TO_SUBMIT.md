@@ -28,3 +28,4 @@
 | 330 | [crazy-goat/tikv-php#680](https://github.com/crazy-goat/tikv-php/issues/680) | 待提交（base `master`；无需认领；无 DCO/CLA；复核 PASS；与 331/332 同改 CHANGELOG `[Unreleased]`，后提交者可能需 rebase） |
 | 331 | [crazy-goat/tikv-php#682](https://github.com/crazy-goat/tikv-php/issues/682) | 待提交（base `master`；无需认领；无 DCO/CLA；复核 PASS） |
 | 332 | [crazy-goat/tikv-php#662](https://github.com/crazy-goat/tikv-php/issues/662) | 待提交（base `master`；无需认领；无 DCO/CLA；复核 PASS） |
+| 274 | [dry-rb/dry-validation#741](https://github.com/dry-rb/dry-validation/issues/741)（PR 开在 **dry-rb/dry-schema**） | 待提交（base dry-schema `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；与 271/272/273 同改 CHANGELOG，冲突时保留全部行） |

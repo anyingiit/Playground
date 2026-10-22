@@ -1,0 +1,167 @@
+From ef22a07ddd6c5d9d924ae085bcbec7b2cb9316c8 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:58:05 +0000
+Subject: [PATCH] Coerce nested values next to a failed filter
+
+When a result has errors, the value coercer skipped coercion for every
+top-level key with an error under it. For a nested hash this meant one
+failing `filter` (e.g. an invalid date format) left all of its sibling
+values uncoerced, while the same schema without nesting coerced them.
+
+Coerce such nested values and put back the original input only under
+the paths that have errors, so values that failed a filter are still
+left untouched.
+
+Fixes dry-rb/dry-validation#741
+---
+ CHANGELOG.md                           |  2 +
+ lib/dry/schema/value_coercer.rb        | 55 ++++++++++++++++++++++++--
+ spec/integration/schema/filter_spec.rb | 47 ++++++++++++++++++++++
+ 3 files changed, 101 insertions(+), 3 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index b08ada5..78c296d 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -17,6 +17,8 @@ and this project adheres to [Break Versioning](https://www.taoensso.com/break-ve
+ 
+ ### Fixed
+ 
++- Coerce the other values of a nested hash when one of its keys fails a `filter` rule. Previously, a filter failure anywhere inside a nested hash left every value in that hash uncoerced, while at the top level only the failing value was skipped. (@anyingiit)
++
+ ### Security
+ 
+ [Unreleased]: https://github.com/dry-rb/dry-schema/compare/v1.16.0...main
+diff --git a/lib/dry/schema/value_coercer.rb b/lib/dry/schema/value_coercer.rb
+index bb51f4c..aecda73 100644
+--- a/lib/dry/schema/value_coercer.rb
++++ b/lib/dry/schema/value_coercer.rb
+@@ -20,17 +20,66 @@ module Dry
+         if input.success?
+           type_schema[input.to_h]
+         else
++          error_paths = input.message_set.map(&:path)
++
+           type_schema.each_with_object(EMPTY_HASH.dup) do |key, hash|
+             name = key.name
+ 
+             next unless input.key?(name)
+ 
+-            value = input[name]
+-
+-            hash[name] = input.error?(name) ? value : key[value]
++            hash[name] = coerce(key, input[name], error_paths_under(name, error_paths))
+           end
+         end
+       end
++
++      private
++
++      # @api private
++      def error_paths_under(name, error_paths)
++        error_paths.filter_map { |path| path[1..] if path[0].eql?(name) }
++      end
++
++      # Coerce a value, leaving the values that failed validation untouched
++      #
++      # @api private
++      def coerce(key, value, error_paths)
++        return key[value] if error_paths.empty?
++        return value if error_paths.any?(&:empty?)
++
++        coerced = key[value]
++
++        return value unless coerced.instance_of?(value.class)
++
++        error_paths.each { |path| restore(coerced, value, path) }
++
++        coerced
++      end
++
++      # Put back the original value found under the given path
++      #
++      # @api private
++      def restore(target, source, path)
++        *parents, last = path
++
++        reachable = parents.all? { |segment|
++          next false unless dig?(target, segment) && dig?(source, segment)
++
++          target = target[segment]
++          source = source[segment]
++          true
++        }
++
++        target[last] = source[last] if reachable && dig?(target, last) && dig?(source, last)
++      end
++
++      # @api private
++      def dig?(container, segment)
++        case container
++        when ::Hash then container.key?(segment)
++        when ::Array then segment.is_a?(::Integer) && segment < container.size
++        else false
++        end
++      end
+     end
+   end
+ end
+diff --git a/spec/integration/schema/filter_spec.rb b/spec/integration/schema/filter_spec.rb
+index aa43ac5..c6c1adb 100644
+--- a/spec/integration/schema/filter_spec.rb
++++ b/spec/integration/schema/filter_spec.rb
+@@ -60,4 +60,51 @@ RSpec.describe Dry::Schema, "pre-coercion input rules" do
+       expect(schema.call({}).errors).to be_empty
+     end
+   end
++
++  context "with keys in a nested hash" do
++    subject(:schema) do
++      Dry::Schema.Params do
++        required(:transfer).hash do
++          required(:first_date).filter(format?: /\A\d{4}-\d{2}-\d{2}\z/).value(:date)
++          optional(:last_date).filter(format?: /\A\d{4}-\d{2}-\d{2}\z/).value(:date)
++          optional(:amount).value(:integer)
++        end
++      end
++    end
++
++    it "coerces sibling values when a nested filter fails" do
++      result = schema.call(transfer: {first_date: "2025-01-01", last_date: "", amount: "10"})
++
++      expect(result.errors.to_h).to eql(transfer: {last_date: ["is in invalid format"]})
++      expect(result.to_h).to eql(transfer: {first_date: Date.new(2025, 1, 1), last_date: "", amount: 10})
++    end
++
++    it "does not coerce values that failed a nested filter" do
++      result = schema.call(transfer: {first_date: "2025-01-01", last_date: "2025/01/02"})
++
++      expect(result.errors.to_h).to eql(transfer: {last_date: ["is in invalid format"]})
++      expect(result.to_h).to eql(transfer: {first_date: Date.new(2025, 1, 1), last_date: "2025/01/02"})
++    end
++  end
++
++  context "with keys in a deeply nested hash" do
++    subject(:schema) do
++      Dry::Schema.Params do
++        required(:outer).hash do
++          required(:inner).hash do
++            required(:date).filter(format?: /\A\d{4}-\d{2}-\d{2}\z/).value(:date)
++            required(:amount).value(:integer)
++          end
++          required(:count).value(:integer)
++        end
++      end
++    end
++
++    it "coerces values around the failed filter" do
++      result = schema.call(outer: {inner: {date: "2025/01/02", amount: "5"}, count: "3"})
++
++      expect(result.errors.to_h).to eql(outer: {inner: {date: ["is in invalid format"]}})
++      expect(result.to_h).to eql(outer: {inner: {date: "2025/01/02", amount: 5}, count: 3})
++    end
++  end
+ end
+-- 
+2.43.0
+
