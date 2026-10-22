@@ -1,0 +1,73 @@
+From 4d3aeed675e894f308190b7cc6c7fcf134bab775 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:56:20 +0000
+Subject: [PATCH] restore builtin after deleting a module-level name shadowing
+ it
+
+Fixes #548
+---
+ pyflakes/checker.py                   | 11 ++++++++++-
+ pyflakes/test/test_undefined_names.py | 23 +++++++++++++++++++++++
+ 2 files changed, 33 insertions(+), 1 deletion(-)
+
+diff --git a/pyflakes/checker.py b/pyflakes/checker.py
+index bd7cc79..ace6a86 100644
+--- a/pyflakes/checker.py
++++ b/pyflakes/checker.py
+@@ -1176,9 +1176,18 @@ class Checker:
+             self.scope.indirect_assignments.pop(node.id, None)
+ 
+         try:
+-            del self.scope[node.id]
++            binding = self.scope.pop(node.id)
+         except KeyError:
+             self.report(messages.UndefinedName, node, node.id)
++        else:
++            # deleting a module-level name that shadowed a builtin makes the
++            # builtin visible again
++            if (
++                    self.scope is self.scopeStack[0] and
++                    node.id in self.builtIns and
++                    not isinstance(binding, Builtin)
++            ):
++                self.scope[node.id] = Builtin(node.id)
+ 
+     @contextlib.contextmanager
+     def _enter_annotation(self, ann_type=AnnotationState.BARE):
+diff --git a/pyflakes/test/test_undefined_names.py b/pyflakes/test/test_undefined_names.py
+index eac1918..bd90ed6 100644
+--- a/pyflakes/test/test_undefined_names.py
++++ b/pyflakes/test/test_undefined_names.py
+@@ -439,6 +439,29 @@ class Test(TestCase):
+             del __tracebackhide__
+         ''', m.UndefinedName)
+ 
++    def test_delShadowedBuiltin(self):
++        """
++        Deleting a module-level binding that shadows a builtin makes the
++        builtin visible again.
++        """
++        self.flakes('''
++        int = 42
++        del int
++        int('42')
++        ''')
++
++    def test_delShadowedBuiltinUsedInFunction(self):
++        """
++        Same as above for a custom builtin used in a function, as with
++        gettext's ``_``.
++        """
++        self.flakes('''
++        _ = lambda s: s
++        del _
++        def f():
++            return _('message')
++        ''', builtins={'_'})
++
+     def test_globalFromNestedScope(self):
+         """Global names are available from nested scopes."""
+         self.flakes('''
+-- 
+2.43.0
+
