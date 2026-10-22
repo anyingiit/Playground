@@ -1,6 +1,6 @@
 # 交接：第二轮 046–087（2026-10-22 19:05 UTC）
 
-本轮没有新开 PR（按调度要求在开 PR 前停下）。截止 2026-10-23 01:00 UTC。
+本轮没有新开 PR（按调度要求在开 PR 前停下）。`<scratchpad>` = `/private/tmp/claude-501/-Users-user-laptop-Workspace/82c2edb2-bd9c-4548-94e1-5939e262c43a/scratchpad`。截止 2026-10-23 01:00 UTC。
 
 ## 已提交（共 20 个，均已写入 SUBMISSIONS.md / submissions.json）
 - 10-02 提交的 19 个：046 049 052 054 056 057 059 060 061 062 065 066 067 068 069 071 072 074 082
@@ -19,12 +19,12 @@
 | 064 | GREsau/schemars (master) | 原补丁 | ✅ 红（4 个 default:: 失败）→ 绿（5/5） | 可直接提交 |
 | 076 | gkampitakis/go-snaps (main) | 原补丁 | 绿：snaps 包 11 个 TestSummary/TestDiff 失败，与 base 完全相同（环境颜色输出导致），新测试通过 | 可提交 |
 | 078 | image-rs/image-png (master) | 原补丁 | 未重跑 | 跑 `cargo test --workspace --all-targets` 后提交 |
-| 087 | jnsahaj/lumen (main) | 原补丁 | ✅ 绿 `cargo test --locked --bin lumen php` 2 passed；红在跑（去掉 highlight/config.rs、mod.rs、Cargo.*） | 看红结果后提交 |
+| 087 | jnsahaj/lumen (main) | 原补丁 | ✅ 绿 `cargo test --locked --bin lumen php` 2 passed；红：去掉实现后测试编译失败（unresolved `tree_sitter_php`），10-01 的 README 另有断言级红 | 可提交 |
 | 053 | zerobrewhq/zerobrew (main) | **已更新**：CHANGELOG 冲突，条目改放到 Unreleased 新 `### Fixed` | ❌ 未测：上游要求 rustc 1.96，本机 Homebrew rustc 1.94 | 需要新版 rustc（不要改系统 brew 的话可用 rustup 装到独立目录）后跑 `cargo test -p zb_cli --lib cli::tests`；红法见 README |
-| 083 | cloudflare/pint (main) | **已更新**：changelog 版本改为 `## v0.90.0`（上游已到 v0.89.4） | ✅ 红→绿（TestAlertsForCheck；testscript 0278 ok；config ok）。`./internal/checks` 全量有失败，与 base 对比还在跑 | 确认与 base 一致后提交 |
-| 070 | typstyle-rs/typstyle (master，旧名 Enter-tainer) | **已更新**：markup.rs 重新移植（上游新增了文档注释）、CHANGELOG 条目放到 Unreleased 并加 #478 链接 | 在跑：红→绿 `cargo test -p typstyle-tests --test tests -- list-indent-tab4` + 全量 `--skip e2e` | 看结果后提交 |
+| 083 | cloudflare/pint (main) | **已更新**：changelog 版本改为 `## v0.90.0`（上游已到 v0.89.4） | ✅ 红→绿（TestAlertsForCheck；testscript 0278 ok；config ok）。`./internal/checks` 全量只有 TestSeriesCheck/bad_uri 失败，base 上同样失败 | 可提交 |
+| 070 | typstyle-rs/typstyle (master，旧名 Enter-tainer) | **已更新**：markup.rs 重新移植（上游新增了文档注释）、CHANGELOG 条目放到 Unreleased 并加 #478 链接 | ✅ 红（4 个 snapshot 失败）→ 绿（10 passed）；`--skip e2e` 全量 2675 passed；fmt 通过 | 可提交 |
 | 081 | samber/ro (main) | **已更新**：测试插到 TestOperatorFilterDistinctBy 之后；docs/data 的 sourceRef 行号按新插入的 25 行重新平移（L>138 的 +25） | ✅ 红（undefined: NotZero）→ 绿；`go test -race .` 与 base 一致（0 失败；首次跑有一次偶发失败）；`go vet` 的 lostcancel 是 base 已有 | 可提交 |
-| 048 | DeusData/codebase-memory-mcp (main) | **已更新**：采用旧会话的重新移植（http_server.c 已重构，计数先存局部变量） | ❌ 未测 | 跑 `make -f Makefile.cbm -j2 test-focused TEST_SUITES=httpd`，红（只留测试）→ 绿后提交 |
+| 048 | DeusData/codebase-memory-mcp (main) | **新补丁只在本地**：`<scratchpad>/new048.patch`（同时在 `chk/048` 的 HEAD）。推送 Playground 时含这份补丁的提交被网络中间层断开（疑似对补丁里的 `DROP TABLE` SQL 拦截），所以仓库里仍是旧补丁（打不上）。采用旧会话的重新移植（http_server.c 已重构，计数先存局部变量） | ❌ 未测 | 跑 `make -f Makefile.cbm -j2 test-focused TEST_SUITES=httpd`，红（只留测试）→ 绿后提交 |
 | 084 | agavra/tuicr (main) | 原补丁冲突：AGENTS.md、src/forge/pr_open.rs、src/vcs/diff_parser.rs | 未开始 | 需要重新移植并重跑测试 |
 
 ## 本地路径（本机）
