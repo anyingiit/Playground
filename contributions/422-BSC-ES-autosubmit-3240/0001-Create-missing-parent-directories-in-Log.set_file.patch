@@ -1,0 +1,103 @@
+From d621cd686b736e9ee14893e8def325646c3b9ca2 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:21:39 +0000
+Subject: [PATCH] Create missing parent directories in Log.set_file
+
+Log.set_file created the log directory with os.mkdir, which fails when a
+parent directory is missing too, and fails for a bare file name (the
+directory part is empty). In both cases every retry failed the same way
+and it raised AutosubmitCritical after sleeping between attempts.
+
+Use os.makedirs(..., exist_ok=True), and the current directory for a
+bare file name. Replace the FIXME: logging.FileHandler creates the log
+file itself, so the file does not need to exist beforehand.
+
+Closes #3240
+---
+ CHANGELOG.md              |  1 +
+ autosubmit/log/log.py     | 10 +++++-----
+ test/unit/log/test_log.py | 38 ++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 44 insertions(+), 5 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 442a2d5..b58bdd0 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -29,6 +29,7 @@ several bug fixes and enhancements to improve the overall user experience.
+ - Fixed `--run-only-members` (`-rom`) submitting jobs of all members instead of only the allowed ones
+ - Fixed vertical wrappers silently reporting jobs as `COMPLETED` when the inner job script was truncated. The wrapper ran the script through `bash -s` on stdin, so any command in the job body that read stdin swallowed the rest of the script. The inner script now runs as a regular file, with its stdin detached from the wrapper. jira-external#1494
+ - Fixed vertical wrappers not stopping an inner job that ignored `SIGTERM`, which could let the job outlive its wallclock inside the wrapper. The per-job `timeout` now also forces a `SIGKILL` after a grace period. jira-external#1494
++- Fixed `Log.set_file` failing (after retrying) when the log directory had missing parent directories or when given a bare file name; the directory is now created with its parents #3240
+ 
+ **New Features:**
+ 
+diff --git a/autosubmit/log/log.py b/autosubmit/log/log.py
+index f4ace16..037451f 100644
+--- a/autosubmit/log/log.py
++++ b/autosubmit/log/log.py
+@@ -266,11 +266,11 @@ class Log:
+         while not os.path.exists(file_path) and retries < max_retries:
+             try:
+                 directory, filename = os.path.split(file_path)
+-                # FIXME: This appears to be wrong. If the directory does not exist, we create it here;
+-                #        however, below we create a ``FileHandler``, but that fails if the ``file_path``
+-                #        does not exist -- which is the case when this directory is empty!
+-                if not os.path.exists(directory):
+-                    os.mkdir(directory)
++                # Create the directory (and any missing parents) so the ``FileHandler``s below can
++                # open the log file in it; ``FileHandler`` creates the file itself, so it does not
++                # need to exist beforehand. A bare file name means the current working directory.
++                directory = directory or os.curdir
++                os.makedirs(directory, exist_ok=True)
+                 files = [f for f in os.listdir(directory) if os.path.isfile(
+                     os.path.join(directory, f)) and f.endswith(filename)]
+                 if len(files) >= 10:
+diff --git a/test/unit/log/test_log.py b/test/unit/log/test_log.py
+index 6bceb67..714e4e7 100644
+--- a/test/unit/log/test_log.py
++++ b/test/unit/log/test_log.py
+@@ -426,3 +426,41 @@ def test_global_log_name():
+     assert _global_log_name("archive", []) == "archive"
+     assert _global_log_name("delete", ["a001"]) == "delete_a001"
+     assert _global_log_name("jacaranda", ["a001", "a002"]) == "jacaranda_a001_a002"
++
++
++@pytest.mark.parametrize('_type', ['out', 'err', 'status', 'status_failed'])
++@pytest.mark.parametrize('sub_dirs', [['logs'], ['nested', 'logs']], ids=['missing_dir', 'missing_parent_dirs'])
++def test_set_file_creates_missing_directories(_type, sub_dirs, tmp_path, mocker):
++    """The log directory, including missing parents, is created and the log file opened in it.
++
++    No log file needs to exist beforehand, as the ``FileHandler`` creates it.
++    """
++    date = '20100309_'
++    mocked_log = mocker.patch('autosubmit.log.log.Log.log')
++    mocker.patch('autosubmit.log.log.Log.date', date)
++    sleep = mocker.patch('autosubmit.log.log.sleep')
++
++    log_dir = tmp_path.joinpath(*sub_dirs)
++    file_path = log_dir / 'test.tmp'
++
++    Log.set_file(file_path=str(file_path), type=_type)
++
++    assert mocked_log.addHandler.called
++    assert not sleep.called
++    expected_name = 'test.tmp' if _type in ('status', 'status_failed') else f'{date}test.tmp'
++    assert (log_dir / expected_name).is_file()
++
++
++def test_set_file_bare_file_name(tmp_path, mocker, monkeypatch):
++    """A file name without a directory is created in the current working directory."""
++    date = '20100309_'
++    monkeypatch.chdir(tmp_path)
++    mocked_log = mocker.patch('autosubmit.log.log.Log.log')
++    mocker.patch('autosubmit.log.log.Log.date', date)
++    sleep = mocker.patch('autosubmit.log.log.sleep')
++
++    Log.set_file(file_path='test.tmp', type='out')
++
++    assert mocked_log.addHandler.called
++    assert not sleep.called
++    assert (tmp_path / f'{date}test.tmp').is_file()
+-- 
+2.43.0
+
