@@ -9,7 +9,7 @@
 | 207 | [arxanas/git-branchless#1308](https://github.com/arxanas/git-branchless/issues/1308) | **已提交** [#1703](https://github.com/arxanas/git-branchless/pull/1703) |
 | 206 | [stackrox/kube-linter#1194](https://github.com/stackrox/kube-linter/issues/1194) | **已提交** [#1280](https://github.com/stackrox/kube-linter/pull/1280) |
 | 200 | [plotly/plotly.py#2059](https://github.com/plotly/plotly.py/issues/2059) | **已提交** [#5839](https://github.com/plotly/plotly.py/pull/5839) |
-| 201 | [plotly/plotly.py#4040](https://github.com/plotly/plotly.py/issues/4040) | 待提交：独立复核 PASS-WITH-FIXES（补丁已收紧，见 README"独立复核"）；base `main`；无 DCO/CLA；与 200（#5839）改 CHANGELOG 同一位置，提交前先 rebase 到最新 main 并解决 CHANGELOG 冲突 |
+| 201 | [plotly/plotly.py#4040](https://github.com/plotly/plotly.py/issues/4040) | **已提交** [#5840](https://github.com/plotly/plotly.py/pull/5840) |
 | 242 | [getsotto/sotto#696](https://github.com/getsotto/sotto/issues/696) | **已提交** [#698](https://github.com/getsotto/sotto/pull/698) |
 | 241 | [ZcashFoundation/zebra#11892](https://github.com/ZcashFoundation/zebra/issues/11892) | **已提交** [#11894](https://github.com/ZcashFoundation/zebra/pull/11894) |
 | 243 | [XAGI-Lab/melra#388](https://github.com/XAGI-Lab/melra/issues/388) | **已提交** [#393](https://github.com/XAGI-Lab/melra/pull/393) |
@@ -31,14 +31,14 @@
 | 274 | [dry-rb/dry-validation#741](https://github.com/dry-rb/dry-validation/issues/741) | **已提交** [#524](https://github.com/dry-rb/dry-schema/pull/524) |
 | 248 | [open-nexus-OS/open-nexus-OS#47](https://github.com/open-nexus-OS/open-nexus-OS/issues/47) | **已提交** [#53](https://github.com/open-nexus-OS/open-nexus-OS/pull/53) |
 | 212 | [troessner/reek#1476](https://github.com/troessner/reek/issues/1476) | **已提交** [#1849](https://github.com/troessner/reek/pull/1849) |
-| 420 | [opendatahub-io/ai-gateway-payload-processing#315](https://github.com/opendatahub-io/ai-gateway-payload-processing/issues/315) | 待提交（base `main`；无需认领；DCO：补丁已带 anyingiit 的 Signed-off-by；无 CLA；Go 测试文件合并；复核 PASS） |
-| 333 | [mpdf/mpdf#2232](https://github.com/mpdf/mpdf/issues/2232) | 待提交（base **`development`**；无需认领；无 DCO/CLA；commit 第三行 `Assisted-by: Claude Code` 为仓库要求的 AI 声明须保留；复核 PASS） |
-| 390 | [pydantic/monty#1101](https://github.com/pydantic/monty/issues/1101) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS） |
-| 249 | [KnockOutEZ/wigolo#526](https://github.com/KnockOutEZ/wigolo/issues/526) | 待提交：base `main`；无需认领（维护者 10-21 标 up for grabs）；无 DCO，不加 `--signoff`；CLA 提交即同意（含维护者再许可条款，已在 README 说明）；复核 PASS |
-| 276 | [hanami/hanami-cli#450](https://github.com/hanami/hanami-cli/issues/450) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；owner 在该仓库已有 #464，此为第二个） |
-| 422 | [BSC-ES/autosubmit#3240](https://github.com/BSC-ES/autosubmit/issues/3240) | 待提交（base `master`；无需认领；无 DCO/CLA；Python；复核 PASS） |
-| 301 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（GTP） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS；先交 301 再交 302，两者改不同文件不冲突） |
-| 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（QUIC） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS） |
+| 420 | [opendatahub-io/ai-gateway-payload-processing#315](https://github.com/opendatahub-io/ai-gateway-payload-processing/issues/315) | **已提交** [#489](https://github.com/opendatahub-io/ai-gateway-payload-processing/pull/489) |
+| 333 | [mpdf/mpdf#2232](https://github.com/mpdf/mpdf/issues/2232) | **已提交** [#2234](https://github.com/mpdf/mpdf/pull/2234) |
+| 390 | [pydantic/monty#1101](https://github.com/pydantic/monty/issues/1101) | **已提交** [#1114](https://github.com/pydantic/monty/pull/1114) |
+| 249 | [KnockOutEZ/wigolo#526](https://github.com/KnockOutEZ/wigolo/issues/526) | **已提交** [#663](https://github.com/KnockOutEZ/wigolo/pull/663) |
+| 276 | [hanami/hanami-cli#450](https://github.com/hanami/hanami-cli/issues/450) | **已提交** [#465](https://github.com/hanami/hanami-cli/pull/465) |
+| 422 | [BSC-ES/autosubmit#3240](https://github.com/BSC-ES/autosubmit/issues/3240) | **已提交** [#3370](https://github.com/BSC-ES/autosubmit/pull/3370) |
+| 301 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278) | **已提交** [#2334](https://github.com/seladb/PcapPlusPlus/pull/2334) |
+| 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278) | **已提交** [#2335](https://github.com/seladb/PcapPlusPlus/pull/2335) |
 | 360 | [helix-editor/helix#3115](https://github.com/helix-editor/helix/issues/3115) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；gherkin 默认接 cucumber-language-server，纯 languages.toml + 生成文档） |
 | 334 | [Euro-Office/eurooffice-nextcloud#173](https://github.com/Euro-Office/eurooffice-nextcloud/issues/173) | 待提交（base `main`；无需认领；无 DCO/CLA；Conventional Commits 标题；复核 PASS） |
 | 335 | [Euro-Office/eurooffice-nextcloud#151](https://github.com/Euro-Office/eurooffice-nextcloud/issues/151) | 待提交（base `main`；无需认领；无 DCO/CLA；Conventional Commits 标题；复核 PASS） |
