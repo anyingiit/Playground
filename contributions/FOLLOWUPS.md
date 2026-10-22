@@ -30,8 +30,8 @@
 
 ## 机器人提出、尚未处理（价值较低或需更多时间）
 
-- jasonjmcghee/ron-lsp#28：Codex 多条 P1（src 路径推导、别名解析、嵌套类型元数据）。
-- stackrox/kube-linter#1280：Codex 指出跳过的锚点。
-- KnockOutEZ/wigolo#663：CodeRabbit 指出 CDP 存储状态未应用、池回退泄漏、认证上下文无上限。
-- OpsiMate/OpsiMate#1293：CodeRabbit 建议空 PUT 测试也比较 updatedAt（小）。
+- jasonjmcghee/ron-lsp#28：Codex 多条 P1（src 路径推导、别名解析、嵌套类型元数据）。 ✅ 10-22 四条全修，推送 40de065 并回复（cargo test 75 通过）
+- stackrox/kube-linter#1280：Codex 指出跳过的锚点。 ✅ 10-22 推送 c313b64（被忽略键下的锚点在首次别名处检查）并回复
+- KnockOutEZ/wigolo#663：CodeRabbit 指出 CDP 存储状态未应用、池回退泄漏、认证上下文无上限。 ✅ 10-22 三条全修，推送 29afe80 并回复（vitest fetch 904 通过），PR 描述同步修正
+- OpsiMate/OpsiMate#1293：CodeRabbit 建议空 PUT 测试也比较 updatedAt（小）。 ✅ 10-22 推送 5d0d238 并回复
 - synolia/SyliusMaintenancePlugin#55、devonfw/IDEasy#2737、bpmn-io/dmn-migrate#63、bpmn-io/bpmn-to-image#70：CLA 待 owner 签。
