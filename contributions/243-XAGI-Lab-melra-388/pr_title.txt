@@ -1,0 +1,1 @@
+fix(cli): list MELRA_PAYLOAD_KEY and MELRA_HARNESS_TOOLS in melra help

@@ -1,0 +1,106 @@
+From bbbdab61b25ce12812db14b6914497c099eddf64 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:24:59 +0000
+Subject: [PATCH] fix(cli): list MELRA_PAYLOAD_KEY and MELRA_HARNESS_TOOLS in
+ melra help
+
+Both variables are documented in docs/INSTALLATION.md and read by
+`melra serve`, but the Environment block of `melra help` never named them, so a
+terminal user had no hint that the payload key needs a backup or that the
+plain tool names can be turned on.
+
+Add them, and make scripts/check-env-docs.mjs fail when a variable documented
+in INSTALLATION.md is missing from that block, so the two lists cannot drift
+apart again.
+
+Closes #388
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ CHANGELOG.md               |  3 +++
+ apps/cli/src/index.ts      |  4 ++++
+ scripts/check-env-docs.mjs | 22 ++++++++++++++++++++--
+ 3 files changed, 27 insertions(+), 2 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 488ca1d..af68fe1 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -31,6 +31,9 @@ All notable changes are documented here. The format follows
+ 
+ ### Fixed
+ 
++- `melra help` lists `MELRA_PAYLOAD_KEY` and `MELRA_HARNESS_TOOLS` in its
++  Environment block, and `pnpm docs:check` now fails when a variable documented
++  in `docs/INSTALLATION.md` is missing from it (#388).
+ - A verdict sent in band where only an operator's counts, from a
+   developer-mode process on a task that ran enforced (`melra judge` without
+   `--mode enforced`, or `melra_task_judge`) or from an agent on an enforced
+diff --git a/apps/cli/src/index.ts b/apps/cli/src/index.ts
+index 201bb61..940a628 100644
+--- a/apps/cli/src/index.ts
++++ b/apps/cli/src/index.ts
+@@ -1243,6 +1243,10 @@ Environment:
+   MELRA_BROWSER_HAR_PATH           Absolute HAR output path
+   MELRA_BROWSER_HAR_REPLAY         Absolute HAR to replay; nothing hits network
+   MELRA_BROWSER_PROFILE            Absolute dir keeping cookies between runs
++  MELRA_PAYLOAD_KEY                Payload key, base64url (default:
++                                   <MELRA_HOME>/payload.key); back it up
++  MELRA_HARNESS_TOOLS              Set to 1 to add read_file, run_command and
++                                   the other plain tool names
+ `);
+ }
+ 
+diff --git a/scripts/check-env-docs.mjs b/scripts/check-env-docs.mjs
+index dc63f82..a621bd1 100644
+--- a/scripts/check-env-docs.mjs
++++ b/scripts/check-env-docs.mjs
+@@ -4,11 +4,14 @@
+ // Every MELRA_* variable the shipped code reads must have a row in an
+ // environment table in docs/INSTALLATION.md, and every row must name a variable
+ // the code still reads. A variable the docs never mention is a feature nobody
+-// can find; a row for one nothing reads is a knob that does nothing.
++// can find; a row for one nothing reads is a knob that does nothing. Every
++// documented variable must also be listed in the Environment block of
++// `melra help`, where a terminal user looks first.
+ 
+ import { glob, readFile } from "node:fs/promises";
+ 
+ const DOC = "docs/INSTALLATION.md";
++const HELP = "apps/cli/src/index.ts";
+ 
+ // Runtime plumbing, not configuration: values MELRA sets on its own child
+ // processes. Documenting them as knobs would be wrong. Keep this a literal
+@@ -62,6 +65,21 @@ for (const [name, line] of documented) {
+     failures.push(`${DOC}:${line}: ${name} is documented but nothing in {apps,packages}/*/src reads it; remove the row`);
+   }
+ }
++// The Environment block is the tail of the help() template literal: each
++// variable starts a line indented by two spaces; continuation lines are
++// indented further and never start with a name.
++const helpSource = await readFile(HELP, "utf8");
++const helpEnvironment = /\nEnvironment:\n([\s\S]*?)\n`\);/.exec(helpSource)?.[1];
++if (helpEnvironment === undefined) {
++  failures.push(`${HELP}: could not find the Environment block of help()`);
++} else {
++  const listed = new Set([...helpEnvironment.matchAll(/^ {2}(MELRA_[A-Z0-9_]+)/gm)].map(([, name]) => name));
++  for (const [name, line] of documented) {
++    if (!listed.has(name)) {
++      failures.push(`${DOC}:${line}: ${name} is documented but missing from the Environment block of 'melra help' in ${HELP}`);
++    }
++  }
++}
+ for (const name of INTERNAL.keys()) {
+   if (!readBy.has(name)) {
+     failures.push(`${name} is allowlisted as internal in scripts/check-env-docs.mjs but no longer appears in the code; remove it`);
+@@ -73,6 +91,6 @@ if (failures.length > 0) {
+   process.exitCode = 1;
+ } else {
+   process.stdout.write(
+-    `All ${readBy.size - INTERNAL.size} MELRA_* configuration variables are documented in ${DOC}.\n`,
++    `All ${readBy.size - INTERNAL.size} MELRA_* configuration variables are documented in ${DOC} and listed by 'melra help'.\n`,
+   );
+ }
+-- 
+2.43.0
+
