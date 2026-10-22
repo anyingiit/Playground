@@ -226,6 +226,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 427 | [OpenCHAMI/ochami#186](https://github.com/OpenCHAMI/ochami/issues/186) | [OpenCHAMI/ochami#215](https://github.com/OpenCHAMI/ochami/pull/215) | 2026-10-22 提交（独立复核 PASS）；DCO 已签 |
 | 283 | [devonfw/IDEasy#1214](https://github.com/devonfw/IDEasy/issues/1214) | [devonfw/IDEasy#2737](https://github.com/devonfw/IDEasy/pull/2737) | 2026-10-22 提交（独立复核 PASS）；已先在 issue 认领；**待 owner 签 CLA**（cla-assistant.io 网页，GitHub 登录：https://cla-assistant.io/devonfw/IDEasy?pullRequest=2737） |
 | 428 | [OpenCHAMI/ochami#191](https://github.com/OpenCHAMI/ochami/issues/191) | [OpenCHAMI/ochami#216](https://github.com/OpenCHAMI/ochami/pull/216) | 2026-10-22 提交（独立复核 PASS）；DCO 已签 |
+| 339 | [hrsh7th/nvim-cmp#2232](https://github.com/hrsh7th/nvim-cmp/issues/2232) | [hrsh7th/nvim-cmp#2234](https://github.com/hrsh7th/nvim-cmp/pull/2234) | 2026-10-22 提交（独立复核 PASS） |
 
 备注：088 解冲突后适配上游 `formatSettingValueForEdit` 新签名，`go test ./...` 全过，回退源码则新测试编译失败（红）。099 解冲突并把上游新增的公开 `AnyCol` 用法一并展开，`:core/:dataframe-arrow` compileTestKotlin + apiCheck + ktlint 通过（未跑全量测试）。118 装了 PHP 8.5：红→绿、全量 phpunit 363 通过、phpstan 无错，已在 issue #1070 留言。121 两个改动文件上游无变化，沿用之前 sclang 红→绿结果。123 为纯改名，解冲突后无残留旧名，未本地编译（依赖太多，靠 CI）。128 已在 issue #4292 留言认领，最新 main 上红→绿。208 是协调员撤回提交员任务前已开出的。
 旧会话 9 个 PR 本地重跑：grpc-gateway、ipython（test_system_interrupt 偶发超时，重跑通过，与改动无关）、pyinstaller、OpsiMate、PathMap、xterm.js、compiler-explorer 均通过；NLog（无 dotnet）、phpmyadmin（未跑）只能看 CI。
