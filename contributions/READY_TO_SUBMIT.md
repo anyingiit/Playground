@@ -10,8 +10,9 @@
 | 206 | [stackrox/kube-linter#1194](https://github.com/stackrox/kube-linter/issues/1194) | **已提交** [#1280](https://github.com/stackrox/kube-linter/pull/1280) |
 | 200 | [plotly/plotly.py#2059](https://github.com/plotly/plotly.py/issues/2059) | **已提交** [#5839](https://github.com/plotly/plotly.py/pull/5839) |
 | 201 | [plotly/plotly.py#4040](https://github.com/plotly/plotly.py/issues/4040) | 待定：复核时改了补丁，README 未写 PASS；提交前需 rebase CHANGELOG（与 200 同位置） |
-| 242 | [getsotto/sotto#696](https://github.com/getsotto/sotto/issues/696) | 待提交（base `main`；无需认领；DCO 已在 commit 中签；无 CLA；复核 PASS） |
-| 241 | [ZcashFoundation/zebra#11892](https://github.com/ZcashFoundation/zebra/issues/11892) | 待提交（base `main`；建议先在 issue 评论认领；无 DCO/CLA；**PR 正文禁止 "Generated with" 页脚**；复核 PASS） |
-| 243 | [XAGI-Lab/melra#388](https://github.com/XAGI-Lab/melra/issues/388) | 待提交（base `main`；无需认领；DCO 已在 commit 中签；无 CLA；复核 PASS） |
-| 210 | [hgrecco/pint#2502](https://github.com/hgrecco/pint/issues/2502) | 待提交（base `master`；无需认领；无 DCO/CLA；PR 模板为 checklist；复核 PASS） |
-| 244 | [Rohit-Dnath/RAMen#63](https://github.com/Rohit-Dnath/RAMen/issues/63) | 待提交（base `main`；无需认领；无 DCO/CLA；复核 PASS） |
+| 242 | [getsotto/sotto#696](https://github.com/getsotto/sotto/issues/696) | **已提交** [#698](https://github.com/getsotto/sotto/pull/698) |
+| 241 | [ZcashFoundation/zebra#11892](https://github.com/ZcashFoundation/zebra/issues/11892) | **已提交** [#11894](https://github.com/ZcashFoundation/zebra/pull/11894) |
+| 243 | [XAGI-Lab/melra#388](https://github.com/XAGI-Lab/melra/issues/388) | **已提交** [#393](https://github.com/XAGI-Lab/melra/pull/393) |
+| 210 | [hgrecco/pint#2502](https://github.com/hgrecco/pint/issues/2502) | **已提交** [#2517](https://github.com/hgrecco/pint/pull/2517) |
+| 244 | [Rohit-Dnath/RAMen#63](https://github.com/Rohit-Dnath/RAMen/issues/63) | 不提交：issue 已被维护者自行修复关闭（932787e，10-22 19:34 UTC） |
+| 204 | [git-ai-project/git-ai#1036](https://github.com/git-ai-project/git-ai/issues/1036) | **已提交** [#2436](https://github.com/git-ai-project/git-ai/pull/2436) |
