@@ -1,0 +1,1 @@
+fix(editor): skip deleted users when listing users for mentions and protection

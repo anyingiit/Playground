@@ -40,3 +40,5 @@
 | 301 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（GTP） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS；先交 301 再交 302，两者改不同文件不冲突） |
 | 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（QUIC） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS） |
 | 360 | [helix-editor/helix#3115](https://github.com/helix-editor/helix/issues/3115) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；gherkin 默认接 cucumber-language-server，纯 languages.toml + 生成文档） |
+| 334 | [Euro-Office/eurooffice-nextcloud#173](https://github.com/Euro-Office/eurooffice-nextcloud/issues/173) | 待提交（base `main`；无需认领；无 DCO/CLA；Conventional Commits 标题；复核 PASS） |
+| 335 | [Euro-Office/eurooffice-nextcloud#151](https://github.com/Euro-Office/eurooffice-nextcloud/issues/151) | 待提交（base `main`；无需认领；无 DCO/CLA；Conventional Commits 标题；复核 PASS） |

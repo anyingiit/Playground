@@ -1,0 +1,99 @@
+From 25cad42ff68ad4f600295d33d375d3a95e551727 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:22:02 +0000
+Subject: [PATCH] fix(config): accept a native bool for verify_peer_off in
+ config.php
+
+Without a value saved in the admin panel, getVerifyPeerOff() falls back
+to the eurooffice section of config.php and compared it with the string
+"true". Writing 'verify_peer_off' => true, the natural PHP way, was
+therefore silently ignored and peer verification stayed on. Normalize
+the value with AppConfig::isTrue(), as the watermark settings already do.
+
+Fixes #151
+---
+ lib/AppConfig.php                |  2 +-
+ tests/unit/lib/AppConfigTest.php | 58 ++++++++++++++++++++++++++++++++
+ 2 files changed, 59 insertions(+), 1 deletion(-)
+ create mode 100644 tests/unit/lib/AppConfigTest.php
+
+diff --git a/lib/AppConfig.php b/lib/AppConfig.php
+index 3ed1a50..1c3f1ba 100644
+--- a/lib/AppConfig.php
++++ b/lib/AppConfig.php
+@@ -1139,7 +1139,7 @@ class AppConfig {
+             return $turnOff === "true";
+         }
+ 
+-        return $this->getSystemValue($this->_verification) === "true";
++        return self::isTrue($this->getSystemValue($this->_verification));
+     }
+ 
+     /**
+diff --git a/tests/unit/lib/AppConfigTest.php b/tests/unit/lib/AppConfigTest.php
+new file mode 100644
+index 0000000..ba602a7
+--- /dev/null
++++ b/tests/unit/lib/AppConfigTest.php
+@@ -0,0 +1,58 @@
++<?php
++
++declare(strict_types=1);
++
++/**
++ * SPDX-FileCopyrightText: 2026 Nextcloud GmbH or a Nextcloud affiliate company and Euro-Office contributors
++ * SPDX-License-Identifier: AGPL-3.0-or-later
++ */
++
++namespace OCA\Eurooffice\Tests\Unit;
++
++use OCA\Eurooffice\AppConfig;
++use OCP\IAppConfig;
++use OCP\ICacheFactory;
++use OCP\IConfig;
++use PHPUnit\Framework\Attributes\CoversClass;
++use PHPUnit\Framework\Attributes\DataProvider;
++use PHPUnit\Framework\TestCase;
++use Psr\Log\LoggerInterface;
++
++#[CoversClass(AppConfig::class)]
++class AppConfigTest extends TestCase {
++
++    public static function verifyPeerOffSystemValueProvider(): array {
++        return [
++            "native bool true" => [true, true],
++            "native bool false" => [false, false],
++            "string true" => ["true", true],
++            "string false" => ["false", false],
++            "not set" => [null, false],
++        ];
++    }
++
++    /**
++     * Without a value saved in the admin panel, verify_peer_off falls back to
++     * the "eurooffice" section of config.php, where `true` is the natural way
++     * to write it (#151).
++     */
++    #[DataProvider("verifyPeerOffSystemValueProvider")]
++    public function testGetVerifyPeerOffFallsBackToConfigPhp(mixed $systemValue, bool $expected): void {
++        $appConfig = $this->createMock(IAppConfig::class);
++        $appConfig->method("getValueString")->willReturn("");
++
++        $section = $systemValue === null ? [] : ["verify_peer_off" => $systemValue];
++        $config = $this->createMock(IConfig::class);
++        $config->method("getSystemValue")->with("eurooffice")->willReturn($section);
++
++        $eoConfig = new AppConfig(
++            "eurooffice",
++            $appConfig,
++            $config,
++            $this->createMock(LoggerInterface::class),
++            $this->createMock(ICacheFactory::class),
++        );
++
++        $this->assertSame($expected, $eoConfig->getVerifyPeerOff());
++    }
++}
+-- 
+2.43.0
+
