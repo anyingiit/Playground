@@ -1,0 +1,1 @@
+Coerce struct attributes individually in the struct extension
