@@ -1,0 +1,1 @@
+feat(core): add TransactionStatus enum for transaction outcomes
