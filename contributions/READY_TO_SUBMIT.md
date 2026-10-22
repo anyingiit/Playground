@@ -82,6 +82,6 @@
 | 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（QUIC） | **已提交** [#2335](https://github.com/seladb/PcapPlusPlus/pull/2335) |
 | 423 | [whtsky/pixelmatch-py#256](https://github.com/whtsky/pixelmatch-py/issues/256) | **已提交** [#268](https://github.com/whtsky/pixelmatch-py/pull/268) |
 | 279 | [hanami/hanami-view#264](https://github.com/hanami/hanami-view/issues/264) | **已提交** [#291](https://github.com/hanami/hanami-view/pull/291) |
-| 362 | [helix-editor/helix#5817](https://github.com/helix-editor/helix/issues/5817) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；Ruby `]a` 调用参数；与 360/361/363 互不冲突） |
-| 363 | [helix-editor/helix#11207](https://github.com/helix-editor/helix/issues/11207) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；新增 Liquid 语言；与 360/361/362 互不冲突） |
+| 362 | [helix-editor/helix#5817](https://github.com/helix-editor/helix/issues/5817) | **已提交** [#16406](https://github.com/helix-editor/helix/pull/16406) |
+| 363 | [helix-editor/helix#11207](https://github.com/helix-editor/helix/issues/11207) | **已提交** [#16407](https://github.com/helix-editor/helix/pull/16407) |
 | 337 | [synolia/SyliusMaintenancePlugin#54](https://github.com/synolia/SyliusMaintenancePlugin/issues/54) | main | 无需认领；无 DCO、无 CLA |
