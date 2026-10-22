@@ -33,3 +33,7 @@ git am /path/to/0001-*.patch
 
 ## 独立复核（2026-10-22）
 另一 agent：`git am` 成功、测试/flake8 通过、红→绿确认；对 doctest、class 体、global、条件 del、F811/F401、`__all__`、star import 等对比前后输出，无误报回归。按其建议：删掉了固化旧行为的 `test_delUnshadowedBuiltin`（与 2018 年未合并的 #355 有交集），在 PR 正文说明"连续两次 del 不再报第二次"的副作用，修正测试数。结论：OK。
+
+## 跳过原因（2026-10-22）
+
+开 PR 时 GitHub 返回 CreatePullRequest 权限被拒：该仓库不允许 anyingiit 创建 PR。分支已推到 anyingiit 的 fork。如果以后想提交，需要先在 issue 下问维护者是否接受外部 PR，或请维护者从 fork 分支接手。

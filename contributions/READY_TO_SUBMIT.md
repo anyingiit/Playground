@@ -9,7 +9,7 @@
 | 207 | [arxanas/git-branchless#1308](https://github.com/arxanas/git-branchless/issues/1308) | **已提交** [#1703](https://github.com/arxanas/git-branchless/pull/1703) |
 | 206 | [stackrox/kube-linter#1194](https://github.com/stackrox/kube-linter/issues/1194) | **已提交** [#1280](https://github.com/stackrox/kube-linter/pull/1280) |
 | 200 | [plotly/plotly.py#2059](https://github.com/plotly/plotly.py/issues/2059) | **已提交** [#5839](https://github.com/plotly/plotly.py/pull/5839) |
-| 201 | [plotly/plotly.py#4040](https://github.com/plotly/plotly.py/issues/4040) | 待定：复核时改了补丁，README 未写 PASS；提交前需 rebase CHANGELOG（与 200 同位置） |
+| 201 | [plotly/plotly.py#4040](https://github.com/plotly/plotly.py/issues/4040) | 待提交：独立复核 PASS-WITH-FIXES（补丁已收紧，见 README"独立复核"）；base `main`；无 DCO/CLA；与 200（#5839）改 CHANGELOG 同一位置，提交前先 rebase 到最新 main 并解决 CHANGELOG 冲突 |
 | 242 | [getsotto/sotto#696](https://github.com/getsotto/sotto/issues/696) | **已提交** [#698](https://github.com/getsotto/sotto/pull/698) |
 | 241 | [ZcashFoundation/zebra#11892](https://github.com/ZcashFoundation/zebra/issues/11892) | **已提交** [#11894](https://github.com/ZcashFoundation/zebra/pull/11894) |
 | 243 | [XAGI-Lab/melra#388](https://github.com/XAGI-Lab/melra/issues/388) | **已提交** [#393](https://github.com/XAGI-Lab/melra/pull/393) |
@@ -22,7 +22,7 @@
 | 211 | [troessner/reek#1429](https://github.com/troessner/reek/issues/1429) | **已提交** [#1848](https://github.com/troessner/reek/pull/1848) |
 | 245 | [vyncint/termlens#594](https://github.com/vyncint/termlens/issues/594) | **已提交** [#604](https://github.com/vyncint/termlens/pull/604) |
 | 273 | [dry-rb/dry-schema#468](https://github.com/dry-rb/dry-schema/issues/468) | **已提交** [#523](https://github.com/dry-rb/dry-schema/pull/523) |
-| 213 | [PyCQA/pyflakes#548](https://github.com/PyCQA/pyflakes/issues/548) | 阻塞：仓库不允许 anyingiit 开 PR（CreatePullRequest 权限被拒）；分支已推送到 fork，需 owner 决定 |
+| 213 | [PyCQA/pyflakes#548](https://github.com/PyCQA/pyflakes/issues/548) | 跳过：PyCQA/pyflakes 不允许 anyingiit 开 PR（CreatePullRequest 被拒）；已移到 `_skipped/` |
 | 275 | [hanami/hanami-minitest#11](https://github.com/hanami/hanami-minitest/issues/11) | **已提交** [#13](https://github.com/hanami/hanami-minitest/pull/13) |
 | 247 | [vyncint/termlens#586](https://github.com/vyncint/termlens/issues/586) | **已提交** [#605](https://github.com/vyncint/termlens/pull/605) |
 | 330 | [crazy-goat/tikv-php#680](https://github.com/crazy-goat/tikv-php/issues/680) | **已提交** [#738](https://github.com/crazy-goat/tikv-php/pull/738) |
