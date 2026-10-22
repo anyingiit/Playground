@@ -7,13 +7,13 @@
 | # | Issue | 状态 | 提交命令要点 |
 |---|---|---|---|
 | 208 | image-rs/image-png#584 | ✅ 可提交，独立复核 PASS | base `master`；无 DCO/CLA |
-| 202 | vega/altair#3502 | 实现完成，独立复核进行中 | base `main`；无 DCO/CLA |
-| 200 | plotly/plotly.py#2059 | 实现完成，独立复核进行中 | base `main`；CHANGELOG 与 201 同位置，后提交的需 rebase |
-| 201 | plotly/plotly.py#4040 | 实现完成，独立复核进行中（重点看启发式是否误伤） | base `main` |
-| 204 | git-ai-project/git-ai#1036 | 实现中 | 见文件夹 README |
-| 206 | stackrox/kube-linter#1194 | 实现中（可能跳过：无维护者回应的功能请求） | |
-| 207 | arxanas/git-branchless#1308 | 实现中 | |
-| 203 | we-promise/sure#3352 | 已跳过（见 `_skipped/`） | |
+| 202 | vega/altair#3502 | ✅ 可提交，独立复核 PASS | base `main`；无 DCO/CLA |
+| 200 | plotly/plotly.py#2059 | ✅ 可提交，独立复核 PASS | base `main`；CHANGELOG 与 201 同位置，后提交的需 rebase |
+| 201 | plotly/plotly.py#4040 | ✅ 可提交，独立复核 PASS-WITH-FIXES（收紧为只替换原有的长度错误） | base `main` |
+| 204 | git-ai-project/git-ai#1036 | ✅ 可提交，独立复核 PASS | 见文件夹 README |
+| 206 | stackrox/kube-linter#1194 | ✅ 可提交，独立复核 PASS（仅精简 PR 文本） | |
+| 207 | arxanas/git-branchless#1308 | ✅ 可提交，独立复核 PASS | |
+| 203 | we-promise/sure#3352 | 已跳过：本机无 Postgres/Redis，且需维护者决定 super admin 是否绕过账户共享 | |
 | 205 | kubecolor/kubecolor#88 | 已跳过：维护者要求先做 #113 大重构，#234 因此被关 | |
 
 提交方式：`WORKDIR=/tmp/pr-submit bash tools/submit_pr.sh $PWD/contributions/<folder> <owner/repo> <base> <branch> contributions/<folder>/pr_title.txt $PWD/contributions/<folder>/pr_body.md`。提交后把 PR 链接写进 `submissions.json` 和 `SUBMISSIONS.md`，并按 README 把 CHANGELOG 里的 issue 链接改成 PR 号（plotly）。
