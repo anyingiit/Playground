@@ -114,3 +114,4 @@
 | 291 | [benbalter/situation-clock#24](https://github.com/benbalter/situation-clock/issues/24) | **已提交** [#34](https://github.com/benbalter/situation-clock/pull/34) |
 | 292 | [benbalter/avatar-montage#4](https://github.com/benbalter/avatar-montage/issues/4) | **已提交** [#5](https://github.com/benbalter/avatar-montage/pull/5) |
 | 293 | [higher-kinded-j/higher-kinded-j#1221](https://github.com/higher-kinded-j/higher-kinded-j/issues/1221) | **已提交** [#1223](https://github.com/higher-kinded-j/higher-kinded-j/pull/1223) |
+| 294 | [authorjapps/zerocode#800](https://github.com/authorjapps/zerocode/issues/800) | 待提交（base `master`；无需认领；无 DCO/CLA；Java；复核 PASS） |

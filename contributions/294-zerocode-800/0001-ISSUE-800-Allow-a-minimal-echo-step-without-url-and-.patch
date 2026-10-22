@@ -1,0 +1,182 @@
+From f1558ebb4b8a0d94d49180699180ff1869fd095d Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:41:09 +0000
+Subject: [PATCH] ISSUE-800 # Allow a minimal echo step without url and
+ assertions
+
+A step without a url makes no call and returns its request, and when
+it has no assertions, verify or validators it passes without comparing
+anything. Steps that make a real call still fail without assertions.
+---
+ .../ZeroCodeMultiStepsScenarioRunnerImpl.java | 13 +++++++-
+ ...MultiStepsScenarioRunner_EchoStepTest.java | 25 +++++++++++++++
+ .../core/runner/e2e/EchoStepShortForm.java    | 24 ++++++++++++++
+ .../echo_step/01_echo_step_short_form.json    | 32 +++++++++++++++++++
+ .../02_java_call_without_assertions.json      | 15 +++++++++
+ 5 files changed, 108 insertions(+), 1 deletion(-)
+ create mode 100644 core/src/test/java/org/jsmart/zerocode/core/runner/ZeroCodeMultiStepsScenarioRunner_EchoStepTest.java
+ create mode 100644 core/src/test/java/org/jsmart/zerocode/core/runner/e2e/EchoStepShortForm.java
+ create mode 100644 core/src/test/resources/integration_test_files/echo_step/01_echo_step_short_form.json
+ create mode 100644 core/src/test/resources/integration_test_files/echo_step/02_java_call_without_assertions.json
+
+diff --git a/core/src/main/java/org/jsmart/zerocode/core/runner/ZeroCodeMultiStepsScenarioRunnerImpl.java b/core/src/main/java/org/jsmart/zerocode/core/runner/ZeroCodeMultiStepsScenarioRunnerImpl.java
+index e6d89e0..c8bb94b 100644
+--- a/core/src/main/java/org/jsmart/zerocode/core/runner/ZeroCodeMultiStepsScenarioRunnerImpl.java
++++ b/core/src/main/java/org/jsmart/zerocode/core/runner/ZeroCodeMultiStepsScenarioRunnerImpl.java
+@@ -31,6 +31,7 @@ import org.jsmart.zerocode.core.engine.sorter.ZeroCodeSorter;
+ import org.jsmart.zerocode.core.engine.validators.ZeroCodeValidator;
+ import static org.jsmart.zerocode.core.kafka.helper.KafkaCommonUtils.printBrokerProperties;
+ import org.jsmart.zerocode.core.logbuilder.ZerocodeCorrelationshipLogger;
++import org.jsmart.zerocode.core.utils.ApiType;
+ import org.jsmart.zerocode.core.utils.ApiTypeUtils;
+ import static org.jsmart.zerocode.core.utils.ApiTypeUtils.apiType;
+ import static org.jsmart.zerocode.core.utils.RunnerUtils.getFullyQualifiedUrl;
+@@ -418,7 +419,8 @@ public class ZeroCodeMultiStepsScenarioRunnerImpl implements ZeroCodeMultiStepsS
+                               String resolvedRequestJson,
+                               ScenarioExecutionState scenarioExecutionState) {
+ 
+-        String url = thisStep.getUrl();
++        // A step without a url is an echo step: no call, the request is the response
++        String url = ofNullable(thisStep.getUrl()).orElse("");
+         String operationName = thisStep.getOperation();
+         String stepId = thisStep.getId();
+         String thisStepName = thisStep.getName();
+@@ -557,6 +559,15 @@ public class ZeroCodeMultiStepsScenarioRunnerImpl implements ZeroCodeMultiStepsS
+     private List<FieldAssertionMatcher> compareStepResults(Step thisStep, String actualResult, String expectedResult, String resolvedScenarioState) {
+         List<FieldAssertionMatcher> failureResults = new ArrayList<>();
+ 
++        // ------------------------------------------------
++        // Echo step (no call made) with nothing to compare
++        // ------------------------------------------------
++        if (apiType(thisStep.getUrl(), thisStep.getOperation()) == ApiType.NONE
++                && thisStep.getAssertions() == null
++                && thisStep.getValidators() == null) {
++            return failureResults;
++        }
++
+         // --------------------
+         //  Validators (pyrest)
+         // --------------------
+diff --git a/core/src/test/java/org/jsmart/zerocode/core/runner/ZeroCodeMultiStepsScenarioRunner_EchoStepTest.java b/core/src/test/java/org/jsmart/zerocode/core/runner/ZeroCodeMultiStepsScenarioRunner_EchoStepTest.java
+new file mode 100644
+index 0000000..19a43fa
+--- /dev/null
++++ b/core/src/test/java/org/jsmart/zerocode/core/runner/ZeroCodeMultiStepsScenarioRunner_EchoStepTest.java
+@@ -0,0 +1,25 @@
++package org.jsmart.zerocode.core.runner;
++
++import static org.hamcrest.CoreMatchers.is;
++import static org.hamcrest.MatcherAssert.assertThat;
++
++import org.jsmart.zerocode.core.runner.e2e.EchoStepShortForm;
++import org.junit.Test;
++import org.junit.runner.JUnitCore;
++import org.junit.runner.Result;
++import org.junit.runner.notification.Failure;
++
++public class ZeroCodeMultiStepsScenarioRunner_EchoStepTest {
++
++    @Test
++    public void test_echoStepWithoutUrlOperationAndAssertionsPasses_javaCallWithoutAssertionsFails() {
++
++        Result result = JUnitCore.runClasses(EchoStepShortForm.class);
++
++        assertThat(result.getRunCount(), is(2));
++        assertThat(result.getFailureCount(), is(1));
++
++        Failure failure = result.getFailures().get(0);
++        assertThat(failure.getDescription().getMethodName(), is("testJavaCallWithoutAssertions"));
++    }
++}
+diff --git a/core/src/test/java/org/jsmart/zerocode/core/runner/e2e/EchoStepShortForm.java b/core/src/test/java/org/jsmart/zerocode/core/runner/e2e/EchoStepShortForm.java
+new file mode 100644
+index 0000000..7a3280d
+--- /dev/null
++++ b/core/src/test/java/org/jsmart/zerocode/core/runner/e2e/EchoStepShortForm.java
+@@ -0,0 +1,24 @@
++package org.jsmart.zerocode.core.runner.e2e;
++
++import org.jsmart.zerocode.core.domain.HostProperties;
++import org.jsmart.zerocode.core.domain.JsonTestCase;
++import org.jsmart.zerocode.core.tests.customrunner.TestOnlyZeroCodeUnitRunner;
++import org.junit.Test;
++import org.junit.runner.RunWith;
++
++@HostProperties(host="http://localhost", port=9998, context = "")
++@RunWith(TestOnlyZeroCodeUnitRunner.class)
++public class EchoStepShortForm {
++
++    @Test
++    @JsonTestCase("integration_test_files/echo_step/01_echo_step_short_form.json")
++    public void testEchoStepShortForm() throws Exception {
++
++    }
++
++    @Test
++    @JsonTestCase("integration_test_files/echo_step/02_java_call_without_assertions.json")
++    public void testJavaCallWithoutAssertions() throws Exception {
++
++    }
++}
+diff --git a/core/src/test/resources/integration_test_files/echo_step/01_echo_step_short_form.json b/core/src/test/resources/integration_test_files/echo_step/01_echo_step_short_form.json
+new file mode 100644
+index 0000000..255ea78
+--- /dev/null
++++ b/core/src/test/resources/integration_test_files/echo_step/01_echo_step_short_form.json
+@@ -0,0 +1,32 @@
++{
++    "scenarioName": "Echo step - url, operation and assertions omitted",
++    "steps": [
++        {
++            "name": "store_ids",
++            "request": {
++                "orderId": 1001,
++                "customer": "Jane"
++            }
++        },
++        {
++            "name": "echo_with_assertions",
++            "request": {
++                "orderId": "${$.store_ids.response.orderId}"
++            },
++            "assertions": {
++                "orderId": "1001"
++            }
++        },
++        {
++            "name": "echo_with_empty_values",
++            "url": "",
++            "operation": "",
++            "request": {
++                "customer": "${$.store_ids.response.customer}"
++            },
++            "assertions": {
++                "customer": "Jane"
++            }
++        }
++    ]
++}
+diff --git a/core/src/test/resources/integration_test_files/echo_step/02_java_call_without_assertions.json b/core/src/test/resources/integration_test_files/echo_step/02_java_call_without_assertions.json
+new file mode 100644
+index 0000000..b0fa32c
+--- /dev/null
++++ b/core/src/test/resources/integration_test_files/echo_step/02_java_call_without_assertions.json
+@@ -0,0 +1,15 @@
++{
++    "scenarioName": "Java call - assertions omitted",
++    "steps": [
++        {
++            "name": "java_call_without_assertions",
++            "url": "org.jsmart.zerocode.converter.MimeTypeConverter",
++            "operation": "jsonBlockToJson",
++            "request": {
++                "body": {
++                    "id": 1001
++                }
++            }
++        }
++    ]
++}
+-- 
+2.43.0
+

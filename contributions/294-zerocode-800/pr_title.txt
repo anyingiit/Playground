@@ -1,0 +1,1 @@
+ISSUE-800 # Allow a minimal echo step without url and assertions
