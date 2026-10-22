@@ -18,3 +18,4 @@
 | 204 | [git-ai-project/git-ai#1036](https://github.com/git-ai-project/git-ai/issues/1036) | **已提交** [#2436](https://github.com/git-ai-project/git-ai/pull/2436) |
 | 271 | [dry-rb/dry-schema#504](https://github.com/dry-rb/dry-schema/issues/504) | **已提交** [#521](https://github.com/dry-rb/dry-schema/pull/521) |
 | 272 | [dry-rb/dry-schema#455](https://github.com/dry-rb/dry-schema/issues/455) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；与 271 同改 CHANGELOG，第二个提交时冲突两行都保留） |
+| 300 | [zigtools/zls#2098](https://github.com/zigtools/zls/issues/2098) | 待提交（base `master`；无需认领；无 DCO/CLA；Zig；复核 PASS；维护者曾因 LLM markdown 文件关掉同题 PR，本补丁只有 2 个 .zig 文件） |

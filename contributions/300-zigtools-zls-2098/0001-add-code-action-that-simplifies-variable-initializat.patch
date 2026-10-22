@@ -1,0 +1,261 @@
+From 649f9406ba8669d4e9005e86c7decd7993e826d6 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:42:53 +0000
+Subject: [PATCH] add code action that simplifies variable initialization
+
+Offer a refactor that rewrites
+`const foo = @as(T, value);` into `const foo: T = value;` and
+`const foo = T{ ... };` into `const foo: T = .{ ... };`.
+
+Array types are skipped because `[_]T` is not a valid type annotation.
+---
+ src/features/code_actions.zig       |  68 ++++++++++++++
+ tests/lsp_features/code_actions.zig | 139 ++++++++++++++++++++++++++++
+ 2 files changed, 207 insertions(+)
+
+diff --git a/src/features/code_actions.zig b/src/features/code_actions.zig
+index 2600d88..4ebf698 100644
+--- a/src/features/code_actions.zig
++++ b/src/features/code_actions.zig
+@@ -151,6 +151,8 @@ pub const Builder = struct {
+ 
+         const source_index = offsets.positionToIndex(tree.source, range.start, builder.offset_encoding);
+ 
++        try generateSimplifyVariableInitCodeActions(builder, source_index);
++
+         const ctx = try Analyser.getPositionContext(builder.arena, tree, source_index, true);
+         if (ctx != .string_literal) return;
+ 
+@@ -187,6 +189,72 @@ pub const Builder = struct {
+     }
+ };
+ 
++/// `const foo = @as(T, value);` -> `const foo: T = value;`
++/// `const foo = T{};` -> `const foo: T = .{};`
++fn generateSimplifyVariableInitCodeActions(
++    builder: *Builder,
++    source_index: usize,
++) error{OutOfMemory}!void {
++    const tracy_zone = tracy.trace(@src());
++    defer tracy_zone.end();
++
++    if (!builder.wantKind(.refactor)) return;
++
++    const tree = &builder.handle.tree;
++
++    const var_decl = for (try ast.nodesOverlappingIndex(builder.arena, tree, source_index)) |node| {
++        if (tree.fullVarDecl(node)) |var_decl| break var_decl;
++    } else return;
++
++    if (var_decl.ast.type_node != .none) return;
++    const init_node = var_decl.ast.init_node.unwrap() orelse return;
++    const name_token = var_decl.ast.mut_token + 1;
++
++    var buffer: [2]Ast.Node.Index = undefined;
++    const type_node: Ast.Node.Index, const init_edit: types.TextEdit = blk: {
++        if (tree.builtinCallParams(&buffer, init_node)) |params| {
++            if (!std.mem.eql(u8, offsets.tokenToSlice(tree, tree.nodeMainToken(init_node)), "@as")) return;
++            if (params.len != 2) return;
++            const init_loc = offsets.nodeToLoc(tree, init_node);
++            const value_loc = offsets.nodeToLoc(tree, params[1]);
++            // don't silently drop comments that are outside of the value
++            if (std.mem.find(u8, tree.source[init_loc.start..value_loc.start], "//") != null) return;
++            if (std.mem.find(u8, tree.source[value_loc.end..init_loc.end], "//") != null) return;
++            break :blk .{
++                params[0],
++                builder.createTextEditLoc(offsets.nodeToLoc(tree, init_node), offsets.nodeToSlice(tree, params[1])),
++            };
++        }
++        if (tree.fullStructInit(&buffer, init_node)) |struct_init| {
++            const type_expr = struct_init.ast.type_expr.unwrap() orelse return;
++            // `[_]T{}` is parsed as a struct init but `[_]T` is not a valid type annotation
++            switch (tree.nodeTag(type_expr)) {
++                .array_type, .array_type_sentinel => return,
++                else => {},
++            }
++            const loc: offsets.Loc = .{
++                .start = offsets.nodeToLoc(tree, type_expr).start,
++                .end = tree.tokenStart(struct_init.ast.lbrace),
++            };
++            if (std.mem.find(u8, offsets.locToSlice(tree.source, loc), "//") != null) return;
++            break :blk .{ type_expr, builder.createTextEditLoc(loc, ".") };
++        }
++        return;
++    };
++
++    const type_annotation = try std.fmt.allocPrint(builder.arena, ": {s}", .{offsets.nodeToSlice(tree, type_node)});
++
++    try builder.actions.append(builder.arena, .{
++        .title = "simplify variable initialization",
++        .kind = .refactor,
++        .isPreferred = false,
++        .edit = try builder.createWorkspaceEdit(&.{
++            builder.createTextEditPos(offsets.tokenToLoc(tree, name_token).end, type_annotation),
++            init_edit,
++        }),
++    });
++}
++
+ fn generateStringLiteralCodeActions(
+     builder: *Builder,
+     token: Ast.TokenIndex,
+diff --git a/tests/lsp_features/code_actions.zig b/tests/lsp_features/code_actions.zig
+index c4beaac..69fd8a5 100644
+--- a/tests/lsp_features/code_actions.zig
++++ b/tests/lsp_features/code_actions.zig
+@@ -976,6 +976,141 @@ test "convert string literal to multiline - invalid" {
+     );
+ }
+ 
++test "simplify variable initialization - @as" {
++    try testSimplifyVariableInit(
++        \\const foo = <cursor>@as(u32, 5);
++    ,
++        \\const foo: u32 = 5;
++    );
++    try testSimplifyVariableInit(
++        \\test {
++        \\    var <cursor>foo = @as(?*const [2]u8, null);
++        \\    _ = &foo;
++        \\}
++    ,
++        \\test {
++        \\    var foo: ?*const [2]u8 = null;
++        \\    _ = &foo;
++        \\}
++    );
++    try testSimplifyVariableInit(
++        \\pub const foo align(4) = @as(u32, 5)<cursor>;
++    ,
++        \\pub const foo: u32 align(4) = 5;
++    );
++}
++
++test "simplify variable initialization - struct init" {
++    try testSimplifyVariableInit(
++        \\const S = struct { a: u32 = 0 };
++        \\const foo = <cursor>S{};
++    ,
++        \\const S = struct { a: u32 = 0 };
++        \\const foo: S = .{};
++    );
++    try testSimplifyVariableInit(
++        \\const S = struct { a: u32 };
++        \\const <cursor>foo = S{ .a = 1 };
++    ,
++        \\const S = struct { a: u32 };
++        \\const foo: S = .{ .a = 1 };
++    );
++    try testSimplifyVariableInit(
++        \\fn Generic(comptime T: type) type {
++        \\    return struct { a: T, b: T };
++        \\}
++        \\const foo = Generic(u8){
++        \\    .a = <cursor>1,
++        \\    .b = 2,
++        \\};
++    ,
++        \\fn Generic(comptime T: type) type {
++        \\    return struct { a: T, b: T };
++        \\}
++        \\const foo: Generic(u8) = .{
++        \\    .a = 1,
++        \\    .b = 2,
++        \\};
++    );
++}
++
++test "simplify variable initialization - innermost declaration" {
++    try testSimplifyVariableInit(
++        \\const foo = blk: {
++        \\    const bar = @as(u8, <cursor>1);
++        \\    break :blk bar;
++        \\};
++    ,
++        \\const foo = blk: {
++        \\    const bar: u8 = 1;
++        \\    break :blk bar;
++        \\};
++    );
++}
++
++test "simplify variable initialization - no action" {
++    // already has a type annotation
++    try testSimplifyVariableInit(
++        \\const foo: u32 = <cursor>@as(u32, 5);
++    ,
++        \\const foo: u32 = @as(u32, 5);
++    );
++    // anonymous struct literal
++    try testSimplifyVariableInit(
++        \\const foo = <cursor>.{ .a = 1 };
++    ,
++        \\const foo = .{ .a = 1 };
++    );
++    // other builtins
++    try testSimplifyVariableInit(
++        \\const foo = <cursor>@intCast(5);
++    ,
++        \\const foo = @intCast(5);
++    );
++    // `@as` is not the whole initialization expression
++    try testSimplifyVariableInit(
++        \\const foo = <cursor>@as(u32, 5) + 1;
++    ,
++        \\const foo = @as(u32, 5) + 1;
++    );
++    // array initialization, `[_]T` is not a valid type annotation
++    try testSimplifyVariableInit(
++        \\const foo = <cursor>[_]u8{ 1, 2 };
++    ,
++        \\const foo = [_]u8{ 1, 2 };
++    );
++    try testSimplifyVariableInit(
++        \\const foo = <cursor>[_]u8{};
++    ,
++        \\const foo = [_]u8{};
++    );
++    // comments would be removed
++    try testSimplifyVariableInit(
++        \\const foo = <cursor>@as(u32, // comment
++        \\    5);
++    ,
++        \\const foo = @as(u32, // comment
++        \\    5);
++    );
++    try testSimplifyVariableInit(
++        \\const S = struct {};
++        \\const foo = <cursor>S // comment
++        \\{};
++    ,
++        \\const S = struct {};
++        \\const foo = S // comment
++        \\{};
++    );
++    // cursor outside of a variable declaration
++    try testSimplifyVariableInit(
++        \\const foo = @as(u32, 5);
++        \\<cursor>
++    ,
++        \\const foo = @as(u32, 5);
++        \\
++    );
++}
++
+ fn testAutofix(before: []const u8, after: []const u8) !void {
+     try testDiagnostic(before, after, .{ .filter_kind = .@"source.fixAll", .want_zir = true }); // diagnostics come from std.zig.AstGen
+     try testDiagnostic(before, after, .{ .filter_kind = .@"source.fixAll", .want_zir = false }); // diagnostics come from calling zig ast-check
+@@ -1018,6 +1153,10 @@ fn testConvertString(before: []const u8, after: []const u8) !void {
+     try testDiagnostic(before, after, .{ .filter_kind = .refactor });
+ }
+ 
++fn testSimplifyVariableInit(before: []const u8, after: []const u8) !void {
++    try testDiagnostic(before, after, .{ .filter_kind = .refactor, .filter_title = "simplify variable initialization" });
++}
++
+ fn testDiagnostic(
+     before: []const u8,
+     after: []const u8,
+-- 
+2.43.0
+
