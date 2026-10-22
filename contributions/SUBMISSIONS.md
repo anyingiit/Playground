@@ -14,10 +14,10 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 007 | [MakazhanAlpamys/Soup#1221](https://github.com/MakazhanAlpamys/Soup/issues/1221) | [MakazhanAlpamys/Soup#1261](https://github.com/MakazhanAlpamys/Soup/pull/1261) | ✅ 已合并 |
 | 008 | [mloda-ai/mloda-registry#742](https://github.com/mloda-ai/mloda-registry/issues/742) | [mloda-ai/mloda-registry#752](https://github.com/mloda-ai/mloda-registry/pull/752) | ✅ 已合并 |
 | 009 | [getsotto/sotto#393](https://github.com/getsotto/sotto/issues/393) | [getsotto/sotto#400](https://github.com/getsotto/sotto/pull/400) | ✅ 已合并（2026-09-25） |
-| 010 | [go-git/go-git#1518](https://github.com/go-git/go-git/issues/1518) | [go-git/go-git#2423](https://github.com/go-git/go-git/pull/2423) | 维护者 pjbgf（09-30）请 rebase 解决冲突；至 10-22 仍未 force-push。`followup-0001-rebased-onto-main-a9ce94f.patch` 基于 09-30 的 main，提交前先确认还能打上 |
+| 010 | [go-git/go-git#1518](https://github.com/go-git/go-git/issues/1518) | [go-git/go-git#2423](https://github.com/go-git/go-git/pull/2423) | 10-22：已 rebase 到最新 main，冲突仅 TestPushPruneForceRefSpec（移入 remote_push_test.go），函数集与测试集与 main 一致、RemoteSuite 通过；已 force-push（95c6b804）并回复 pjbgf，等复审 |
 | 011 | [thebanri/limoni#59](https://github.com/thebanri/limoni/issues/59) | — | 放弃：竞争 PR #64 于 2026-09-25 开出 |
 | 012 | [openeverest/provider-cassandra#23](https://github.com/openeverest/provider-cassandra/issues/23) | [openeverest/provider-cassandra#30](https://github.com/openeverest/provider-cassandra/pull/30) | 已关闭（10-07，spron-in）：改用 core 的 schedulingPolicy.affinity 统一契约，被 #36 取代；维护者肯定了分析。无需操作 |
-| 013 | [fadyehabamer/qr-zero#4](https://github.com/fadyehabamer/qr-zero/issues/4) | [fadyehabamer/qr-zero#13](https://github.com/fadyehabamer/qr-zero/pull/13) | 维护者 CHANGES_REQUESTED → 已推送修复 1f62578 并回复（09-29）；至 10-22 无新动态，可考虑发 README 里起草的提醒评论 |
+| 013 | [fadyehabamer/qr-zero#4](https://github.com/fadyehabamer/qr-zero/issues/4) | [fadyehabamer/qr-zero#13](https://github.com/fadyehabamer/qr-zero/pull/13) | 维护者 CHANGES_REQUESTED → 已修复 1f62578（09-29）；10-22 已发提醒评论，等复审 |
 | 014 | [Mozart2234/herdr-agent-pulse#1](https://github.com/Mozart2234/herdr-agent-pulse/issues/1) | [Mozart2234/herdr-agent-pulse#12](https://github.com/Mozart2234/herdr-agent-pulse/pull/12) | 暂无 review/评论（10-22 复查无变化） |
 | 015 | [ezedike-evan/corridor-in-a-box#239](https://github.com/ezedike-evan/corridor-in-a-box/issues/239) | [ezedike-evan/corridor-in-a-box#313](https://github.com/ezedike-evan/corridor-in-a-box/pull/313) | ✅ 已合并 |
 | 016 | [cubrid-lab/pycubrid#371](https://github.com/cubrid-lab/pycubrid/issues/371) | — | 放弃（2026-09-29）：上游 API 清单（#438 决策）要求 fetchmany(0/-1) 保留返回 []，补丁与之冲突，且异步游标失效语义已变；在最新 main 上 9 个测试失败，返工代价大 |
@@ -36,7 +36,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 030 | [librasn/rasn#55](https://github.com/librasn/rasn/issues/55) | [librasn/rasn#573](https://github.com/librasn/rasn/pull/573) | ✅ 已合并（2026-09-25） |
 | 031 | [MudBlazor/MudBlazor#3461](https://github.com/MudBlazor/MudBlazor/issues/3461) | — | 跳过：要求 before/after 录像 |
 | 032 | [celler-cache/celler#75](https://github.com/celler-cache/celler/issues/75) | [celler-cache/celler#96](https://github.com/celler-cache/celler/pull/96) | 已关闭（10-01，blitz）：被 #97 取代（"approach is very convoluted"，直接删除 ConfigWriteGuard）；无需操作 |
-| 033 | [brig-sh/brig#176](https://github.com/brig-sh/brig/issues/176) | [brig-sh/brig#326](https://github.com/brig-sh/brig/pull/326) | draft；仍无 review、CI 未运行（首次贡献者待批准）；CI 绿后 `gh pr ready 326 -R brig-sh/brig`（10-22 复查） |
+| 033 | [brig-sh/brig#176](https://github.com/brig-sh/brig/issues/176) | [brig-sh/brig#326](https://github.com/brig-sh/brig/pull/326) | draft；CI/DCO 仍是 action_required（首次贡献者待维护者批准），按 CONTRIBUTING 绿了才能标 ready（10-22） |
 | 034 | [pmd/pmd#7100](https://github.com/pmd/pmd/issues/7100) | [pmd/pmd#7110](https://github.com/pmd/pmd/pull/7110) | ✅ 已合并 |
 | 035 | [csaf-rs/csaf#736](https://github.com/csaf-rs/csaf/issues/736) | [csaf-rs/csaf#1122](https://github.com/csaf-rs/csaf/pull/1122) | ✅ 已合并 |
 | 036 | [complytime/complyctl#881](https://github.com/complytime/complyctl/issues/881) | [complytime/complyctl#883](https://github.com/complytime/complyctl/pull/883) | ✅ 已合并（2026-09-29，marcusburghardt；yvonnedevlinrh 也已 approve） |
@@ -58,7 +58,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | # | Issue | PR | 备注 |
 |---|---|---|---|
 | 046 | [symfony/ai#2430](https://github.com/symfony/ai/issues/2430) | [symfony/ai#2634](https://github.com/symfony/ai/pull/2634) | ✅ 已合并（2026-10-06，wachterjohannes） |
-| 049 | [microsoft/litebox#1222](https://github.com/microsoft/litebox/issues/1222) | [microsoft/litebox#1481](https://github.com/microsoft/litebox/pull/1481) | **待 owner 签 CLA**：在 PR 下回复 `@microsoft-github-policy-service agree`；尚无 review |
+| 049 | [microsoft/litebox#1222](https://github.com/microsoft/litebox/issues/1222) | [microsoft/litebox#1481](https://github.com/microsoft/litebox/pull/1481) | 10-22 已代签 CLA。但上游 #1594（10-15，Sangho Lee）已在 main 落地同一修复，本 PR 冲突且多余，建议关闭（关闭操作被自动模式拦下，待 owner 确认） |
 | 052 | [eugenioenko/ttt#277](https://github.com/eugenioenko/ttt/issues/277) | [eugenioenko/ttt#698](https://github.com/eugenioenko/ttt/pull/698) | ✅ 已合并（2026-10-02） |
 | 054 | [kubecolor/kubecolor#171](https://github.com/kubecolor/kubecolor/issues/171) | [kubecolor/kubecolor#370](https://github.com/kubecolor/kubecolor/pull/370) | ✅ 已合并（2026-10-17，applejag） |
 | 056 | [stackrox/kube-linter#1241](https://github.com/stackrox/kube-linter/issues/1241) | [stackrox/kube-linter#1273](https://github.com/stackrox/kube-linter/pull/1273) | 待 review；CodeRabbit 无意见；只有 codecov/project 失败（非必需） |
@@ -70,7 +70,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 065 | [gosnmp/gosnmp#591](https://github.com/gosnmp/gosnmp/issues/591) | [gosnmp/gosnmp#624](https://github.com/gosnmp/gosnmp/pull/624) | ✅ 已合并（2026-10-21，SuperQ） |
 | 066 | [suzuki-shunsuke/pinact#1448](https://github.com/suzuki-shunsuke/pinact/issues/1448) | [suzuki-shunsuke/pinact#1745](https://github.com/suzuki-shunsuke/pinact/pull/1745) | 待 review；CI 通过 |
 | 067 | [embedded-graphics/embedded-graphics#821](https://github.com/embedded-graphics/embedded-graphics/issues/821) | [embedded-graphics/embedded-graphics#830](https://github.com/embedded-graphics/embedded-graphics/pull/830) | 待 review；CI 未运行 |
-| 068 | [rust-embedded/heapless#492](https://github.com/rust-embedded/heapless/issues/492) | [rust-embedded/heapless#692](https://github.com/rust-embedded/heapless/pull/692) | **有合并冲突**：zeenix 已认可改动并开了 auto-merge，但分支冲突需 rebase；sgued 批评"AI 隔墙丢 PR"、描述冗长（10-06）。rebase 后 force-push 即可合并 |
+| 068 | [rust-embedded/heapless#492](https://github.com/rust-embedded/heapless/issues/492) | [rust-embedded/heapless#692](https://github.com/rust-embedded/heapless/pull/692) | 10-22 已 rebase 到最新 main（无冲突，linear_map 测试 17/17、fmt 通过）、force-push（2961d8e3），PR 描述改为简短版本；现在 MERGEABLE，auto-merge 已失效需维护者重开 |
 | 069 | [jam1garner/binrw#370](https://github.com/jam1garner/binrw/issues/370) | [jam1garner/binrw#372](https://github.com/jam1garner/binrw/pull/372) | 待 review；CI 未运行 |
 | 071 | [go-jet/jet#609](https://github.com/go-jet/jet/issues/609) | [go-jet/jet#621](https://github.com/go-jet/jet/pull/621) | ✅ 已合并（2026-10-05） |
 | 072 | [vega/altair#3619](https://github.com/vega/altair/issues/3619) | [vega/altair#4162](https://github.com/vega/altair/pull/4162) | 待 review；CI 全绿（16/16） |
