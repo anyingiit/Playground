@@ -1,0 +1,266 @@
+From d7c3ff1d3abebbcb3098276d680f551867a7dc1b Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:52:13 +0000
+Subject: [PATCH] feat(pg): add a configurable limit to find_slow_queries
+
+findSlowQueries always returned the top 20 statements. Add
+findSlowQueries(int limit), clamped to 1..100 with 20 as the default,
+an optional limit argument on the find_slow_queries tool and a --limit
+option on jvm-mcp pg --action slow-queries.
+
+Fixes #175
+---
+ README.md                                     |  9 +++++-
+ .../jvmmcp/core/pg/PostgresSchemaReader.java  | 22 +++++++++++--
+ .../PostgresSchemaReaderValidationTest.java   |  8 +++++
+ .../src/main/java/dev/jvmmcp/PgCommand.java   |  6 +++-
+ .../server/tool/PostgresToolHandler.java      | 10 ++++--
+ .../test/java/dev/jvmmcp/PgCommandTest.java   | 15 ++++++++-
+ .../server/tool/PostgresToolHandlerTest.java  | 31 +++++++++++++++++--
+ 7 files changed, 91 insertions(+), 10 deletions(-)
+
+diff --git a/README.md b/README.md
+index 0c78881..afabfc5 100644
+--- a/README.md
++++ b/README.md
+@@ -285,7 +285,7 @@ The server exposes 14 diagnostic tools to AI assistants:
+ | `list_hikari_pools` | HikariCP pool metrics, active/idle connections, and leak warnings. | `pid` (number) |
+ | `inspect_pg_schema` | PostgreSQL table schema, columns, row estimates, and foreign keys. | `url` (string), `schema` (string, optional) |
+ | `find_missing_indexes` | High sequential scan tables with low index usage via `pg_stat_user_tables`. | `url` (string), `schema` (string, optional), `minTableSizeMb` (integer, optional) |
+-| `find_slow_queries` | Slow query execution profiles from `pg_stat_statements`. | `url` (string) |
++| `find_slow_queries` | Slow query execution profiles from `pg_stat_statements`. | `url` (string), `limit` (integer, optional) |
+ | `get_actuator_health` | Recursively parsed Spring Boot `/actuator/health` component status. | `url` (string) |
+ | `get_actuator_metrics` | Batch or individual diagnostic metric values from `/actuator/metrics`. | `url` (string), `metrics` (string, optional) |
+ | `get_actuator_startup` | Startup timeline and slowest beans from `/actuator/startup`. | `url` (string) |
+@@ -300,6 +300,13 @@ jvm-mcp pg --url "jdbc:postgresql://localhost:5432/mydb" --action missing-indexe
+ 
+ Java callers can use `findMissingIndexes(schemaName, minTableSizeBytes)` for a threshold in bytes.
+ 
++Slow-query analysis returns the 20 statements with the highest mean execution time by default.
++Set `limit` (or `--limit` on the CLI) to return between 1 and 100 of them:
++
++```bash
++jvm-mcp pg --url "jdbc:postgresql://localhost:5432/mydb" --action slow-queries --limit 5
++```
++
+ ---
+ 
+ ## Architectural Principles
+diff --git a/core/src/main/java/dev/jvmmcp/core/pg/PostgresSchemaReader.java b/core/src/main/java/dev/jvmmcp/core/pg/PostgresSchemaReader.java
+index ab55e8d..fbbed0d 100644
+--- a/core/src/main/java/dev/jvmmcp/core/pg/PostgresSchemaReader.java
++++ b/core/src/main/java/dev/jvmmcp/core/pg/PostgresSchemaReader.java
+@@ -20,6 +20,8 @@ import java.util.Map;
+ public class PostgresSchemaReader implements AutoCloseable {
+ 
+     public static final long DEFAULT_MIN_TABLE_SIZE_BYTES = 1024L * 1024L;
++    public static final int DEFAULT_SLOW_QUERY_LIMIT = 20;
++    public static final int MAX_SLOW_QUERY_LIMIT = 100;
+ 
+     private static final int MAX_CACHED_POOLS = 5;
+     private static final int QUERY_TIMEOUT_SECONDS = 10;
+@@ -381,6 +383,15 @@ public class PostgresSchemaReader implements AutoCloseable {
+     }
+ 
+     public SlowQueryAnalysis findSlowQueries() throws SQLException {
++        return findSlowQueries(DEFAULT_SLOW_QUERY_LIMIT);
++    }
++
++    /**
++     * Finds the slowest statements by mean execution time, returning at most {@code limit}
++     * of them. The limit is clamped to between 1 and {@link #MAX_SLOW_QUERY_LIMIT}.
++     */
++    public SlowQueryAnalysis findSlowQueries(int limit) throws SQLException {
++        int effectiveLimit = slowQueryLimit(limit);
+         boolean hasExtension = false;
+         try (Connection conn = getConnection()) {
+             try (Statement stmt = conn.createStatement()) {
+@@ -420,12 +431,13 @@ public class PostgresSchemaReader implements AutoCloseable {
+                     dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+                 ORDER BY
+                     compatible_mean_time DESC
+-                LIMIT 20
++                LIMIT ?
+                 """;
+             List<SlowQueryInfo> slowQueries = new ArrayList<>();
+-            try (Statement stmt = conn.createStatement()) {
++            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                 stmt.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+-                try (ResultSet rs = stmt.executeQuery(sql)) {
++                stmt.setInt(1, effectiveLimit);
++                try (ResultSet rs = stmt.executeQuery()) {
+                     while (rs.next()) {
+                         String rawQuery = rs.getString("query");
+                         String sanitizedQuery = sanitizeQuery(rawQuery);
+@@ -445,6 +457,10 @@ public class PostgresSchemaReader implements AutoCloseable {
+         }
+     }
+ 
++    static int slowQueryLimit(int limit) {
++        return Math.clamp(limit, 1, MAX_SLOW_QUERY_LIMIT);
++    }
++
+     static String sanitizeQuery(String query) {
+         if (query == null) return null;
+         // Redact literals in password statements, then every credential pattern the other
+diff --git a/core/src/test/java/dev/jvmmcp/core/pg/PostgresSchemaReaderValidationTest.java b/core/src/test/java/dev/jvmmcp/core/pg/PostgresSchemaReaderValidationTest.java
+index 1cdbd49..a4219c2 100644
+--- a/core/src/test/java/dev/jvmmcp/core/pg/PostgresSchemaReaderValidationTest.java
++++ b/core/src/test/java/dev/jvmmcp/core/pg/PostgresSchemaReaderValidationTest.java
+@@ -3,6 +3,7 @@ package dev.jvmmcp.core.pg;
+ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.CsvSource;
+ import org.junit.jupiter.params.provider.ValueSource;
+ 
+ import static org.assertj.core.api.Assertions.assertThatCode;
+@@ -131,4 +132,11 @@ class PostgresSchemaReaderValidationTest {
+         org.assertj.core.api.Assertions.assertThat(PostgresSchemaReader.sanitizeQuery(plain)).isEqualTo(plain);
+         org.assertj.core.api.Assertions.assertThat(PostgresSchemaReader.sanitizeQuery(null)).isNull();
+     }
++
++    @ParameterizedTest
++    @CsvSource({"5, 5", "20, 20", "100, 100", "101, 100", "0, 1", "-3, 1"})
++    @DisplayName("Slow query limit is clamped to between 1 and 100")
++    void slowQueryLimitIsClamped(int requested, int expected) {
++        org.assertj.core.api.Assertions.assertThat(PostgresSchemaReader.slowQueryLimit(requested)).isEqualTo(expected);
++    }
+ }
+diff --git a/mcp-server/src/main/java/dev/jvmmcp/PgCommand.java b/mcp-server/src/main/java/dev/jvmmcp/PgCommand.java
+index fa0a7dc..d0cb1f7 100644
+--- a/mcp-server/src/main/java/dev/jvmmcp/PgCommand.java
++++ b/mcp-server/src/main/java/dev/jvmmcp/PgCommand.java
+@@ -62,6 +62,10 @@ public class PgCommand implements Callable<Integer> {
+         description = "Minimum table size in MiB for missing-indexes (default: 1, 0 disables the size filter)")
+     private long minTableSizeMb;
+ 
++    @Option(names = {"--limit"}, defaultValue = "20",
++        description = "Maximum number of slow queries to return for slow-queries (default: 20, max: 100)")
++    private int limit;
++
+     @Override
+     public Integer call() {
+         String effectiveUser;
+@@ -100,7 +104,7 @@ public class PgCommand implements Callable<Integer> {
+                     System.out.println(SimpleJson.toJson(analysis));
+                 }
+                 case "slow-queries" -> {
+-                    SlowQueryAnalysis analysis = reader.findSlowQueries();
++                    SlowQueryAnalysis analysis = reader.findSlowQueries(limit);
+                     System.out.println(SimpleJson.toJson(analysis));
+                 }
+                 default -> {
+diff --git a/mcp-server/src/main/java/dev/jvmmcp/server/tool/PostgresToolHandler.java b/mcp-server/src/main/java/dev/jvmmcp/server/tool/PostgresToolHandler.java
+index 5e4ea39..41dd14f 100644
+--- a/mcp-server/src/main/java/dev/jvmmcp/server/tool/PostgresToolHandler.java
++++ b/mcp-server/src/main/java/dev/jvmmcp/server/tool/PostgresToolHandler.java
+@@ -75,7 +75,11 @@ public class PostgresToolHandler implements ToolHandler {
+                 "inputSchema", Map.of(
+                     "type", "object",
+                     "properties", Map.of(
+-                        "url", Map.of("type", "string", "description", "JDBC URL (e.g. jdbc:postgresql://localhost:5432/db)")
++                        "url", Map.of("type", "string", "description", "JDBC URL (e.g. jdbc:postgresql://localhost:5432/db)"),
++                        "limit", Map.of("type", "integer", "minimum", 1,
++                            "maximum", PostgresSchemaReader.MAX_SLOW_QUERY_LIMIT,
++                            "default", PostgresSchemaReader.DEFAULT_SLOW_QUERY_LIMIT,
++                            "description", "Maximum number of slow queries to return (default: 20, max: 100)")
+                     ),
+                     "required", List.of("url")
+                 )
+@@ -117,7 +121,9 @@ public class PostgresToolHandler implements ToolHandler {
+                 }
+                 content.add(Map.of("type", "text", "text", SimpleJson.toJson(reader.findMissingIndexes(schema, minTableSizeBytes))));
+             } else if ("find_slow_queries".equals(toolName)) {
+-                content.add(Map.of("type", "text", "text", SimpleJson.toJson(reader.findSlowQueries())));
++                int limit = ToolArgs.getIntArg(args, "limit", PostgresSchemaReader.DEFAULT_SLOW_QUERY_LIMIT,
++                    1, PostgresSchemaReader.MAX_SLOW_QUERY_LIMIT);
++                content.add(Map.of("type", "text", "text", SimpleJson.toJson(reader.findSlowQueries(limit))));
+             } else {
+                 throw new IllegalArgumentException("Unknown postgres tool: " + toolName);
+             }
+diff --git a/mcp-server/src/test/java/dev/jvmmcp/PgCommandTest.java b/mcp-server/src/test/java/dev/jvmmcp/PgCommandTest.java
+index 85e3fd4..e9ad72d 100644
+--- a/mcp-server/src/test/java/dev/jvmmcp/PgCommandTest.java
++++ b/mcp-server/src/test/java/dev/jvmmcp/PgCommandTest.java
+@@ -66,7 +66,20 @@ class PgCommandTest {
+             );
+ 
+             assertThat(exitCode).isZero();
+-            verify(readers.constructed().getFirst()).findSlowQueries();
++            verify(readers.constructed().getFirst()).findSlowQueries(20);
++        }
++    }
++
++    @Test
++    void passesLimitToSlowQueries() throws Exception {
++        try (var readers = mockConstruction(PostgresSchemaReader.class)) {
++            int exitCode = new CommandLine(new JvmMcp()).execute(
++                "pg", "--url", "jdbc:postgresql://localhost:5432/db",
++                "--action", "slow-queries", "--limit", "5"
++            );
++
++            assertThat(exitCode).isZero();
++            verify(readers.constructed().getFirst()).findSlowQueries(5);
+         }
+     }
+ 
+diff --git a/mcp-server/src/test/java/dev/jvmmcp/server/tool/PostgresToolHandlerTest.java b/mcp-server/src/test/java/dev/jvmmcp/server/tool/PostgresToolHandlerTest.java
+index d3c1454..558b38c 100644
+--- a/mcp-server/src/test/java/dev/jvmmcp/server/tool/PostgresToolHandlerTest.java
++++ b/mcp-server/src/test/java/dev/jvmmcp/server/tool/PostgresToolHandlerTest.java
+@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
+ import org.junit.jupiter.api.Test;
+ import org.junit.jupiter.api.extension.ExtendWith;
+ import org.junit.jupiter.params.ParameterizedTest;
++import org.junit.jupiter.params.provider.CsvSource;
+ import org.junit.jupiter.params.provider.MethodSource;
+ import org.mockito.Mock;
+ import org.mockito.junit.jupiter.MockitoExtension;
+@@ -178,7 +179,7 @@ class PostgresToolHandlerTest {
+     @Test
+     @DisplayName("find_slow_queries executes properly")
+     void testFindSlowQueries() throws Exception {
+-        when(mockReader.findSlowQueries()).thenReturn(new PostgresModels.SlowQueryAnalysis(true, List.of(
++        when(mockReader.findSlowQueries(20)).thenReturn(new PostgresModels.SlowQueryAnalysis(true, List.of(
+             new PostgresModels.SlowQueryInfo("SELECT * FROM big_table", 10L, 500.0, 50.0, 1000L)
+         )));
+ 
+@@ -189,7 +190,33 @@ class PostgresToolHandlerTest {
+         @SuppressWarnings("unchecked")
+         List<Map<String, Object>> content = (List<Map<String, Object>>) result.get("content");
+         assertThat(content.get(0).get("text").toString()).contains("SELECT * FROM big_table");
+-        verify(mockReader).findSlowQueries();
++        verify(mockReader).findSlowQueries(20);
++    }
++
++    @ParameterizedTest
++    @CsvSource({"5, 5", "100, 100", "500, 100", "0, 1"})
++    @DisplayName("find_slow_queries passes the limit argument, clamped to between 1 and 100")
++    void testFindSlowQueriesLimit(int requested, int expected) throws Exception {
++        when(mockReader.findSlowQueries(expected)).thenReturn(new PostgresModels.SlowQueryAnalysis(true, List.of()));
++
++        PostgresToolHandler handler = new PostgresToolHandler((url, user, pass) -> mockReader);
++        handler.execute("find_slow_queries", Map.of("url", "jdbc:postgresql://localhost:5432/mydb", "limit", requested));
++
++        verify(mockReader).findSlowQueries(expected);
++    }
++
++    @Test
++    @SuppressWarnings("unchecked")
++    void slowQueryLimitIsAnOptionalBoundedIntegerInToolSchema() {
++        PostgresToolHandler handler = new PostgresToolHandler((url, user, pass) -> mockReader);
++        Map<String, Object> definition = handler.toolDefinitions().stream()
++            .filter(tool -> "find_slow_queries".equals(tool.get("name"))).findFirst().orElseThrow();
++        Map<String, Object> schema = (Map<String, Object>) definition.get("inputSchema");
++        Map<String, Object> limit = (Map<String, Object>) ((Map<String, Object>) schema.get("properties")).get("limit");
++
++        assertThat(limit).containsEntry("type", "integer")
++            .containsEntry("minimum", 1).containsEntry("maximum", 100).containsEntry("default", 20);
++        assertThat((List<String>) schema.get("required")).containsExactly("url");
+     }
+ 
+     @Test
+-- 
+2.43.0
+
