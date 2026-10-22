@@ -1,0 +1,1 @@
+Document every check and CLI flag in the README
