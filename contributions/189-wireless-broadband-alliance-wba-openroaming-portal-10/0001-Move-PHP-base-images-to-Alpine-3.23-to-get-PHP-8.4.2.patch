@@ -1,0 +1,78 @@
+From 186b927fcff07ba176425228a4813ef848edc076 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 03:27:56 +0800
+Subject: [PATCH] Move PHP base images to Alpine 3.23 to get PHP 8.4.27
+
+The php:8.4-fpm-alpine3.21 and php:8.4-alpine3.21 tags stopped being
+updated in November 2025, when the official PHP images dropped Alpine
+3.21, so rebuilding the portal still gives PHP 8.4.15. That version is
+affected by CVE-2026-109618 and CVE-2026-109619 (PHP2Shell), fixed in
+PHP 8.4.27.
+
+The alpine3.23 variants are still maintained and currently ship PHP
+8.4.27. Alpine 3.24 is not used because gpgme 2.x there no longer
+provides the trust-list API that the pinned gnupg-1.5.0 PECL extension
+needs, so the extension fails to compile.
+---
+ Dockerfile      | 4 ++--
+ DockerfileDev   | 4 ++--
+ DockerfileTests | 2 +-
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/Dockerfile b/Dockerfile
+index 940dbb648..beedccec3 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,7 +1,7 @@
+ # =========================
+ # Stage 1: Build / Composer stage
+ # =========================
+-FROM php:8.4-fpm-alpine3.21 AS vendor
++FROM php:8.4-fpm-alpine3.23 AS vendor
+ ENV COMPOSER_ALLOW_SUPERUSER=1
+ WORKDIR /app
+ 
+@@ -54,7 +54,7 @@ RUN echo "memory_limit=512M" > /usr/local/etc/php/conf.d/memory.ini \
+ # =========================
+ # Stage 2: Final runtime image
+ # =========================
+-FROM php:8.4-fpm-alpine3.21 AS runtime
++FROM php:8.4-fpm-alpine3.23 AS runtime
+ ENV TZ=UTC
+ WORKDIR /var/www/openroaming
+ ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+diff --git a/DockerfileDev b/DockerfileDev
+index 6a553ff88..5c20a81fc 100644
+--- a/DockerfileDev
++++ b/DockerfileDev
+@@ -1,7 +1,7 @@
+ # =========================
+ # Stage 1: Build / Composer stage
+ # =========================
+-FROM php:8.4-fpm-alpine3.21 AS vendor
++FROM php:8.4-fpm-alpine3.23 AS vendor
+ ENV COMPOSER_ALLOW_SUPERUSER=1
+ WORKDIR /app
+ 
+@@ -54,7 +54,7 @@ RUN echo "memory_limit=512M" > /usr/local/etc/php/conf.d/memory.ini \
+ # =========================
+ # Stage 2: Final runtime image
+ # =========================
+-FROM php:8.4-fpm-alpine3.21 AS runtime
++FROM php:8.4-fpm-alpine3.23 AS runtime
+ ENV TZ=UTC
+ WORKDIR /var/www/openroaming
+ ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+diff --git a/DockerfileTests b/DockerfileTests
+index 05d6899a7..d92a51753 100644
+--- a/DockerfileTests
++++ b/DockerfileTests
+@@ -1,4 +1,4 @@
+-FROM php:8.4-alpine3.21
++FROM php:8.4-alpine3.23
+ ENV COMPOSER_ALLOW_SUPERUSER=1
+ 
+ COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
+-- 
+2.45.0
+

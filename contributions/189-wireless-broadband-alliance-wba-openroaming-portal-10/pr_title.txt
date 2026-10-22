@@ -1,0 +1,1 @@
+Move PHP base images to Alpine 3.23 to get PHP 8.4.27 (PHP2Shell CVE-2026-109618/109619)
