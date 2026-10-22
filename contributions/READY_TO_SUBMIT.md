@@ -113,3 +113,4 @@
 | 290 | [benbalter/site-inspector#128](https://github.com/benbalter/site-inspector/issues/128) | **已提交** [#134](https://github.com/benbalter/site-inspector/pull/134) |
 | 291 | [benbalter/situation-clock#24](https://github.com/benbalter/situation-clock/issues/24) | 待提交（base `gh-pages`；无需认领；无 DCO/CLA；CSS；复核 PASS） |
 | 292 | [benbalter/avatar-montage#4](https://github.com/benbalter/avatar-montage/issues/4) | 待提交（base `main`；无需认领；无 DCO/CLA；Bash；复核 PASS） |
+| 293 | [higher-kinded-j/higher-kinded-j#1221](https://github.com/higher-kinded-j/higher-kinded-j/issues/1221) | 待提交（base `main`；可选评论认领；无 DCO/CLA；Java 文档；复核 PASS） |

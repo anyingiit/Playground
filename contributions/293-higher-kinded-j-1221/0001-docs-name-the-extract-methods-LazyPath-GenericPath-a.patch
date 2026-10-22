@@ -1,0 +1,57 @@
+From 3ab2a318233b5b84c34690e1c93ddfc11febc775 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:32:43 +0000
+Subject: [PATCH] docs: name the extract methods LazyPath, GenericPath and
+ WithStatePath have
+
+The cheat sheet's Path Types table said LazyPath and GenericPath are
+extracted with run(), which neither type has. LazyPath has get() and
+GenericPath has runKind(). WithStatePath's run(initial) gives a
+StateTuple<S, A>, not (S, A).
+
+Fixes #1221
+---
+ hkj-book/src/cheatsheet.md                 | 6 +++---
+ hkj-book/src/release-history/unreleased.md | 1 +
+ 2 files changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/hkj-book/src/cheatsheet.md b/hkj-book/src/cheatsheet.md
+index 89010e5..ebca51c 100644
+--- a/hkj-book/src/cheatsheet.md
++++ b/hkj-book/src/cheatsheet.md
+@@ -24,9 +24,9 @@
+ | `VResultPath<E, A>` | Virtual threads + typed error | `Path.vresultRight(v)`, `Path.vresultLeft(e)`, `Path.vresultDefer(() -> either)` | `.toEitherPath()` → `EitherPath<E, A>` |
+ | `ReaderPath<R, A>` | Dependency injection | `Path.reader(r)`, `Path.ask()`, `Path.asks(fn)` | `.run(env)` → `A` |
+ | `WriterPath<W, A>` | Logging, audit | `Path.writer(w, m)`, `Path.tell(log, m)` | `.run()` → `Writer<W, A>` |
+-| `WithStatePath<S, A>` | Stateful computation | `Path.state(s)`, `Path.getState()` | `.run(initial)` → `(S, A)` |
++| `WithStatePath<S, A>` | Stateful computation | `Path.state(s)`, `Path.getState()` | `.run(initial)` → `StateTuple<S, A>` |
+ | `TrampolinePath<A>` | Stack-safe recursion | `Path.trampolineDone(v)`, `Path.trampolineDefer(s)` | `.run()` → `A` |
+-| `LazyPath<A>` | Deferred, memoised | `Path.lazyDefer(() -> ...)`, `Path.lazyNow(v)` | `.run()` → `A` |
++| `LazyPath<A>` | Deferred, memoised | `Path.lazyDefer(() -> ...)`, `Path.lazyNow(v)` | `.get()` → `A` |
+ | `CompletableFuturePath<A>` | Async | `Path.future(cf)`, `Path.futureAsync(() -> ...)` | `.run()` → `CompletableFuture<A>` |
+ | `ListPath<A>` | Batch processing with positional zipping | `Path.listPath(list)` | `.run()` → `List<A>` |
+ | `StreamPath<A>` | Lazy sequences | `Path.stream(stream)` | `.run()` → `Stream<A>` |
+@@ -35,7 +35,7 @@
+ | `OptionalPath<A>` | java.util.Optional bridge | `Path.optional(opt)`, `Path.present(v)` | `.run()` → `Optional<A>` |
+ | `FreePath<F, A>` | DSL building | `Path.freePure(v, f)`, `Path.freeLift(fa, f)` | `.foldMap(nat, m)` |
+ | `FreeApPath<F, A>` | Independent-step DSLs, static analysis | `Path.freeApPure(v, f)`, `Path.freeApLift(fa, f)` | `.foldMapKind(nat, applicative)` |
+-| `GenericPath<F, A>` | Custom monads | `Path.generic(kind, monad)` | `.run()` → `Kind<F, A>` |
++| `GenericPath<F, A>` | Custom monads | `Path.generic(kind, monad)` | `.runKind()` → `Kind<F, A>` |
+ 
+ ---
+ 
+diff --git a/hkj-book/src/release-history/unreleased.md b/hkj-book/src/release-history/unreleased.md
+index 8d53825..23d4f5a 100644
+--- a/hkj-book/src/release-history/unreleased.md
++++ b/hkj-book/src/release-history/unreleased.md
+@@ -171,6 +171,7 @@ To try them, depend on `0.5.0-SNAPSHOT` from the snapshots repository, as [Gradl
+ - **The `hkj-optics` and `hkj-mapping` skills use the book's types** ([#1119](https://github.com/higher-kinded-j/higher-kinded-j/pull/1119)). Their examples declared records such as `Employee`, `Order` and `User` in shapes of their own. Each now uses the book's type where one plays the same role, and names the rest for their role, so a skill and the book mean the same thing by a name.
+ - **The annotations' javadoc examples use the book's types, and three are corrected** ([#1120](https://github.com/higher-kinded-j/higher-kinded-j/pull/1120)). Examples such as `@GenerateMapping`'s and `@GenerateFocus`'s declared `User` and `Person` in shapes of their own. `@GenerateFolds` now says a `List` component folds over its elements, `@ViaBuilder`'s spec reads one source type, and `@GenerateSetters` names its parameters as generated.
+ - **The Optics glossary's Prism entry names the methods a `Prism` has** ([#1155](https://github.com/higher-kinded-j/higher-kinded-j/issues/1155)): `getOptional` and `build`, where it named `preview` and `review`. The check that compiles the book's examples passed the entry's example, which called `preview`, because it skipped any error mentioning that word, a rule meant for Java's preview features. It now counts every error. See [Prism](../glossary/optics.md#prism).
++- **The cheat sheet names the methods that extract a `LazyPath`, a `GenericPath` and a `WithStatePath`** ([#1221](https://github.com/higher-kinded-j/higher-kinded-j/issues/1221)). `LazyPath` has `get()` and `GenericPath` has `runKind()`, where the table named a `run()` neither type has. `WithStatePath`'s `run(initial)` gives a `StateTuple<S, A>`. See [Path Types](../cheatsheet.md#path-types).
+ 
+ ---
+ 
+-- 
+2.43.0
+
