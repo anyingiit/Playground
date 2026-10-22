@@ -24,3 +24,4 @@
 | 273 | [dry-rb/dry-schema#468](https://github.com/dry-rb/dry-schema/issues/468)（+#424） | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；与 271/272 同改 CHANGELOG，冲突时保留全部行） |
 | 213 | [PyCQA/pyflakes#548](https://github.com/PyCQA/pyflakes/issues/548) | 待提交（base `main`；无需认领；无 DCO/CLA；复核 PASS；维护者几乎只合自己的 PR，优先级放低） |
 | 275 | [hanami/hanami-minitest#11](https://github.com/hanami/hanami-minitest/issues/11) | 待提交（base `main`；无需认领；无 DCO/CLA；纯文档；复核 PASS） |
+| 247 | [vyncint/termlens#586](https://github.com/vyncint/termlens/issues/586) | 待提交：base `main`；无需认领；无 CLA；DCO 已签（CI 强制）。**禁止 AI 署名**：不加 `--trailer`。与 245 同仓库互不依赖（CHANGELOG 不同位置） |
