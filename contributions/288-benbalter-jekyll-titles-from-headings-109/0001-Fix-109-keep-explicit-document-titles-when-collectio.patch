@@ -1,0 +1,140 @@
+From 06a1e9e80d9c9811ddf1962dbe127760161920a8 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:14:15 +0000
+Subject: [PATCH] Fix #109: keep explicit document titles when collections is
+ true
+
+With `collections: true`, inferred_title? returned true for every
+Jekyll::Document, so a post's explicit `title:` was replaced by its first
+heading (and the heading was stripped with `strip_title`). The README
+says only titles inferred from the filename should be overridden.
+
+Jekyll sets the inferred title with `||=`, so treat a document's title
+as inferred only when it equals the titleized slug of its filename.
+The slug is derived from the filename like Jekyll::Document#populate_title
+does, so a custom `slug:` in the front matter doesn't affect the check.
+---
+ CHANGELOG.md                                  |  7 ++++++
+ lib/jekyll-titles-from-headings/generator.rb  | 23 ++++++++++++++++---
+ .../site/_posts/2016-01-01-post-with-slug.md  |  7 ++++++
+ .../site/_posts/2016-01-01-post-with-title.md |  7 ++++++
+ .../generator_spec.rb                         | 16 +++++++++++++
+ 5 files changed, 57 insertions(+), 3 deletions(-)
+ create mode 100644 spec/fixtures/site/_posts/2016-01-01-post-with-slug.md
+ create mode 100644 spec/fixtures/site/_posts/2016-01-01-post-with-title.md
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 23c5529..a6faa41 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,12 @@
+ # Changelog
+ 
++## Unreleased
++
++### Fixed
++
++- With `collections: true`, keep titles set explicitly in the front matter of
++  posts and collection documents instead of replacing them with the first heading (#109)
++
+ ## 0.5.7
+ 
+ Maintenance release: no runtime behavior changes.
+diff --git a/lib/jekyll-titles-from-headings/generator.rb b/lib/jekyll-titles-from-headings/generator.rb
+index b3daa59..484d169 100644
+--- a/lib/jekyll-titles-from-headings/generator.rb
++++ b/lib/jekyll-titles-from-headings/generator.rb
+@@ -110,10 +110,27 @@ module JekyllTitlesFromHeadings
+       option(COLLECTIONS_KEY) == true
+     end
+ 
+-    # Documents (posts and collection items) have their title inferred from the filename.
+-    # We want to override these titles, because they were not excplicitly set.
++    # Documents (posts and collection items) have their title inferred from the filename,
++    # unless it is set explicitly in the front matter. We want to override only the inferred
++    # titles, so a document's title counts as inferred when it matches its titleized slug.
+     def inferred_title?(document)
+-      document.is_a?(Jekyll::Document)
++      return false unless document.is_a?(Jekyll::Document)
++
++      # Jekyll 4 strips trailing periods from the slug, Jekyll 3 doesn't
++      slug = filename_slug(document)
++      [slug, slug.sub(%r!\.*\z!, "")].any? do |candidate|
++        document.data["title"] == Jekyll::Utils.titleize_slug(candidate)
++      end
++    end
++
++    # The slug Jekyll derives from the filename when inferring the title
++    # (see Jekyll::Document#populate_title). It ignores a `slug` set in the front matter.
++    def filename_slug(document)
++      path = document.relative_path
++      matches = path.match(Jekyll::Document::DATE_FILENAME_MATCHER)
++      slug = matches[2] if matches
++      slug ||= path.match(Jekyll::Document::DATELESS_FILENAME_MATCHER)&.captures&.first
++      slug || document.basename_without_ext
+     end
+ 
+     def strip_title!(document)
+diff --git a/spec/fixtures/site/_posts/2016-01-01-post-with-slug.md b/spec/fixtures/site/_posts/2016-01-01-post-with-slug.md
+new file mode 100644
+index 0000000..6a6123c
+--- /dev/null
++++ b/spec/fixtures/site/_posts/2016-01-01-post-with-slug.md
+@@ -0,0 +1,7 @@
++---
++slug: custom-slug
++---
++
++# Slug heading
++
++Blah blah blah
+diff --git a/spec/fixtures/site/_posts/2016-01-01-post-with-title.md b/spec/fixtures/site/_posts/2016-01-01-post-with-title.md
+new file mode 100644
+index 0000000..7b2e556
+--- /dev/null
++++ b/spec/fixtures/site/_posts/2016-01-01-post-with-title.md
+@@ -0,0 +1,7 @@
++---
++title: Explicit title
++---
++
++# Some heading
++
++Blah blah blah
+diff --git a/spec/jekyll-titles-from-headings/generator_spec.rb b/spec/jekyll-titles-from-headings/generator_spec.rb
+index 70adad5..1d67d4d 100644
+--- a/spec/jekyll-titles-from-headings/generator_spec.rb
++++ b/spec/jekyll-titles-from-headings/generator_spec.rb
+@@ -224,6 +224,16 @@ RSpec.describe JekyllTitlesFromHeadings::Generator do
+       it "works with arbitrary items in collections" do
+         expect(item.data["title"]).to eql("Some item")
+       end
++
++      it "respects a title set explicitly in a document's front matter" do
++        post_with_title = doc_by_path(site, "_posts/2016-01-01-post-with-title.md")
++        expect(post_with_title.data["title"]).to eql("Explicit title")
++      end
++
++      it "overrides the title inferred from the filename of a document with a custom slug" do
++        post_with_slug = doc_by_path(site, "_posts/2016-01-01-post-with-slug.md")
++        expect(post_with_slug.data["title"]).to eql("Slug heading")
++      end
+     end
+ 
+     context "collections + strip_title" do
+@@ -251,6 +261,12 @@ RSpec.describe JekyllTitlesFromHeadings::Generator do
+       it "strips the title from the excerpt of a non-post collection document" do
+         expect(item.data["excerpt"].content.strip).to eql("Blah blah blah")
+       end
++
++      it "doesn't strip the heading of a document with an explicit title" do
++        post_with_title = doc_by_path(site, "_posts/2016-01-01-post-with-title.md")
++        expect(post_with_title.data["title"]).to eql("Explicit title")
++        expect(post_with_title.content).to include("# Some heading")
++      end
+     end
+   end
+ 
+-- 
+2.43.0
+

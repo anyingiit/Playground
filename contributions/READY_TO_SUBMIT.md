@@ -108,3 +108,4 @@
 | 286 | [benbalter/jekyll-remote-theme#109](https://github.com/benbalter/jekyll-remote-theme/issues/109) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby 文档；高星；复核 PASS） |
 | 287 | [benbalter/jekyll-optional-front-matter#67](https://github.com/benbalter/jekyll-optional-front-matter/issues/67) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；高星；复核 PASS） |
 | 436 | [bpmn-io/properties-panel#553](https://github.com/bpmn-io/properties-panel/issues/553) | 待提交（base `main`；无需认领；**需签 bpmn-io CLA**（同 432/434）；CSS + karma 测试；PR 模板标题/清单勿改；可选：附改前/改后截图；复核 PASS） |
+| 288 | [benbalter/jekyll-titles-from-headings#109](https://github.com/benbalter/jekyll-titles-from-headings/issues/109) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；高星；复核 PASS） |

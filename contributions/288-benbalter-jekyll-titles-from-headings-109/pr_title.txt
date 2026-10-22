@@ -1,0 +1,1 @@
+Fix #109: keep explicit document titles when collections is true
