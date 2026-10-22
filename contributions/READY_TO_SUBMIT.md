@@ -99,4 +99,4 @@
 | 431 | [OpenCHAMI/ochami#206](https://github.com/OpenCHAMI/ochami/issues/206) | **已提交** [#217](https://github.com/OpenCHAMI/ochami/pull/217) |
 | 340 | [stevearc/oil.nvim#754](https://github.com/stevearc/oil.nvim/issues/754) | **已提交** [#793](https://github.com/stevearc/oil.nvim/pull/793) |
 | 432 | [bpmn-io/dmn-migrate#60](https://github.com/bpmn-io/dmn-migrate/issues/60) | **已提交** [#63](https://github.com/bpmn-io/dmn-migrate/pull/63)（CLA 待签） |
-| 341 | [nvim-orgmode/orgmode#1171](https://github.com/nvim-orgmode/orgmode/issues/1171) | master | 无需认领；无 DCO、无 CLA；Lua；高星；commit 已带 `AI-assisted: Claude Code`（AGENTS.md 要求）；复核 PASS |
+| 341 | [nvim-orgmode/orgmode#1171](https://github.com/nvim-orgmode/orgmode/issues/1171) | **已提交** [#1201](https://github.com/nvim-orgmode/orgmode/pull/1201) |
