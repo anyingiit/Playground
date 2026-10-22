@@ -109,3 +109,9 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 103 | https://github.com/compiler-explorer/compiler-explorer/pull/9344 |
 
 备注：100 解决了 ChangeLog 冲突后提交（base QA_5_2）；090 已在 issue 下留言链接 PR；094 已在 issue 下认领。其余 088–129 由续接会话处理。
+
+## PHP2Shell 专题（2026-10-22，CVE-2026-109618/109619，编号 187–199）
+
+| # | PR |
+|---|---|
+| 187 | https://github.com/ErugoOSS/Erugo/pull/294 |
