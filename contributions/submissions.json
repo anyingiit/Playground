@@ -50,5 +50,14 @@
  "071": "https://github.com/go-jet/jet/pull/621",
  "072": "https://github.com/vega/altair/pull/4162",
  "074": "https://github.com/zitadel/oidc/pull/994",
- "082": "https://github.com/carthage-software/mago/pull/2417"
+ "082": "https://github.com/carthage-software/mago/pull/2417",
+ "089": "https://github.com/NLog/NLog/pull/6313",
+ "090": "https://github.com/grpc-ecosystem/grpc-gateway/pull/7562",
+ "091": "https://github.com/ipython/ipython/pull/15448",
+ "092": "https://github.com/pyinstaller/pyinstaller/pull/9555",
+ "094": "https://github.com/OpsiMate/OpsiMate/pull/1293",
+ "098": "https://github.com/Adam-Vandervorst/PathMap/pull/167",
+ "100": "https://github.com/phpmyadmin/phpmyadmin/pull/20553",
+ "102": "https://github.com/xtermjs/xterm.js/pull/6253",
+ "103": "https://github.com/compiler-explorer/compiler-explorer/pull/9344"
 }

@@ -93,3 +93,19 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 - 需要 owner 本人做的事（签协议、在 issue 留言、人写描述）→ 列出并引导 owner 操作；不代发评论。
 - commit 作者、Signed-off-by 等公开邮箱一律用 `anyingiit <49945850+anyingiit@users.noreply.github.com>`。
 - DCO 可代签；上游要求 AI trailer 时按上游（`Assisted-by: Claude Code (claude-opus-5-5)`）。
+
+## 第二轮提交（2026-10-22，088–129 线程，前半段）
+
+| # | PR |
+|---|---|
+| 089 | https://github.com/NLog/NLog/pull/6313 |
+| 090 | https://github.com/grpc-ecosystem/grpc-gateway/pull/7562 |
+| 091 | https://github.com/ipython/ipython/pull/15448 |
+| 092 | https://github.com/pyinstaller/pyinstaller/pull/9555 |
+| 094 | https://github.com/OpsiMate/OpsiMate/pull/1293 |
+| 098 | https://github.com/Adam-Vandervorst/PathMap/pull/167 |
+| 100 | https://github.com/phpmyadmin/phpmyadmin/pull/20553 |
+| 102 | https://github.com/xtermjs/xterm.js/pull/6253 |
+| 103 | https://github.com/compiler-explorer/compiler-explorer/pull/9344 |
+
+备注：100 解决了 ChangeLog 冲突后提交（base QA_5_2）；090 已在 issue 下留言链接 PR；094 已在 issue 下认领。其余 088–129 由续接会话处理。
