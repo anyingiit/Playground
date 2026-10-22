@@ -4,7 +4,7 @@
 
 This PR moves the wallet-address resolution in `sdks/python/pmxt/escrow.py` ahead of the `include` check, matching the TypeScript SDK (and Python's own `approve_tx`). Behaviour for valid inputs and the generated request path are unchanged. A new `sdks/python/tests/test_escrow_withdrawals.py` covers the validation order (missing address + empty `include` → `MissingWalletAddress`; resolved address + blank `include` → `ValidationError(field="include")`) and the request path that gets built.
 
-I only changed `withdrawals` here. The matching `deposit_tx` drift is tracked separately in #1892, and I didn't want to pre-empt how that one gets resolved. Address-first is already what TypeScript and the other Python escrow builders do, so this fix should line up with either outcome.
+I only changed `withdrawals` here. The matching `deposit_tx` drift is tracked separately in #1892, and I didn't want to pre-empt how that one gets resolved. Address-first is what TypeScript does here and what Python's `approve_tx` already does, so this fix should line up with either outcome of #1892.
 
 **Motivation / disclosure:** I had some spare AI-assistant quota (Claude Code) and am using it to try to help projects with open good-first-issues. The change was prepared with Claude Code and verified as listed below. If it doesn't fit, isn't up to your bar, or you'd simply rather not take it — please feel free to close it, no hard feelings at all 🙂
 

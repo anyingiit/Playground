@@ -53,3 +53,7 @@ gh pr create --repo lacs-project/sysknife --head anyingiit:fix/history-since-exa
 ```
 
 PR 标题和正文见 `pr_title.txt` / `pr_body.md`（按仓库自带的 PR 模板组织，并包含 motivation/disclosure 段落）。
+
+## 2026-10-22 独立复核：暂不提交
+
+上游 b983aa0（#576）给 ListJobHistory 加了参数白名单，补丁没把 `since` 加进 `crates/sysknife-daemon/src/executor.rs` 的白名单，当前 main 上 `sysknife history --since` 会报 unknown parameter。修复见 scratchpad 的 153-allowlist.diff；需在 7f921cc 上重新生成补丁、重跑验证并更新 PR 正文中的测试数字，再先认领后提交。

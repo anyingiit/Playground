@@ -33,7 +33,7 @@ AI 政策：仓库有 `AGENTS.md`（Laravel Boost 指南）和 `.cursor/`，明�
 
 ## 需要提交者注意
 - 措辞：我用了句中小写 “Herd updated”，issue 原文是 “Herd Updated”；PR 中已说明可改。
-- open PR #351（社交链接改为图标一行）也改 `user-profile.blade.php`，可能有轻微冲突，提交前 rebase 一下。
+- 2026-10-22 复核：#351 已不再 open（当前唯一 open PR 是 #385 vite 升级），无冲突风险。测试数字来自 10-01 的运行，本机无 PHP 未重跑。
 - 不需要 DCO / CLA；无 CHANGELOG；无 PR 模板。commit 作者 anyingiit <49945850+anyingiit@users.noreply.github.com>，无 AI trailer。
 - 仓库 `AGENTS.md` 无披露要求；PR 正文已包含 Claude Code 披露段。
 
