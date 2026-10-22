@@ -1,0 +1,197 @@
+From ac44d92dac76d3a0a08ed5400f6b2385c305eeea Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:12:15 +0000
+Subject: [PATCH] Support `monty -` to read the program from standard input
+
+Like `python -`, a `-` file argument now reads the whole program from
+stdin and runs it as a script (or with `-i`, before the REPL), reporting
+errors against `<stdin>`. Other CLI options still apply.
+
+Closes #1101
+---
+ crates/monty-runtime/README-crate.md |  3 +-
+ crates/monty-runtime/README.md       |  3 +-
+ crates/monty-runtime/src/main.rs     |  4 +-
+ crates/monty-runtime/src/run.rs      | 20 +++++++-
+ crates/monty-runtime/tests/cli.rs    | 72 ++++++++++++++++++++++++++++
+ 5 files changed, 96 insertions(+), 6 deletions(-)
+ create mode 100644 crates/monty-runtime/tests/cli.rs
+
+diff --git a/crates/monty-runtime/README-crate.md b/crates/monty-runtime/README-crate.md
+index d5e4f9c..4e85339 100644
+--- a/crates/monty-runtime/README-crate.md
++++ b/crates/monty-runtime/README-crate.md
+@@ -16,8 +16,9 @@ hello world
+ 
+ - `monty` — start an interactive REPL
+ - `monty file.py` — run a Python file
++- `monty -` — run a program read from standard input (like `python -`)
+ - `monty -c "<code>"` — run a program passed as a string (like `python -c`)
+-- `-i` / `--interactive` — run the file or `-c` program in a REPL session
++- `-i` / `--interactive` — run the file, `-c` or stdin program in a REPL session
+   (like `python -i`)
+ - `-t` / `--type-check` — type check (powered by [ty](https://docs.astral.sh/ty/))
+   before executing
+diff --git a/crates/monty-runtime/README.md b/crates/monty-runtime/README.md
+index 198ded9..e015572 100644
+--- a/crates/monty-runtime/README.md
++++ b/crates/monty-runtime/README.md
+@@ -29,8 +29,9 @@ monty --help
+ 
+ - `monty` — start an interactive REPL
+ - `monty file.py` — run a Python file
++- `monty -` — run a program read from standard input (like `python -`)
+ - `monty -c "<code>"` — run a program passed as a string (like `python -c`)
+-- `-i` / `--interactive` — run the file or `-c` program in a REPL session
++- `-i` / `--interactive` — run the file, `-c` or stdin program in a REPL session
+   (like `python -i`)
+ - `-t` / `--type-check` — type check (powered by [ty](https://docs.astral.sh/ty/))
+   before executing
+diff --git a/crates/monty-runtime/src/main.rs b/crates/monty-runtime/src/main.rs
+index 1c36bb5..7beaa2e 100644
+--- a/crates/monty-runtime/src/main.rs
++++ b/crates/monty-runtime/src/main.rs
+@@ -21,7 +21,7 @@ static ALLOC: monty_alloc::LimitedAllocator = monty_alloc::LimitedAllocator;
+ /// Monty — a secure Python sandbox written in Rust.
+ ///
+ /// Run `monty` to start an empty interactive REPL. Run a python file with `monty <file>`.
+-/// Execute a command with `monty -c <cmd>`.
++/// Execute a command with `monty -c <cmd>`, or read the program from standard input with `monty -`.
+ #[derive(Parser)]
+ #[command(version)]
+ pub(crate) struct Cli {
+@@ -42,7 +42,7 @@ pub(crate) struct Cli {
+     #[arg(short = 'c')]
+     command: Option<String>,
+ 
+-    /// Python file to execute.
++    /// Python file to execute, or `-` to read the program from standard input.
+     file: Option<String>,
+ 
+     /// Mount a host directory into the sandbox.
+diff --git a/crates/monty-runtime/src/run.rs b/crates/monty-runtime/src/run.rs
+index 44a17eb..e7e70fa 100644
+--- a/crates/monty-runtime/src/run.rs
++++ b/crates/monty-runtime/src/run.rs
+@@ -8,7 +8,8 @@
+ #[cfg(feature = "telemetry")]
+ use std::env;
+ use std::{
+-    fmt, fs, io,
++    fmt, fs,
++    io::{self, Read},
+     process::ExitCode,
+     thread,
+     time::{Duration, Instant},
+@@ -153,7 +154,13 @@ fn run_cli(cli: Cli) -> ExitCode {
+     }
+ 
+     if let Some(file_path) = cli.file.as_deref() {
+-        let code = match read_file(file_path) {
++        // `-` reads the program from standard input, like `python -`
++        let (file_path, code) = if file_path == "-" {
++            ("<stdin>", read_stdin())
++        } else {
++            (file_path, read_file(file_path))
++        };
++        let code = match code {
+             Ok(code) => code,
+             Err(err) => {
+                 eprintln!("{BOLD_RED}error{BOLD_RED:#}: {err}");
+@@ -843,6 +850,15 @@ fn read_file(file_path: &str) -> Result<String, String> {
+     }
+ }
+ 
++/// Reads the whole program from standard input, for a `-` file argument.
++fn read_stdin() -> Result<String, String> {
++    let mut contents = String::new();
++    match io::stdin().read_to_string(&mut contents) {
++        Ok(_) => Ok(contents),
++        Err(err) => Err(format!("reading <stdin>: {err}")),
++    }
++}
++
+ /// Wrapper around `Duration` that formats with 5 significant digits and an auto-selected unit.
+ ///
+ /// - `< 1ms` → microseconds, e.g. `123.45μs`
+diff --git a/crates/monty-runtime/tests/cli.rs b/crates/monty-runtime/tests/cli.rs
+new file mode 100644
+index 0000000..dc303e4
+--- /dev/null
++++ b/crates/monty-runtime/tests/cli.rs
+@@ -0,0 +1,72 @@
++// every test here drives the standalone CLI, which a worker-only build refuses
++#![cfg(feature = "standalone")]
++
++use std::{
++    io::Write,
++    process::{Command, Output, Stdio},
++};
++
++/// Runs the CLI binary with `stdin` piped in as its standard input.
++fn run_monty_with_stdin(args: &[&str], stdin: &str) -> Output {
++    let mut child = Command::new(env!("CARGO_BIN_EXE_monty"))
++        .args(args)
++        .env("NO_COLOR", "1")
++        .stdin(Stdio::piped())
++        .stdout(Stdio::piped())
++        .stderr(Stdio::piped())
++        .spawn()
++        .expect("monty CLI should run");
++    child
++        .stdin
++        .take()
++        .expect("stdin should be piped")
++        .write_all(stdin.as_bytes())
++        .expect("stdin should be written");
++    child.wait_with_output().expect("monty CLI should finish")
++}
++
++/// `monty -` runs the program read from standard input, like `python -`.
++#[test]
++fn dash_runs_the_program_from_stdin() {
++    let output = run_monty_with_stdin(&["-"], "x = 'hello'\nprint(x, 'world')\n");
++
++    let stderr = String::from_utf8_lossy(&output.stderr);
++    assert!(output.status.success(), "CLI should succeed, stderr: {stderr}");
++    assert_eq!(String::from_utf8_lossy(&output.stdout), "hello world\n");
++}
++
++/// A traceback from a program read from stdin names `<stdin>` as its file.
++#[test]
++fn dash_reports_errors_against_stdin() {
++    let output = run_monty_with_stdin(&["-"], "1 / 0\n");
++
++    let stderr = String::from_utf8_lossy(&output.stderr);
++    assert!(!output.status.success(), "CLI should fail, stderr: {stderr}");
++    assert!(
++        stderr.contains("File \"<stdin>\", line 1"),
++        "unexpected stderr: {stderr}"
++    );
++    assert!(stderr.contains("ZeroDivisionError"), "unexpected stderr: {stderr}");
++}
++
++/// Options before `-` still apply to the program read from stdin.
++#[test]
++fn dash_keeps_cli_options() {
++    let output = run_monty_with_stdin(
++        &["--max-recursion-depth", "10", "-"],
++        "def f(n):\n    return f(n + 1)\nf(0)\n",
++    );
++
++    let stderr = String::from_utf8_lossy(&output.stderr);
++    assert!(!output.status.success(), "CLI should fail, stderr: {stderr}");
++    assert!(stderr.contains("RecursionError"), "unexpected stderr: {stderr}");
++}
++
++/// The type checker names `<stdin>` in its diagnostics for a program read from stdin.
++#[test]
++fn dash_type_checks_against_stdin() {
++    let output = run_monty_with_stdin(&["-t", "-"], "x: int = 'a'\n");
++
++    let stderr = String::from_utf8_lossy(&output.stderr);
++    assert!(stderr.contains("<stdin>:1:"), "unexpected stderr: {stderr}");
++}
+-- 
+2.43.0
+

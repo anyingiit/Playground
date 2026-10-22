@@ -1,0 +1,1 @@
+Support `monty -` to read the program from standard input
