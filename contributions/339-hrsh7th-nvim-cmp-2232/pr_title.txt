@@ -1,0 +1,1 @@
+fix(#2232): keep the completion menu inside the editor when it overflows

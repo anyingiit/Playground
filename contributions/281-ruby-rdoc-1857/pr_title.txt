@@ -1,0 +1,1 @@
+Keep link targets out of meta description excerpts

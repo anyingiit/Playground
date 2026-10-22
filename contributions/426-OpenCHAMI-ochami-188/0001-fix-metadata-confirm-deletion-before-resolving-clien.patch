@@ -1,0 +1,308 @@
+From 698aed82cfd72c23d01b698b0d41ad895748d3af Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:06:36 +0000
+Subject: [PATCH] fix(metadata): confirm deletion before resolving client and
+ token
+
+The metadata defaults, group, instance, and peer delete commands created
+the metadata service client and handled the access token before asking
+"Really delete?". Without a base URI or token they failed with an
+unrelated error instead of prompting, unlike the other delete commands.
+
+Prompt first, then create the client and handle the token, the same
+order as the boot, bss, cloud-init, and smd delete commands. Add the four
+commands to TestDeleteConfirm_DeclineBeforeClient.
+
+Fixes #188
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ cmd/metadata/defaults/delete.go | 27 +++++++++++++--------------
+ cmd/metadata/group/delete.go    | 27 +++++++++++++--------------
+ cmd/metadata/instance/delete.go | 27 +++++++++++++--------------
+ cmd/metadata/peer/delete.go     | 27 +++++++++++++--------------
+ cmd/prompts_test.go             |  4 ++++
+ 5 files changed, 56 insertions(+), 56 deletions(-)
+
+diff --git a/cmd/metadata/defaults/delete.go b/cmd/metadata/defaults/delete.go
+index caa6d0b..350a350 100644
+--- a/cmd/metadata/defaults/delete.go
++++ b/cmd/metadata/defaults/delete.go
+@@ -8,7 +8,6 @@ import (
+ 	"github.com/spf13/cobra"
+ 
+ 	"github.com/openchami/ochami/internal/cli"
+-	"github.com/openchami/ochami/pkg/client/metadata_service"
+ 
+ 	metadata_service_lib "github.com/openchami/ochami/internal/cli/metadata_service"
+ )
+@@ -20,12 +19,7 @@ type metadataDefaultsDeleteOptions struct {
+ 
+ // runCoreMetadataDefaultsDelete contains the core logic for the metadata defaults delete command.
+ // It takes the parsed options and performs the actual work of deleting cluster defaults.
+-func runCoreMetadataDefaultsDelete(cmd *cobra.Command, opts *metadataDefaultsDeleteOptions, args []string, metadataServiceClient *metadata_service.MetadataServiceClient, rt *cli.Runtime) error {
+-	// Handle token for this command
+-	if err := rt.HandleToken(cmd); err != nil {
+-		return err
+-	}
+-
++func runCoreMetadataDefaultsDelete(cmd *cobra.Command, opts *metadataDefaultsDeleteOptions, args []string, rt *cli.Runtime) error {
+ 	// Ask before attempting deletion unless --no-confirm was passed
+ 	if !opts.NoConfirm {
+ 		rt.Logger.Debug().Msg("--no-confirm not passed, prompting user to confirm deletion")
+@@ -39,6 +33,17 @@ func runCoreMetadataDefaultsDelete(cmd *cobra.Command, opts *metadataDefaultsDel
+ 		}
+ 	}
+ 
++	// Create client to use for requests
++	metadataServiceClient, err := metadata_service_lib.GetClient(cmd, rt)
++	if err != nil {
++		return err
++	}
++
++	// Handle token for this command
++	if err := rt.HandleToken(cmd); err != nil {
++		return err
++	}
++
+ 	// Send off requests
+ 	results := metadataServiceClient.DeleteDefaults(cmd.Context(), rt.Token, args)
+ 
+@@ -76,12 +81,6 @@ See ochami-metadata(1) for more details.`,
+ 				return err
+ 			}
+ 
+-			// Create client to use for requests
+-			metadataServiceClient, err := metadata_service_lib.GetClient(cmd, rt)
+-			if err != nil {
+-				return err
+-			}
+-
+ 			// Extract options from flags
+ 			// Since flags are registered with the correct types on this command,
+ 			// these Get* calls cannot fail, so their errors are ignored
+@@ -90,7 +89,7 @@ See ochami-metadata(1) for more details.`,
+ 				opts.NoConfirm, _ = cmd.Flags().GetBool("no-confirm")
+ 			}
+ 
+-			return runCoreMetadataDefaultsDelete(cmd, opts, args, metadataServiceClient, rt)
++			return runCoreMetadataDefaultsDelete(cmd, opts, args, rt)
+ 		},
+ 	}
+ 
+diff --git a/cmd/metadata/group/delete.go b/cmd/metadata/group/delete.go
+index 6cab519..04f4e7c 100644
+--- a/cmd/metadata/group/delete.go
++++ b/cmd/metadata/group/delete.go
+@@ -8,7 +8,6 @@ import (
+ 	"github.com/spf13/cobra"
+ 
+ 	"github.com/openchami/ochami/internal/cli"
+-	"github.com/openchami/ochami/pkg/client/metadata_service"
+ 
+ 	metadata_service_lib "github.com/openchami/ochami/internal/cli/metadata_service"
+ )
+@@ -20,12 +19,7 @@ type metadataGroupDeleteOptions struct {
+ 
+ // runCoreMetadataGroupDelete contains the core logic for the metadata group delete command.
+ // It takes the parsed options and performs the actual work of deleting groups.
+-func runCoreMetadataGroupDelete(cmd *cobra.Command, opts *metadataGroupDeleteOptions, args []string, metadataServiceClient *metadata_service.MetadataServiceClient, rt *cli.Runtime) error {
+-	// Handle token for this command
+-	if err := rt.HandleToken(cmd); err != nil {
+-		return err
+-	}
+-
++func runCoreMetadataGroupDelete(cmd *cobra.Command, opts *metadataGroupDeleteOptions, args []string, rt *cli.Runtime) error {
+ 	// Ask before attempting deletion unless --no-confirm was passed
+ 	if !opts.NoConfirm {
+ 		rt.Logger.Debug().Msg("--no-confirm not passed, prompting user to confirm deletion")
+@@ -39,6 +33,17 @@ func runCoreMetadataGroupDelete(cmd *cobra.Command, opts *metadataGroupDeleteOpt
+ 		}
+ 	}
+ 
++	// Create client to use for requests
++	metadataServiceClient, err := metadata_service_lib.GetClient(cmd, rt)
++	if err != nil {
++		return err
++	}
++
++	// Handle token for this command
++	if err := rt.HandleToken(cmd); err != nil {
++		return err
++	}
++
+ 	// Send off requests
+ 	results := metadataServiceClient.DeleteGroups(cmd.Context(), rt.Token, args)
+ 
+@@ -76,12 +81,6 @@ See ochami-metadata(1) for more details.`,
+ 				return err
+ 			}
+ 
+-			// Create client to use for requests with runtime
+-			metadataServiceClient, err := metadata_service_lib.GetClient(cmd, rt)
+-			if err != nil {
+-				return err
+-			}
+-
+ 			// Extract options from flags
+ 			// Since flags are registered with the correct types on this command,
+ 			// these Get* calls cannot fail, so their errors are ignored
+@@ -90,7 +89,7 @@ See ochami-metadata(1) for more details.`,
+ 				opts.NoConfirm, _ = cmd.Flags().GetBool("no-confirm")
+ 			}
+ 
+-			return runCoreMetadataGroupDelete(cmd, opts, args, metadataServiceClient, rt)
++			return runCoreMetadataGroupDelete(cmd, opts, args, rt)
+ 		},
+ 	}
+ 
+diff --git a/cmd/metadata/instance/delete.go b/cmd/metadata/instance/delete.go
+index 473329c..d012eee 100644
+--- a/cmd/metadata/instance/delete.go
++++ b/cmd/metadata/instance/delete.go
+@@ -8,7 +8,6 @@ import (
+ 	"github.com/spf13/cobra"
+ 
+ 	"github.com/openchami/ochami/internal/cli"
+-	"github.com/openchami/ochami/pkg/client/metadata_service"
+ 
+ 	metadata_service_lib "github.com/openchami/ochami/internal/cli/metadata_service"
+ )
+@@ -20,12 +19,7 @@ type metadataInstanceDeleteOptions struct {
+ 
+ // runCoreMetadataInstanceDelete contains the core logic for the metadata instance delete command.
+ // It takes the parsed options and performs the actual work of deleting instance infos.
+-func runCoreMetadataInstanceDelete(cmd *cobra.Command, opts *metadataInstanceDeleteOptions, args []string, metadataServiceClient *metadata_service.MetadataServiceClient, rt *cli.Runtime) error {
+-	// Handle token for this command
+-	if err := rt.HandleToken(cmd); err != nil {
+-		return err
+-	}
+-
++func runCoreMetadataInstanceDelete(cmd *cobra.Command, opts *metadataInstanceDeleteOptions, args []string, rt *cli.Runtime) error {
+ 	// Ask before attempting deletion unless --no-confirm was passed
+ 	if !opts.NoConfirm {
+ 		rt.Logger.Debug().Msg("--no-confirm not passed, prompting user to confirm deletion")
+@@ -39,6 +33,17 @@ func runCoreMetadataInstanceDelete(cmd *cobra.Command, opts *metadataInstanceDel
+ 		}
+ 	}
+ 
++	// Create client to use for requests
++	metadataServiceClient, err := metadata_service_lib.GetClient(cmd, rt)
++	if err != nil {
++		return err
++	}
++
++	// Handle token for this command
++	if err := rt.HandleToken(cmd); err != nil {
++		return err
++	}
++
+ 	// Send off requests
+ 	results := metadataServiceClient.DeleteInstanceInfos(cmd.Context(), rt.Token, args)
+ 
+@@ -76,12 +81,6 @@ See ochami-metadata(1) for more details.`,
+ 				return err
+ 			}
+ 
+-			// Create client to use for requests
+-			metadataServiceClient, err := metadata_service_lib.GetClient(cmd, rt)
+-			if err != nil {
+-				return err
+-			}
+-
+ 			// Extract options from flags
+ 			// Since flags are registered with the correct types on this command,
+ 			// these Get* calls cannot fail, so their errors are ignored
+@@ -90,7 +89,7 @@ See ochami-metadata(1) for more details.`,
+ 				opts.NoConfirm, _ = cmd.Flags().GetBool("no-confirm")
+ 			}
+ 
+-			return runCoreMetadataInstanceDelete(cmd, opts, args, metadataServiceClient, rt)
++			return runCoreMetadataInstanceDelete(cmd, opts, args, rt)
+ 		},
+ 	}
+ 
+diff --git a/cmd/metadata/peer/delete.go b/cmd/metadata/peer/delete.go
+index 627a63a..9024a35 100644
+--- a/cmd/metadata/peer/delete.go
++++ b/cmd/metadata/peer/delete.go
+@@ -8,7 +8,6 @@ import (
+ 	"github.com/spf13/cobra"
+ 
+ 	"github.com/openchami/ochami/internal/cli"
+-	"github.com/openchami/ochami/pkg/client/metadata_service"
+ 
+ 	metadata_service_lib "github.com/openchami/ochami/internal/cli/metadata_service"
+ )
+@@ -20,12 +19,7 @@ type metadataPeerDeleteOptions struct {
+ 
+ // runCoreMetadataPeerDelete contains the core logic for the metadata peer delete command.
+ // It takes the parsed options and performs the actual work of deleting WireGuard peers.
+-func runCoreMetadataPeerDelete(cmd *cobra.Command, opts *metadataPeerDeleteOptions, args []string, metadataServiceClient *metadata_service.MetadataServiceClient, rt *cli.Runtime) error {
+-	// Handle token for this command
+-	if err := rt.HandleToken(cmd); err != nil {
+-		return err
+-	}
+-
++func runCoreMetadataPeerDelete(cmd *cobra.Command, opts *metadataPeerDeleteOptions, args []string, rt *cli.Runtime) error {
+ 	// Ask before attempting deletion unless --no-confirm was passed
+ 	if !opts.NoConfirm {
+ 		rt.Logger.Debug().Msg("--no-confirm not passed, prompting user to confirm deletion")
+@@ -39,6 +33,17 @@ func runCoreMetadataPeerDelete(cmd *cobra.Command, opts *metadataPeerDeleteOptio
+ 		}
+ 	}
+ 
++	// Create client to use for requests
++	metadataServiceClient, err := metadata_service_lib.GetClient(cmd, rt)
++	if err != nil {
++		return err
++	}
++
++	// Handle token for this command
++	if err := rt.HandleToken(cmd); err != nil {
++		return err
++	}
++
+ 	// Send off requests
+ 	results := metadataServiceClient.DeleteWireGuardPeers(cmd.Context(), rt.Token, args)
+ 
+@@ -76,12 +81,6 @@ See ochami-metadata(1) for more details.`,
+ 				return err
+ 			}
+ 
+-			// Create client to use for requests
+-			metadataServiceClient, err := metadata_service_lib.GetClient(cmd, rt)
+-			if err != nil {
+-				return err
+-			}
+-
+ 			// Extract options from flags
+ 			// Since flags are registered with the correct types on this command,
+ 			// these Get* calls cannot fail, so their errors are ignored
+@@ -90,7 +89,7 @@ See ochami-metadata(1) for more details.`,
+ 				opts.NoConfirm, _ = cmd.Flags().GetBool("no-confirm")
+ 			}
+ 
+-			return runCoreMetadataPeerDelete(cmd, opts, args, metadataServiceClient, rt)
++			return runCoreMetadataPeerDelete(cmd, opts, args, rt)
+ 		},
+ 	}
+ 
+diff --git a/cmd/prompts_test.go b/cmd/prompts_test.go
+index ced5264..6b45cc2 100644
+--- a/cmd/prompts_test.go
++++ b/cmd/prompts_test.go
+@@ -148,6 +148,10 @@ func TestDeleteConfirm_DeclineBeforeClient(t *testing.T) {
+ 		{name: "boot node", args: []string{"boot", "node", "delete", "id1"}},
+ 		{name: "bss boot params", args: []string{"bss", "boot", "params", "delete", "--xname", "x0c0s0b0n0", "--kernel", "https://example.com/vmlinuz"}},
+ 		{name: "cloud-init group", args: []string{"cloud-init", "group", "delete", "compute"}},
++		{name: "metadata defaults", args: []string{"metadata", "defaults", "delete", "id1"}},
++		{name: "metadata group", args: []string{"metadata", "group", "delete", "id1"}},
++		{name: "metadata instance", args: []string{"metadata", "instance", "delete", "id1"}},
++		{name: "metadata peer", args: []string{"metadata", "peer", "delete", "id1"}},
+ 		{name: "smd compep", args: []string{"smd", "compep", "delete", "x0c0s0b0n0"}},
+ 		{name: "smd component", args: []string{"smd", "component", "delete", "x0c0s0b0n0"}},
+ 		{name: "smd group", args: []string{"smd", "group", "delete", "compute"}},
+-- 
+2.43.0
+

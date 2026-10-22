@@ -1,0 +1,119 @@
+From 13c13ff3fe4c184001c86b111ea61712d13f78f0 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:56:34 +0000
+Subject: [PATCH] Fix parsing of GIT.PROJECT_SUBMODULES_DEPTH
+
+get_project_submodules_depth only handled string values:
+- an integer (e.g. PROJECT_SUBMODULES_DEPTH: 3, which YAML loads as an
+  int) raised an uncaught TypeError;
+- a YAML list was ignored, with a warning claiming the default -1 was
+  used while an empty list was returned;
+- a non-numeric string raised an uncaught ValueError.
+
+Accept integers, lists, and strings with either, and return the
+documented default [-1] (with the warning) for invalid values.
+
+Closes #3104
+---
+ CHANGELOG.md                          |  1 +
+ autosubmit/config/configcommon.py     | 27 ++++++++++++----------
+ test/unit/config/test_configcommon.py | 32 +++++++++++++++++++++++++++
+ 3 files changed, 48 insertions(+), 12 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 442a2d5..fe48cdf 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -14,6 +14,7 @@ several bug fixes and enhancements to improve the overall user experience.
+ 
+ **Bug fixes:**
+ 
++- Fix `GIT.PROJECT_SUBMODULES_DEPTH` failing with a `TypeError` when set to an integer and being ignored when set to a YAML list; invalid values now fall back to the documented default -1 #3104
+ - Fix `autosubmit.lock` not being deleted after `create` and `run`; `archive` and `delete` now acquire it too #3033 #3055
+ - Fix multi-member PJM job lookup output parsing #3255 (thanks @1cbyc)
+ - Remove the unrelated `--filter_status` option from `autosubmit expid` #3241 (thanks @1cbyc)
+diff --git a/autosubmit/config/configcommon.py b/autosubmit/config/configcommon.py
+index 346fb9b..a421f1d 100644
+--- a/autosubmit/config/configcommon.py
++++ b/autosubmit/config/configcommon.py
+@@ -134,22 +134,25 @@ class AutosubmitConfig:
+     def get_project_submodules_depth(self) -> list[int]:
+         """Returns the max depth of the submodule at the moment of cloning.
+ 
+-        The default is -1 (no limit).
++        ``PROJECT_SUBMODULES_DEPTH`` can be an integer, a list of integers, or a
++        string with either of them (e.g. ``"3"`` or ``"[1, 2]"``).
++
++        The default is -1 (no limit), which is also used when the value is not valid.
+ 
+         :return: depth
+         """
+         git_data = self.experiment_data.get("GIT", {})
+-        unparsed_depth = git_data.get('PROJECT_SUBMODULES_DEPTH', "-1")
+-        if "[" in unparsed_depth and "]" in unparsed_depth:
+-            unparsed_depth = unparsed_depth.strip("[]")
+-            depth = [int(x) for x in unparsed_depth.split(",")]
+-        else:
+-            try:
+-                depth = [int(unparsed_depth)]
+-            except TypeError:
+-                Log.warning("PROJECT_SUBMODULES_DEPTH is not an integer neither a int. Using default value -1")
+-                depth = []
+-        return depth
++        unparsed_depth = git_data.get('PROJECT_SUBMODULES_DEPTH', -1)
++        try:
++            if isinstance(unparsed_depth, list):
++                return [int(x) for x in unparsed_depth]
++            if isinstance(unparsed_depth, str) and "[" in unparsed_depth and "]" in unparsed_depth:
++                return [int(x) for x in unparsed_depth.strip("[] ").split(",")]
++            return [int(unparsed_depth)]
++        except (TypeError, ValueError):
++            Log.warning(f"PROJECT_SUBMODULES_DEPTH {unparsed_depth!r} is not an integer or a list of integers. "
++                        f"Using default value -1")
++            return [-1]
+ 
+     def get_full_config_as_json(self):
+         """Return config as json object"""
+diff --git a/test/unit/config/test_configcommon.py b/test/unit/config/test_configcommon.py
+index 9b40bb1..8bc9a6c 100644
+--- a/test/unit/config/test_configcommon.py
++++ b/test/unit/config/test_configcommon.py
+@@ -1625,3 +1625,35 @@ def test_check_wrapper_conf_local_platform_not_supported(autosubmit_config):
+         as_conf.check_wrapper_conf(wrappers)
+ 
+     assert "LOCAL platform does not support wrappers" in str(exc.value)
++
++
++@pytest.mark.parametrize(
++    "depth,expected",
++    [
++        (None, [-1]),
++        ("-1", [-1]),
++        ("3", [3]),
++        (3, [3]),
++        ("[1,2]", [1, 2]),
++        ("[1, 2]", [1, 2]),
++        ([1, 2], [1, 2]),
++        (["1", "2"], [1, 2]),
++    ],
++)
++def test_get_project_submodules_depth(autosubmit_config, depth, expected):
++    """Test that ``PROJECT_SUBMODULES_DEPTH`` is parsed from strings, integers, and lists."""
++    git = {} if depth is None else {"PROJECT_SUBMODULES_DEPTH": depth}
++    as_conf = autosubmit_config(_EXPID, experiment_data={"GIT": git})
++
++    assert as_conf.get_project_submodules_depth() == expected
++
++
++@pytest.mark.parametrize("depth", ["abc", "", "[1,a]", [1, "a"], {"A": 1}])
++def test_get_project_submodules_depth_invalid_uses_default(autosubmit_config, mocker, depth):
++    """Test that an invalid ``PROJECT_SUBMODULES_DEPTH`` logs a warning and uses the default -1."""
++    mocked_log = mocker.patch("autosubmit.config.configcommon.Log")
++    as_conf = autosubmit_config(_EXPID, experiment_data={"GIT": {"PROJECT_SUBMODULES_DEPTH": depth}})
++
++    assert as_conf.get_project_submodules_depth() == [-1]
++    assert mocked_log.warning.call_count == 1
++    assert "Using default value -1" in mocked_log.warning.call_args[0][0]
+-- 
+2.43.0
+

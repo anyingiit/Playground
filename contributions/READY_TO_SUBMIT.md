@@ -69,7 +69,6 @@
 | 336 | phpmyadmin/motranslator#59 | **已提交** [#67](https://github.com/phpmyadmin/motranslator/pull/67) |
 | 251 | [simonives/redwrench#57](https://github.com/simonives/redwrench/issues/57) | **已提交** [#97](https://github.com/simonives/redwrench/pull/97) |
 | 250 | [femboypuppy/Tessera-Notes#38](https://github.com/femboypuppy/Tessera-Notes/issues/38) | **已提交** [#116](https://github.com/femboypuppy/Tessera-Notes/pull/116) |
-| 214 | [mitmproxy/pdoc#775](https://github.com/mitmproxy/pdoc/issues/775) | **已提交** [#902](https://github.com/mitmproxy/pdoc/pull/902) |
 | 391 | [Gaurav-Gosain/tuios#980](https://github.com/Gaurav-Gosain/tuios/issues/980) | **已提交** [#1038](https://github.com/Gaurav-Gosain/tuios/pull/1038) |
 | 392 | [Gaurav-Gosain/tuios#585](https://github.com/Gaurav-Gosain/tuios/issues/585) | **已提交** [#1039](https://github.com/Gaurav-Gosain/tuios/pull/1039) |
 | 278 | [ruby/rdoc#1782](https://github.com/ruby/rdoc/issues/1782) | **已提交** [#1861](https://github.com/ruby/rdoc/pull/1861) |
@@ -84,6 +83,15 @@
 | 279 | [hanami/hanami-view#264](https://github.com/hanami/hanami-view/issues/264) | **已提交** [#291](https://github.com/hanami/hanami-view/pull/291) |
 | 362 | [helix-editor/helix#5817](https://github.com/helix-editor/helix/issues/5817) | **已提交** [#16406](https://github.com/helix-editor/helix/pull/16406) |
 | 363 | [helix-editor/helix#11207](https://github.com/helix-editor/helix/issues/11207) | **已提交** [#16407](https://github.com/helix-editor/helix/pull/16407) |
-| 337 | [synolia/SyliusMaintenancePlugin#54](https://github.com/synolia/SyliusMaintenancePlugin/issues/54) | main | 无需认领；无 DCO、无 CLA |
-| 394 | [zerobrewhq/zerobrew#348](https://github.com/zerobrewhq/zerobrew/issues/348) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS；与 393 同仓库、不同文件，可任意顺序提交） |
+| 337 | [synolia/SyliusMaintenancePlugin#54](https://github.com/synolia/SyliusMaintenancePlugin/issues/54) | **已提交** [#55](https://github.com/synolia/SyliusMaintenancePlugin/pull/55) |
+| 281 | [ruby/rdoc#1857](https://github.com/ruby/rdoc/issues/1857) | **已提交** [#1862](https://github.com/ruby/rdoc/pull/1862) |
+| 425 | [BSC-ES/autosubmit#3104](https://github.com/BSC-ES/autosubmit/issues/3104) | **已提交** [#3371](https://github.com/BSC-ES/autosubmit/pull/3371) |
+| 426 | [OpenCHAMI/ochami#188](https://github.com/OpenCHAMI/ochami/issues/188) | **已提交** [#214](https://github.com/OpenCHAMI/ochami/pull/214) |
+| 394 | [zerobrewhq/zerobrew#348](https://github.com/zerobrewhq/zerobrew/issues/348) | **已提交** [#481](https://github.com/zerobrewhq/zerobrew/pull/481) |
+| 282 | [TNG/ArchUnit#154](https://github.com/TNG/ArchUnit/issues/154) + [#190](https://github.com/TNG/ArchUnit/issues/190) | **已提交** [#1769](https://github.com/TNG/ArchUnit/pull/1769) |
+| 427 | [OpenCHAMI/ochami#186](https://github.com/OpenCHAMI/ochami/issues/186) | **已提交** [#215](https://github.com/OpenCHAMI/ochami/pull/215) |
+| 338 | [thephpleague/openapi-psr7-validator#273](https://github.com/thephpleague/openapi-psr7-validator/issues/273) | **已提交** [#275](https://github.com/thephpleague/openapi-psr7-validator/pull/275) |
+| 283 | [devonfw/IDEasy#1214](https://github.com/devonfw/IDEasy/issues/1214) | **已提交** [#2737](https://github.com/devonfw/IDEasy/pull/2737)（CLA 待 owner 签） |
+| 428 | [OpenCHAMI/ochami#191](https://github.com/OpenCHAMI/ochami/issues/191) | **已提交** [#216](https://github.com/OpenCHAMI/ochami/pull/216) |
+| 339 | [hrsh7th/nvim-cmp#2232](https://github.com/hrsh7th/nvim-cmp/issues/2232) | main | 无需认领；无 DCO、无 CLA；Lua；高星；复核 PASS |
 | 395 | [sinelaw/fresh#3074](https://github.com/sinelaw/fresh/issues/3074) | 待提交（base `master`；无需认领；无 DCO/CLA，PR 模板的 GPL 许可框已勾；Rust；新锐；复核 PASS；提交信息带 `Assisted-by: Claude Code`） |

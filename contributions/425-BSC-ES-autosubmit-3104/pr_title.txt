@@ -1,0 +1,1 @@
+Fix parsing of GIT.PROJECT_SUBMODULES_DEPTH

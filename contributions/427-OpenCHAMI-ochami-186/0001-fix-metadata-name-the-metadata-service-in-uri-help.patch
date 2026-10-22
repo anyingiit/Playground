@@ -1,0 +1,84 @@
+From 5190da410d044bd7762638e9e34e10945b34c480 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:08:30 +0000
+Subject: [PATCH] fix(metadata): name the metadata service in --uri help
+
+The metadata command's --uri flag sets the metadata service's base URI,
+but its help text said "boot service", copied from the boot command.
+
+Add TestServiceURIFlagUsage, which checks that the --uri help of every
+service command names that command's service.
+
+Fixes #186
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ cmd/metadata/metadata.go |  2 +-
+ cmd/root_test.go         | 38 ++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 39 insertions(+), 1 deletion(-)
+
+diff --git a/cmd/metadata/metadata.go b/cmd/metadata/metadata.go
+index b086679..e5a153c 100644
+--- a/cmd/metadata/metadata.go
++++ b/cmd/metadata/metadata.go
+@@ -36,7 +36,7 @@ See ochami-metadata(1) for more details.`,
+ 	// Create flags
+ 	metadataCmd.PersistentFlags().String("api-version", "", "version of service API to use in request")
+ 	cli.AddPositiveDurationFlag(metadataCmd.PersistentFlags(), "timeout", config.DefaultTimeout(), "timeout duration when making requests")
+-	metadataCmd.PersistentFlags().String("uri", "", "absolute base URI or relative base path of boot service")
++	metadataCmd.PersistentFlags().String("uri", "", "absolute base URI or relative base path of metadata service")
+ 
+ 	// Add subcommands
+ 	metadataCmd.AddCommand(
+diff --git a/cmd/root_test.go b/cmd/root_test.go
+index 2d745c7..25e774a 100644
+--- a/cmd/root_test.go
++++ b/cmd/root_test.go
+@@ -155,6 +155,44 @@ func TestNoDuplicateFlags(t *testing.T) {
+ 	}
+ }
+ 
++// TestServiceURIFlagUsage verifies that the --uri flag of every service
++// command names the service that command talks to in its help text.
++func TestServiceURIFlagUsage(t *testing.T) {
++	t.Parallel()
++
++	services := map[string]string{
++		"boot":       "boot service",
++		"bss":        "BSS",
++		"cloud-init": "cloud-init",
++		"metadata":   "metadata service",
++		"pcs":        "PCS",
++		"rcs":        "remote-console",
++		"smd":        "SMD",
++	}
++
++	rootCmd := NewRootCmd()
++	for _, cmd := range rootCmd.Commands() {
++		flag := cmd.PersistentFlags().Lookup("uri")
++		if flag == nil {
++			continue
++		}
++		service, ok := services[cmd.Name()]
++		if !ok {
++			t.Errorf("command %q has a --uri flag but no expected service name in this test", cmd.Name())
++			continue
++		}
++		delete(services, cmd.Name())
++
++		want := "absolute base URI or relative base path of " + service
++		if flag.Usage != want {
++			t.Errorf("%s --uri usage = %q, want %q", cmd.CommandPath(), flag.Usage, want)
++		}
++	}
++	for name := range services {
++		t.Errorf("command %q not found or has no --uri flag", name)
++	}
++}
++
+ // TestRootCommand_ConcurrentRuntimesStayIsolated verifies that command trees
+ // run concurrently, each with its own runtime, all succeed, write only to
+ // their own runtime's output stream, and leave each runtime's token
+-- 
+2.43.0
+
