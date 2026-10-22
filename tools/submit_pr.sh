@@ -9,7 +9,7 @@ G() { env -u GITHUB_TOKEN -u GH_TOKEN gh "$@"; }
 NAME=${REPO#*/}
 W=${WORKDIR:-/tmp/pr-submit}/$(basename "$F"); rm -rf "$W"; mkdir -p "$(dirname "$W")"
 G repo fork "$REPO" --clone=false >/dev/null 2>&1 || true
-FORK=$(G api user --jq .login)/$NAME
+FORK=$(G api "repos/$REPO/forks?per_page=100" --jq ".[]|select(.owner.login==\"$(G api user --jq .login)\")|.full_name" | head -1); [ -n "$FORK" ] || FORK=$(G api user --jq .login)/$NAME
 for i in $(seq 1 30); do G api repos/$FORK >/dev/null 2>&1 && break; sleep 2; done
 FORK=$(G api repos/$FORK --jq .full_name)   # fork may be renamed
 git clone -q --depth 50 --single-branch --branch "$BASE" https://github.com/$REPO "$W"

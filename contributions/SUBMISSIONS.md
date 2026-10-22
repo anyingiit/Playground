@@ -78,6 +78,14 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 074 | [zitadel/oidc#967](https://github.com/zitadel/oidc/issues/967) | [zitadel/oidc#994](https://github.com/zitadel/oidc/pull/994) | 维护者 wim07101993 暂缓（10-02）：不确定是否该修，已在 issue 下开讨论；失败的 check 只是 kanban 机器人 |
 | 082 | [carthage-software/mago#2182](https://github.com/carthage-software/mago/issues/2182) | [carthage-software/mago#2417](https://github.com/carthage-software/mago/pull/2417) | ✅ 已合并（2026-10-03，azjezz） |
 | 130 | [rjsf-team/react-jsonschema-form#3882](https://github.com/rjsf-team/react-jsonschema-form/issues/3882) | [rjsf-team/react-jsonschema-form#5622](https://github.com/rjsf-team/react-jsonschema-form/pull/5622) | 2026-10-22 提交 |
+| 140 | [marketcalls/openalgo#1849](https://github.com/marketcalls/openalgo/issues/1849) | [marketcalls/openalgo#2270](https://github.com/marketcalls/openalgo/pull/2270) | 2026-10-22 提交 |
+| 142 | [jgrossi/elephpant.me#347](https://github.com/jgrossi/elephpant.me/issues/347) | [jgrossi/elephpant.me#386](https://github.com/jgrossi/elephpant.me/pull/386) | 2026-10-22 提交 |
+| 146 | [github-linguist/linguist#7949](https://github.com/github-linguist/linguist/issues/7949) | [github-linguist/linguist#8288](https://github.com/github-linguist/linguist/pull/8288) | 2026-10-22 提交 |
+| 150 | [infection/infection#2582](https://github.com/infection/infection/issues/2582) | [infection/infection#3699](https://github.com/infection/infection/pull/3699) | 2026-10-22 提交 |
+| 152 | [uutils/acl#21](https://github.com/uutils/acl/issues/21) | [uutils/acl#356](https://github.com/uutils/acl/pull/356) | 2026-10-22 提交 |
+| 155 | [pmxt-dev/pmxt#2353](https://github.com/pmxt-dev/pmxt/issues/2353) | [pmxt-dev/pmxt#2586](https://github.com/pmxt-dev/pmxt/pull/2586) | 2026-10-22 提交 |
+| 169 | [hanami/hanami#1284](https://github.com/hanami/hanami/issues/1284) | [hanami/hanami-cli#464](https://github.com/hanami/hanami-cli/pull/464) | 2026-10-22 提交；CHANGELOG 已填 PR 号 |
+| 170 | [ruby-grape/grape#2487](https://github.com/ruby-grape/grape/issues/2487) | [ruby-grape/grape#3041](https://github.com/ruby-grape/grape/pull/3041) | 2026-10-22 提交；CHANGELOG 已填 PR 号 |
 
 ## 接续说明（2026-09-25 快照）
 
