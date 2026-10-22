@@ -1,6 +1,6 @@
-From eb3fef5af7a212ca2877cde4866d1ff7ade06b48 Mon Sep 17 00:00:00 2001
+From f8e805bfa39539862cc938f150d327c37da30fcc Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
-Date: Thu, 1 Oct 2026 17:42:12 +0000
+Date: Fri, 23 Oct 2026 02:49:52 +0800
 Subject: [PATCH] Add redundant option to alerts/for check
 
 Allow disabling reports about for and keep_firing_for fields set to
@@ -64,13 +64,13 @@ index 0000000..da379a2
 +  redundant = false
 +}
 diff --git a/docs/changelog.md b/docs/changelog.md
-index 6b09a0e..151dc2b 100644
+index 860d951..438e1ba 100644
 --- a/docs/changelog.md
 +++ b/docs/changelog.md
 @@ -1,5 +1,13 @@
  # Changelog
  
-+## v0.89.0
++## v0.90.0
 +
 +### Added
 +
@@ -78,9 +78,9 @@ index 6b09a0e..151dc2b 100644
 +  that can be used to disable reports about `for` and `keep_firing_for` fields
 +  set to the default value - [#1956](https://github.com/cloudflare/pint/issues/1956).
 +
- ## v0.88.0
+ ## v0.89.4
  
- ### Added
+ ### Fixed
 diff --git a/docs/checks/alerts/for.md b/docs/checks/alerts/for.md
 index 2ccd771..29c93f3 100644
 --- a/docs/checks/alerts/for.md
@@ -346,5 +346,5 @@ index 5b69087..bfa0ed3 100644
  		s = &checks.PromqlSeriesSettings{}
  	case checks.RegexpCheckName:
 -- 
-2.43.0
+2.45.0
 
