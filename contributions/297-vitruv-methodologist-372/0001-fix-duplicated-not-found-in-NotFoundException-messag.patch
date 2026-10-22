@@ -1,0 +1,182 @@
+From 0d3cc5e74f214b7611de6466609c36c5b0f1053a Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 23:07:02 +0000
+Subject: [PATCH] fix duplicated "not found" in NotFoundException messages
+
+NotFoundException appends " not found!" to the name it gets, but four
+callers passed a whole sentence, so clients saw messages such as
+"RuleSet not found not found!". Pass bare names through the constants
+in messages/Error, and check the exact messages in the tests.
+
+Fixes #372
+---
+ .../methodologist/general/service/FileStorageService.java | 2 +-
+ .../java/tools/vitruv/methodologist/messages/Error.java   | 3 ++-
+ .../vsum/service/ConstraintRuleSetService.java            | 8 +++++---
+ .../general/service/FileStorageServiceTest.java           | 5 ++++-
+ .../vsum/controller/ConstraintRuleSetControllerTest.java  | 6 ++----
+ .../vsum/service/ConstraintRuleSetServiceTest.java        | 6 +++---
+ .../vsum/service/VsumBuildInputCollectorTest.java         | 4 +++-
+ 7 files changed, 20 insertions(+), 14 deletions(-)
+
+diff --git a/app/src/main/java/tools/vitruv/methodologist/general/service/FileStorageService.java b/app/src/main/java/tools/vitruv/methodologist/general/service/FileStorageService.java
+index 2c94ec1..f5266de 100644
+--- a/app/src/main/java/tools/vitruv/methodologist/general/service/FileStorageService.java
++++ b/app/src/main/java/tools/vitruv/methodologist/general/service/FileStorageService.java
+@@ -218,7 +218,7 @@ public class FileStorageService {
+     FileStorage existing =
+         fileStorageRepository
+             .findByIdAndType(fileId, FileEnumType.REACTION)
+-            .orElseThrow(() -> new NotFoundException("File not found"));
++            .orElseThrow(() -> new NotFoundException(FILE_ID_NOT_FOUND_ERROR));
+ 
+     if (existing.getUser() == null
+         || existing.getUser().getId() == null
+diff --git a/app/src/main/java/tools/vitruv/methodologist/messages/Error.java b/app/src/main/java/tools/vitruv/methodologist/messages/Error.java
+index cdfab56..37e1e5d 100644
+--- a/app/src/main/java/tools/vitruv/methodologist/messages/Error.java
++++ b/app/src/main/java/tools/vitruv/methodologist/messages/Error.java
+@@ -20,12 +20,13 @@ public class Error {
+   public static final String REACTION_FILE_IDS_ID_NOT_FOUND_ERROR = "Reaction files";
+   public static final String MEMBER_IN_VSUM_NOT_FOUND_ERROR = "Member in VSUM";
+   public static final String FILE_ID_NOT_FOUND_ERROR = "File";
++  public static final String RULE_SET_NOT_FOUND_ERROR = "RuleSet";
+   public static final String METAMODEL_PAIR_COUNT_MISMATCH_ERROR =
+       "Number of Ecore files must match number of GenModel files";
+   public static final String METAMODEL_PAIR_REQUIRED_ERROR =
+       "At least one metamodel (Ecore/GenModel pair) must be provided.";
+   public static final String METAMODEL_IDS_NOT_FOUND_IN_THIS_VSUM_NOT_FOUND_ERROR =
+-      "MetaModel Ids not found in this VSUM";
++      "MetaModel Ids in this VSUM";
+   public static final String NO_TEMPLATE_PROVIDED_ERROR =
+       "No template provided for fine-granular reaction.";
+   public static final String METAMODEL_RELATION_REACTION_OR_FG_REQUIRED_ERROR =
+diff --git a/app/src/main/java/tools/vitruv/methodologist/vsum/service/ConstraintRuleSetService.java b/app/src/main/java/tools/vitruv/methodologist/vsum/service/ConstraintRuleSetService.java
+index 1937fef..031560d 100644
+--- a/app/src/main/java/tools/vitruv/methodologist/vsum/service/ConstraintRuleSetService.java
++++ b/app/src/main/java/tools/vitruv/methodologist/vsum/service/ConstraintRuleSetService.java
+@@ -1,6 +1,8 @@
+ package tools.vitruv.methodologist.vsum.service;
+ 
++import static tools.vitruv.methodologist.messages.Error.RULE_SET_NOT_FOUND_ERROR;
+ import static tools.vitruv.methodologist.messages.Error.USER_DOSE_NOT_HAVE_ACCESS;
++import static tools.vitruv.methodologist.messages.Error.VSUM_ID_NOT_FOUND_ERROR;
+ 
+ import java.nio.charset.StandardCharsets;
+ import java.security.MessageDigest;
+@@ -99,7 +101,7 @@ public class ConstraintRuleSetService {
+     ConstraintRuleSet ruleSet =
+         ruleSetRepository
+             .findByIdAndVsumId(ruleSetId, vsumId)
+-            .orElseThrow(() -> new NotFoundException("RuleSet not found"));
++            .orElseThrow(() -> new NotFoundException(RULE_SET_NOT_FOUND_ERROR));
+ 
+     ruleSet.setName(request.name());
+     if (request.color() != null) {
+@@ -128,7 +130,7 @@ public class ConstraintRuleSetService {
+     ConstraintRuleSet ruleSet =
+         ruleSetRepository
+             .findByIdAndVsumId(ruleSetId, vsumId)
+-            .orElseThrow(() -> new NotFoundException("RuleSet not found"));
++            .orElseThrow(() -> new NotFoundException(RULE_SET_NOT_FOUND_ERROR));
+     ruleSetRepository.delete(ruleSet);
+   }
+ 
+@@ -187,7 +189,7 @@ public class ConstraintRuleSetService {
+     Vsum vsum =
+         vsumRepository
+             .findByIdAndRemovedAtIsNull(vsumId)
+-            .orElseThrow(() -> new NotFoundException("VSUM not found"));
++            .orElseThrow(() -> new NotFoundException(VSUM_ID_NOT_FOUND_ERROR));
+     if (vsum.getVsumUsers() == null
+         || vsum.getVsumUsers().stream().noneMatch(vsumUser -> belongsToUser(vsumUser, user))) {
+       throw new AccessDeniedException(USER_DOSE_NOT_HAVE_ACCESS);
+diff --git a/app/src/test/java/tools/vitruv/methodologist/general/service/FileStorageServiceTest.java b/app/src/test/java/tools/vitruv/methodologist/general/service/FileStorageServiceTest.java
+index a2f4a10..7ef0db1 100644
+--- a/app/src/test/java/tools/vitruv/methodologist/general/service/FileStorageServiceTest.java
++++ b/app/src/test/java/tools/vitruv/methodologist/general/service/FileStorageServiceTest.java
+@@ -218,7 +218,10 @@ class FileStorageServiceTest {
+     when(fileStorageRepository.findByIdAndType(1L, FileEnumType.REACTION))
+         .thenReturn(Optional.empty());
+ 
+-    assertThrows(NotFoundException.class, () -> fileStorageService.updateFile(email, 1L, testFile));
++    NotFoundException exception =
++        assertThrows(
++            NotFoundException.class, () -> fileStorageService.updateFile(email, 1L, testFile));
++    assertEquals("File not found!", exception.getMessage());
+   }
+ 
+   @Test
+diff --git a/app/src/test/java/tools/vitruv/methodologist/vsum/controller/ConstraintRuleSetControllerTest.java b/app/src/test/java/tools/vitruv/methodologist/vsum/controller/ConstraintRuleSetControllerTest.java
+index 25fb81b..1a3aafd 100644
+--- a/app/src/test/java/tools/vitruv/methodologist/vsum/controller/ConstraintRuleSetControllerTest.java
++++ b/app/src/test/java/tools/vitruv/methodologist/vsum/controller/ConstraintRuleSetControllerTest.java
+@@ -160,7 +160,7 @@ class ConstraintRuleSetControllerTest {
+     stubEmail();
+     RuleSetPutRequest request = new RuleSetPutRequest("X", null, null, null);
+     when(service.update(any(), eq(10L), eq(999L), any()))
+-        .thenThrow(new NotFoundException("RuleSet not found"));
++        .thenThrow(new NotFoundException("RuleSet"));
+ 
+     org.assertj.core.api.Assertions.assertThatThrownBy(
+             () -> controller.update(authentication, 10L, 999L, request))
+@@ -191,9 +191,7 @@ class ConstraintRuleSetControllerTest {
+   @Test
+   void delete_propagatesNotFoundException() {
+     stubEmail();
+-    doThrow(new NotFoundException("RuleSet not found"))
+-        .when(service)
+-        .delete("test@example.com", 10L, 999L);
++    doThrow(new NotFoundException("RuleSet")).when(service).delete("test@example.com", 10L, 999L);
+ 
+     org.assertj.core.api.Assertions.assertThatThrownBy(
+             () -> controller.delete(authentication, 10L, 999L))
+diff --git a/app/src/test/java/tools/vitruv/methodologist/vsum/service/ConstraintRuleSetServiceTest.java b/app/src/test/java/tools/vitruv/methodologist/vsum/service/ConstraintRuleSetServiceTest.java
+index 97a3184..b7b8bda 100644
+--- a/app/src/test/java/tools/vitruv/methodologist/vsum/service/ConstraintRuleSetServiceTest.java
++++ b/app/src/test/java/tools/vitruv/methodologist/vsum/service/ConstraintRuleSetServiceTest.java
+@@ -244,7 +244,7 @@ class ConstraintRuleSetServiceTest {
+     var req = new RuleSetPostRequest("X", null, null, null);
+     assertThatThrownBy(() -> service.create("test@example.com", 99L, req))
+         .isInstanceOf(NotFoundException.class)
+-        .hasMessageContaining("VSUM not found");
++        .hasMessage("Vsum id not found!");
+   }
+ 
+   @Test
+@@ -349,7 +349,7 @@ class ConstraintRuleSetServiceTest {
+     var req = new RuleSetPutRequest("X", null, null, null);
+     assertThatThrownBy(() -> service.update("test@example.com", 10L, 999L, req))
+         .isInstanceOf(NotFoundException.class)
+-        .hasMessageContaining("RuleSet not found");
++        .hasMessage("RuleSet not found!");
+   }
+ 
+   @Test
+@@ -411,7 +411,7 @@ class ConstraintRuleSetServiceTest {
+ 
+     assertThatThrownBy(() -> service.delete("test@example.com", 10L, 999L))
+         .isInstanceOf(NotFoundException.class)
+-        .hasMessageContaining("RuleSet not found");
++        .hasMessage("RuleSet not found!");
+   }
+ 
+   @Test
+diff --git a/app/src/test/java/tools/vitruv/methodologist/vsum/service/VsumBuildInputCollectorTest.java b/app/src/test/java/tools/vitruv/methodologist/vsum/service/VsumBuildInputCollectorTest.java
+index a14fa58..65b5a60 100644
+--- a/app/src/test/java/tools/vitruv/methodologist/vsum/service/VsumBuildInputCollectorTest.java
++++ b/app/src/test/java/tools/vitruv/methodologist/vsum/service/VsumBuildInputCollectorTest.java
+@@ -63,7 +63,9 @@ class VsumBuildInputCollectorTest {
+     FileStorage r = fs(3L, "x.reactions", new byte[] {3});
+     vsum.setMetaModelRelations(Set.of(rel(mm(null, null), null, r)));
+ 
+-    assertThatThrownBy(() -> collector.collect(vsum)).isInstanceOf(NotFoundException.class);
++    assertThatThrownBy(() -> collector.collect(vsum))
++        .isInstanceOf(NotFoundException.class)
++        .hasMessage("MetaModel Ids in this VSUM not found!");
+   }
+ 
+   @Test
+-- 
+2.43.0
+
