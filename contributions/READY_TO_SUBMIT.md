@@ -99,6 +99,9 @@
 | 431 | [OpenCHAMI/ochami#206](https://github.com/OpenCHAMI/ochami/issues/206) | **已提交** [#217](https://github.com/OpenCHAMI/ochami/pull/217) |
 | 340 | [stevearc/oil.nvim#754](https://github.com/stevearc/oil.nvim/issues/754) | **已提交** [#793](https://github.com/stevearc/oil.nvim/pull/793) |
 | 432 | [bpmn-io/dmn-migrate#60](https://github.com/bpmn-io/dmn-migrate/issues/60) | **已提交** [#63](https://github.com/bpmn-io/dmn-migrate/pull/63)（CLA 待签） |
+| 341 | [nvim-orgmode/orgmode#1171](https://github.com/nvim-orgmode/orgmode/issues/1171) | **已提交** [#1201](https://github.com/nvim-orgmode/orgmode/pull/1201) |
+| 284 | [tuProlog/2p-kt#945](https://github.com/tuProlog/2p-kt/issues/945) | 待提交（base `master`；无需认领；无 DCO/CLA；Kotlin；自由；复核 PASS） |
+| 342 | [stevearc/conform.nvim#877](https://github.com/stevearc/conform.nvim/issues/877) | master | 无需认领；无 DCO、无 CLA；Lua；高星；复核 PASS |
 | 395 | [sinelaw/fresh#3074](https://github.com/sinelaw/fresh/issues/3074) | 待提交（base `master`；无需认领；无 DCO/CLA，PR 模板的 GPL 许可框已勾；Rust；新锐；复核 PASS；提交信息带 `Assisted-by: Claude Code`） |
 | 396 | [sinelaw/fresh#2944](https://github.com/sinelaw/fresh/issues/2944) | 待提交（base `master`；无需认领；无 DCO/CLA，PR 模板 GPL 许可框已勾；Rust；新锐；复核 PASS；与 395 同仓库不同文件） |
 | 397 | [0xfurai/peekaping#118](https://github.com/0xfurai/peekaping/issues/118) | 待提交（base `main`；无需认领，维护者已邀请 PR；无 DCO/CLA；Go；新锐；复核 PASS（第二轮）；PR 标题带 `#118` 前缀） |

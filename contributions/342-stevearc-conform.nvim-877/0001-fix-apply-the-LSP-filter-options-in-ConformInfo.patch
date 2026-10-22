@@ -1,0 +1,100 @@
+From 4319b746777ace47d0c392b25a1bad69f054f825 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:48:30 +0000
+Subject: [PATCH] fix: apply the LSP filter options in ConformInfo
+
+ConformInfo listed every LSP client that supports formatting, ignoring
+the name/id/filter options set in formatters_by_ft, so it could show
+servers that are never used to format the buffer.
+
+Resolve the clients with the same filetype options that format() uses.
+
+Fixes #877
+---
+ lua/conform/health.lua |  3 +--
+ lua/conform/init.lua   | 13 +++++++++++++
+ tests/health_spec.lua  | 27 +++++++++++++++++++++++++++
+ 3 files changed, 41 insertions(+), 2 deletions(-)
+ create mode 100644 tests/health_spec.lua
+
+diff --git a/lua/conform/health.lua b/lua/conform/health.lua
+index be1b0ff..8e368da 100644
+--- a/lua/conform/health.lua
++++ b/lua/conform/health.lua
+@@ -67,7 +67,6 @@ end
+ M.show_window = function()
+   local conform = require("conform")
+   local log = require("conform.log")
+-  local lsp_format = require("conform.lsp_format")
+   local lines = {}
+   local highlights = {}
+   local logfile = log.get_logfile()
+@@ -145,7 +144,7 @@ M.show_window = function()
+ 
+   table.insert(lines, "Formatters for this buffer:")
+   table.insert(highlights, { "Title", #lines, 0, #lines[#lines] })
+-  local lsp_clients = lsp_format.get_format_clients({ bufnr = vim.api.nvim_get_current_buf() })
++  local lsp_clients = conform.list_lsp_format_clients()
+   local has_lsp_formatter = not vim.tbl_isempty(lsp_clients)
+   if has_lsp_formatter then
+     table.insert(lines, "LSP: " .. table.concat(
+diff --git a/lua/conform/init.lua b/lua/conform/init.lua
+index fe5b027..87aad6b 100644
+--- a/lua/conform/init.lua
++++ b/lua/conform/init.lua
+@@ -653,6 +653,19 @@ M.list_formatters_to_run = function(bufnr)
+   end
+ end
+ 
++---Get the LSP clients that can format a buffer, after applying the name/id/filter options from
++---formatters_by_ft
++---@private
++---@param bufnr? integer
++---@return vim.lsp.Client[]
++M.list_lsp_format_clients = function(bufnr)
++  if not bufnr or bufnr == 0 then
++    bufnr = vim.api.nvim_get_current_buf()
++  end
++  local opts = vim.tbl_extend("keep", get_opts_from_filetype(bufnr) or {}, { bufnr = bufnr })
++  return require("conform.lsp_format").get_format_clients(opts)
++end
++
+ ---List information about all filetype-configured formatters
+ ---@return conform.FormatterInfo[]
+ M.list_all_formatters = function()
+diff --git a/tests/health_spec.lua b/tests/health_spec.lua
+new file mode 100644
+index 0000000..8d59222
+--- /dev/null
++++ b/tests/health_spec.lua
+@@ -0,0 +1,27 @@
++local conform = require("conform")
++local test_util = require("tests.test_util")
++
++describe("health", function()
++  local get_clients = vim.lsp.get_clients
++  after_each(function()
++    vim.lsp.get_clients = get_clients
++    test_util.reset_editor()
++  end)
++
++  it("applies the LSP filter from formatters_by_ft in ConformInfo", function()
++    vim.lsp.get_clients = function()
++      return { { id = 1, name = "lua_ls" }, { id = 2, name = "other_ls" } }
++    end
++    conform.formatters_by_ft.lua = {
++      "stylua",
++      filter = function(client)
++        return client.name ~= "lua_ls"
++      end,
++    }
++    vim.bo.filetype = "lua"
++    require("conform.health").show_window()
++    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, true)
++    assert.truthy(vim.tbl_contains(lines, "LSP: other_ls"))
++    assert.falsy(vim.tbl_contains(lines, "LSP: lua_ls, other_ls"))
++  end)
++end)
+-- 
+2.43.0
+

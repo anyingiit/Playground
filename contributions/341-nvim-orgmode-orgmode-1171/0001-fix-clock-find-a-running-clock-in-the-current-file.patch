@@ -1,0 +1,102 @@
+From 47f30f12da51c2bb8ea0a6684a9ea64ae2614dcf Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:38:51 +0000
+Subject: [PATCH] fix(clock): find a running clock in the current file
+
+After a clock out was undone in a file that is not one of the agenda
+files, clocking out again did nothing: the clock forgets the headline on
+clock out, and the lookup for a running clock only scans the agenda
+files.
+
+Fall back to the current file when no agenda file has a running clock.
+
+Closes #1171
+
+AI-assisted: Claude Code
+---
+ lua/orgmode/clock/init.lua      | 22 +++++++++++++++++++++-
+ tests/plenary/ui/clock_spec.lua | 30 ++++++++++++++++++++++++++++++
+ 2 files changed, 51 insertions(+), 1 deletion(-)
+
+diff --git a/lua/orgmode/clock/init.lua b/lua/orgmode/clock/init.lua
+index 208b6dd..9fedb74 100644
+--- a/lua/orgmode/clock/init.lua
++++ b/lua/orgmode/clock/init.lua
+@@ -29,12 +29,32 @@ function Clock:init()
+ end
+ 
+ function Clock:update_clocked_headline()
+-  local last_clocked_headline = self.files:get_clocked_headline()
++  local last_clocked_headline = self.files:get_clocked_headline() or self:_get_clocked_headline_in_current_file()
+   if last_clocked_headline and last_clocked_headline:is_clocked_in() then
+     self.clocked_headline = last_clocked_headline
+   end
+ end
+ 
++-- The current file is not always one of the agenda files, but it can still
++-- have a running clock, e.g. after a clock out was undone.
++---@private
++---@return OrgHeadline|nil
++function Clock:_get_clocked_headline_in_current_file()
++  if vim.bo.filetype ~= 'org' then
++    return nil
++  end
++  local file = self.files:load_file_sync(utils.current_file_path())
++  if not file or not file:has_running_clock_candidate() then
++    return nil
++  end
++  for _, headline in ipairs(file:get_headlines()) do
++    if headline:is_clocked_in() then
++      return headline
++    end
++  end
++  return nil
++end
++
+ function Clock:has_clocked_headline()
+   self:update_clocked_headline()
+   return self.clocked_headline ~= nil
+diff --git a/tests/plenary/ui/clock_spec.lua b/tests/plenary/ui/clock_spec.lua
+index 7f18c77..3ca68ba 100644
+--- a/tests/plenary/ui/clock_spec.lua
++++ b/tests/plenary/ui/clock_spec.lua
+@@ -37,6 +37,36 @@ describe('Clock', function()
+     vim.cmd([[silent! write!]])
+   end)
+ 
++  it('should clock out again after undoing a clock out', function()
++    local file = helpers.create_file({
++      '#TITLE: Undo file',
++      '',
++      '* TODO Undo clock out',
++    })
++    vim.fn.cursor(3, 1)
++    local now = Date.now({ active = false }):to_wrapped_string()
++    vim.cmd([[norm ,oxi]])
++    vim.wait(100)
++    assert.are.same(string.format('  CLOCK: %s', now), vim.fn.getline(5))
++
++    -- Start a new undo block, so that undo only reverts the clock out
++    vim.o.undolevels = vim.o.undolevels
++    vim.fn.cursor(3, 1)
++    local clock_out = Date.now({ active = false }):to_wrapped_string()
++    vim.cmd([[norm ,oxo]])
++    assert.are.same(string.format('  CLOCK: %s--%s => 0:00', now, clock_out), vim.fn.getline(5))
++
++    vim.cmd([[silent! undo]])
++    assert.are.same(string.format('  CLOCK: %s', now), vim.fn.getline(5))
++
++    vim.fn.cursor(3, 1)
++    clock_out = Date.now({ active = false }):to_wrapped_string()
++    vim.cmd([[norm ,oxo]])
++    assert.are.same(string.format('  CLOCK: %s--%s => 0:00', now, clock_out), vim.fn.getline(5))
++    -- Keep the file out of the agenda files of the next tests
++    vim.fn.delete(file.filename)
++  end)
++
+   it('should clock out first entry from same file once second entry is clocked in', function()
+     local second_file = helpers.create_agenda_file({
+       '#TITLE: Second file',
+-- 
+2.43.0
+
