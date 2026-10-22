@@ -1,0 +1,248 @@
+From cb42bd3874ac65e75b5f3aeb8c6150f5f8bebcbb Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:40:20 +0000
+Subject: [PATCH] fix(server): dial IPv6 hosts in TCP and DNS monitors
+
+TCP and DNS monitors built their address with "%s:%d", so an IPv6 host
+or resolver such as ::1 became "::1:53", which Go rejects with "too many
+colons in address". Build it with net.JoinHostPort, which writes
+"[::1]:53". A TCP host already written as [::1], the workaround so far,
+is unwrapped first so it isn't bracketed twice.
+
+Closes #118
+
+Assisted-by: Claude Code
+---
+ CHANGELOG.md                                  |  1 +
+ .../healthcheck/executor/common_test.go       | 11 ++++
+ .../modules/healthcheck/executor/dns.go       |  9 ++--
+ .../modules/healthcheck/executor/dns_test.go  | 50 ++++++++++++++++++-
+ .../modules/healthcheck/executor/tcp.go       | 10 +++-
+ .../modules/healthcheck/executor/tcp_test.go  | 26 ++++++++++
+ 6 files changed, 102 insertions(+), 5 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 3d625af..754daf9 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ - fix: `helm upgrade` no longer fails while the last migrate Job still exists. Each install, upgrade and rollback runs its own Job, `<release>-migrate-<revision>`, and Helm removes the previous one, so the Kubernetes (Helm) page drops the step that deleted the Job first
+ - fix: a migration that is interrupted at startup or in the Helm chart's migrate Job (`docker stop`, an out-of-memory kill, a lost node) no longer leaves the database locked on PostgreSQL and SQLite. Before, it left a row in `bun_migration_locks`, and every later start failed with `migrations table is already locked`. On PostgreSQL the lock now disappears with the migration's database connection, and a migration that starts while another one runs waits for it, up to 10 minutes (`MIGRATE_LOCK_TIMEOUT`), instead of failing. SQLite takes no lock. A database that is already stuck on that error starts after the upgrade, because a leftover row is ignored, so `bun db unlock` is no longer needed there. MySQL doesn't change. See [Migrate](apps/docs/docs/architecture/migrate.md#migration-locking) (#226)
+   - Upgrade note: on PostgreSQL and SQLite, `bun db lock` no longer holds back `migrate` or `rollback`, because they don't read `bun_migration_locks` any more. If you ran `bun db lock` to freeze migrations during maintenance, stop the migrate container or Job instead. On MySQL, `bun db lock` still works as before.
++- fix: TCP monitors and DNS monitors work with an IPv6 address, such as `::1` or `2001:db8::1` for a TCP host or a DNS resolver. They joined the address and the port as `host:port`, which failed with "too many colons in address"; they now write it as `[host]:port`. A TCP host already written in brackets, like `[::1]`, keeps working (#118)
+ 
+ ## [0.0.47] - 2026-10-19
+ 
+diff --git a/apps/server/internal/modules/healthcheck/executor/common_test.go b/apps/server/internal/modules/healthcheck/executor/common_test.go
+index 0f02ace..eff71a9 100644
+--- a/apps/server/internal/modules/healthcheck/executor/common_test.go
++++ b/apps/server/internal/modules/healthcheck/executor/common_test.go
+@@ -501,6 +501,17 @@ func closedPort(t *testing.T) int {
+ 	return port
+ }
+ 
++// listenIPv6Loopback listens on TCP [::1], or skips the test on a host
++// without IPv6.
++func listenIPv6Loopback(t *testing.T) net.Listener {
++	t.Helper()
++	l, err := net.Listen("tcp", "[::1]:0")
++	if err != nil {
++		t.Skipf("IPv6 loopback not available: %v", err)
++	}
++	return l
++}
++
+ // closedAddr returns a loopback address that nothing listens on.
+ func closedAddr(t *testing.T) string {
+ 	t.Helper()
+diff --git a/apps/server/internal/modules/healthcheck/executor/dns.go b/apps/server/internal/modules/healthcheck/executor/dns.go
+index 1283220..109d38c 100644
+--- a/apps/server/internal/modules/healthcheck/executor/dns.go
++++ b/apps/server/internal/modules/healthcheck/executor/dns.go
+@@ -5,6 +5,7 @@ import (
+ 	"fmt"
+ 	"net"
+ 	"peekaping/internal/modules/shared"
++	"strconv"
+ 	"strings"
+ 	"time"
+ 
+@@ -47,6 +48,8 @@ func (d *DNSExecutor) Execute(ctx context.Context, m *Monitor, proxyModel *Proxy
+ 		return DownResult(err, time.Now().UTC(), time.Now().UTC())
+ 	}
+ 	cfg := cfgAny.(*DNSConfig)
++	// JoinHostPort brackets an IPv6 resolver, which "%s:%d" would not.
++	resolver := net.JoinHostPort(cfg.ResolverServer, strconv.Itoa(cfg.Port))
+ 
+ 	// The resolver's own timeouts come from resolv.conf, so bound the lookup
+ 	// by the monitor timeout here.
+@@ -60,7 +63,7 @@ func (d *DNSExecutor) Execute(ctx context.Context, m *Monitor, proxyModel *Proxy
+ 			dialer := &net.Dialer{
+ 				Timeout: time.Duration(m.Timeout) * time.Second,
+ 			}
+-			return dialer.DialContext(ctx, network, fmt.Sprintf("%s:%d", cfg.ResolverServer, cfg.Port))
++			return dialer.DialContext(ctx, network, resolver)
+ 		},
+ 	}
+ 
+@@ -159,7 +162,7 @@ func (d *DNSExecutor) Execute(ctx context.Context, m *Monitor, proxyModel *Proxy
+ 		client.Timeout = time.Duration(m.Timeout) * time.Second
+ 
+ 		var resp *dns.Msg
+-		resp, _, err = client.Exchange(msg, fmt.Sprintf("%s:%d", cfg.ResolverServer, cfg.Port))
++		resp, _, err = client.Exchange(msg, resolver)
+ 
+ 		if err == nil && resp != nil && len(resp.Answer) > 0 {
+ 			var caaStrings []string
+@@ -182,7 +185,7 @@ func (d *DNSExecutor) Execute(ctx context.Context, m *Monitor, proxyModel *Proxy
+ 		client.Timeout = time.Duration(m.Timeout) * time.Second
+ 
+ 		var resp *dns.Msg
+-		resp, _, err = client.Exchange(msg, fmt.Sprintf("%s:%d", cfg.ResolverServer, cfg.Port))
++		resp, _, err = client.Exchange(msg, resolver)
+ 
+ 		if err == nil && resp != nil && len(resp.Answer) > 0 {
+ 			for _, ans := range resp.Answer {
+diff --git a/apps/server/internal/modules/healthcheck/executor/dns_test.go b/apps/server/internal/modules/healthcheck/executor/dns_test.go
+index 823845f..a99a1e6 100644
+--- a/apps/server/internal/modules/healthcheck/executor/dns_test.go
++++ b/apps/server/internal/modules/healthcheck/executor/dns_test.go
+@@ -212,6 +212,12 @@ var testZone = []string{
+ 
+ // startDNSServer serves testZone over UDP on a loopback port and returns the port.
+ func startDNSServer(t *testing.T) int {
++	t.Helper()
++	return startDNSServerOn(t, "127.0.0.1:0")
++}
++
++// startDNSServerOn serves the test zone over UDP on addr and returns its port.
++func startDNSServerOn(t *testing.T, addr string) int {
+ 	t.Helper()
+ 	var zone []dns.RR
+ 	for _, record := range testZone {
+@@ -249,7 +255,7 @@ func startDNSServer(t *testing.T) int {
+ 		_ = w.WriteMsg(resp)
+ 	})
+ 
+-	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
++	pc, err := net.ListenPacket("udp", addr)
+ 	require.NoError(t, err)
+ 	started := make(chan struct{})
+ 	srv := &dns.Server{PacketConn: pc, Handler: handler, NotifyStartedFunc: func() { close(started) }}
+@@ -345,6 +351,48 @@ func TestDNSExecutor_Execute_Timeout(t *testing.T) {
+ 	}
+ }
+ 
++func dnsMonitorVia(resolver string, port int, resolveType string) *Monitor {
++	return &Monitor{
++		ID:      "dns",
++		Type:    "dns",
++		Name:    "peekaping.test",
++		Timeout: 2,
++		Config:  fmt.Sprintf(`{"host": "peekaping.test", "resolver_server": %q, "port": %d, "resolve_type": %q}`, resolver, port, resolveType),
++	}
++}
++
++// An IPv6 resolver is queried at [resolver]:port, both through net.Resolver
++// (A) and through miekg/dns (SOA).
++func TestDNSExecutor_Execute_IPv6Resolver(t *testing.T) {
++	probe := listenIPv6Loopback(t)
++	probe.Close()
++	port := startDNSServerOn(t, "[::1]:0")
++	executor := NewDNSExecutor(zap.NewNop().Sugar())
++
++	for _, resolveType := range []string{"A", "SOA"} {
++		t.Run(resolveType, func(t *testing.T) {
++			result := executor.Execute(context.Background(), dnsMonitorVia("::1", port, resolveType), nil)
++
++			assert.Equal(t, shared.MonitorStatusUp, result.Status, result.Message)
++		})
++	}
++}
++
++// Runs without IPv6 too: the resolver address is well formed even where it
++// can't be reached.
++func TestDNSExecutor_Execute_IPv6ResolverAddressIsWellFormed(t *testing.T) {
++	executor := NewDNSExecutor(zap.NewNop().Sugar())
++
++	for _, resolveType := range []string{"A", "SOA"} {
++		t.Run(resolveType, func(t *testing.T) {
++			result := executor.Execute(context.Background(), dnsMonitorVia("::1", closedPort(t), resolveType), nil)
++
++			assert.Equal(t, shared.MonitorStatusDown, result.Status)
++			assert.NotContains(t, result.Message, "too many colons")
++		})
++	}
++}
++
+ func TestDNSExecutor_Execute_InvalidConfig(t *testing.T) {
+ 	monitor := &Monitor{ID: "dns", Type: "dns", Name: "dns", Timeout: 2, Config: `{invalid json}`}
+ 
+diff --git a/apps/server/internal/modules/healthcheck/executor/tcp.go b/apps/server/internal/modules/healthcheck/executor/tcp.go
+index 1134733..911bf97 100644
+--- a/apps/server/internal/modules/healthcheck/executor/tcp.go
++++ b/apps/server/internal/modules/healthcheck/executor/tcp.go
+@@ -5,6 +5,8 @@ import (
+ 	"fmt"
+ 	"net"
+ 	"peekaping/internal/modules/shared"
++	"strconv"
++	"strings"
+ 	"time"
+ 
+ 	"go.uber.org/zap"
+@@ -44,7 +46,13 @@ func (t *TCPExecutor) Execute(ctx context.Context, m *Monitor, proxyModel *Proxy
+ 	}
+ 	cfg := cfgAny.(*TCPConfig)
+ 
+-	address := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
++	// JoinHostPort brackets an IPv6 host, which "%s:%d" would not. A host
++	// already written as [::1] is unwrapped first, so it isn't bracketed twice.
++	host := cfg.Host
++	if strings.HasPrefix(host, "[") && strings.HasSuffix(host, "]") {
++		host = host[1 : len(host)-1]
++	}
++	address := net.JoinHostPort(host, strconv.Itoa(cfg.Port))
+ 
+ 	startTime := time.Now().UTC()
+ 
+diff --git a/apps/server/internal/modules/healthcheck/executor/tcp_test.go b/apps/server/internal/modules/healthcheck/executor/tcp_test.go
+index 50eb72e..b383957 100644
+--- a/apps/server/internal/modules/healthcheck/executor/tcp_test.go
++++ b/apps/server/internal/modules/healthcheck/executor/tcp_test.go
+@@ -48,6 +48,32 @@ func TestTCPExecutor_Execute_ClosedPort(t *testing.T) {
+ 	assert.Contains(t, result.Message, "connection refused")
+ }
+ 
++// An IPv6 host is dialled as [host]:port, not split on its colons.
++func TestTCPExecutor_Execute_IPv6(t *testing.T) {
++	l := listenIPv6Loopback(t)
++	defer l.Close()
++
++	result := NewTCPExecutor(zap.NewNop().Sugar()).Execute(context.Background(), tcpMonitor(t, l.Addr().String()), nil)
++
++	assert.Equal(t, shared.MonitorStatusUp, result.Status, result.Message)
++}
++
++// Runs without IPv6 too: the address is well formed even where it can't be
++// reached, whether the host is written bare or, as before, in brackets.
++func TestTCPExecutor_Execute_IPv6AddressIsWellFormed(t *testing.T) {
++	for _, host := range []string{"::1", "[::1]"} {
++		t.Run(host, func(t *testing.T) {
++			monitor := &Monitor{ID: "tcp", Type: "tcp", Name: "tcp", Timeout: 2, Config: fmt.Sprintf(`{"host": %q, "port": 1}`, host)}
++
++			result := NewTCPExecutor(zap.NewNop().Sugar()).Execute(context.Background(), monitor, nil)
++
++			assert.Equal(t, shared.MonitorStatusDown, result.Status)
++			assert.NotContains(t, result.Message, "too many colons")
++			assert.NotContains(t, result.Message, "missing port")
++		})
++	}
++}
++
+ func TestTCPExecutor_Execute_InvalidConfig(t *testing.T) {
+ 	monitor := &Monitor{ID: "tcp", Type: "tcp", Name: "tcp", Timeout: 2, Config: `{invalid json}`}
+ 
+-- 
+2.43.0
+
