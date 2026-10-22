@@ -1,0 +1,1 @@
+Resolve C superclass variables assigned from rb_const_get

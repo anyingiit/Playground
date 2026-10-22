@@ -50,3 +50,4 @@
 | 214 | [mitmproxy/pdoc#775](https://github.com/mitmproxy/pdoc/issues/775) | 待提交（base `main`；无需认领；无 DCO/CLA；PR 模板为 checklist；复核 PASS，已按复核改线性扫描；维护者合并较慢） |
 | 391 | [Gaurav-Gosain/tuios#980](https://github.com/Gaurav-Gosain/tuios/issues/980) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；新锐；复核 PASS；用仓库自己的 PR 模板） |
 | 392 | [Gaurav-Gosain/tuios#585](https://github.com/Gaurav-Gosain/tuios/issues/585) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；新锐；复核 PASS；与 391 同仓库，391 合并后用 alt-0001-on-top-of-391.patch） |
+| 278 | [ruby/rdoc#1782](https://github.com/ruby/rdoc/issues/1782) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Ruby；复核 PASS；**按仓库 AGENTS.md，正文不加 AI 声明段**；与 277 同仓库不冲突） |

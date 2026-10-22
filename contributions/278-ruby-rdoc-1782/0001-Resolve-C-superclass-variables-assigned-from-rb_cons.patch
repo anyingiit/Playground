@@ -1,0 +1,167 @@
+From e777d7c7744d0df9f9b77b9f99a1a969e5691ffe Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:35:17 +0000
+Subject: [PATCH] Resolve C superclass variables assigned from rb_const_get
+
+When a C extension reuses one variable as both the superclass argument
+and the target of rb_define_class_under:
+
+  VALUE cSocket = rb_const_get(rb_cObject, rb_intern("Socket"));
+  cSocket = rb_define_class_under(mExample, "Socket", cSocket);
+
+the C parser recorded the superclass as the variable name "cSocket".
+Store#resolve_c_superclasses then resolved that variable to the class
+being defined, so Example::Socket became its own superclass.
+
+Look up a superclass variable that was assigned from
+rb_const_get(under, rb_intern("Name")) and use that class name instead,
+and never let resolve_c_superclasses make a class its own superclass.
+
+Fixes #1782
+---
+ lib/rdoc/parser/c.rb         | 31 ++++++++++++++++++++++++++-
+ lib/rdoc/store.rb            |  3 ++-
+ test/rdoc/parser/c_test.rb   | 41 ++++++++++++++++++++++++++++++++++++
+ test/rdoc/rdoc_store_test.rb | 11 ++++++++++
+ 4 files changed, 84 insertions(+), 2 deletions(-)
+
+diff --git a/lib/rdoc/parser/c.rb b/lib/rdoc/parser/c.rb
+index c8bc98e..656d464 100644
+--- a/lib/rdoc/parser/c.rb
++++ b/lib/rdoc/parser/c.rb
+@@ -862,7 +862,7 @@ module RDoc
+       # named +class_name+ in +parent+ which was assigned to the C +var_name+.
+ 
+       def handle_class_module(var_name, type, class_name, parent, in_module)
+-        parent_name = @known_classes[parent] || parent
++        parent_name = @known_classes[parent] || const_get_name(parent) || parent
+ 
+         if in_module
+           enclosure = @classes[in_module] || @store.find_c_enclosure(in_module)
+@@ -917,6 +917,35 @@ module RDoc
+         @store.add_c_enclosure var_name, cm
+       end
+ 
++      ##
++      # Returns the name of the class or module the C variable +var_name+ was
++      # assigned from <tt>rb_const_get(under, rb_intern("Name"))</tt>, or +nil+
++      # if there is no such assignment, +under+ is unknown, or +var_name+ is
++      # assigned different constants in different places.
++      #
++      #: (String?) -> String?
++      def const_get_name(var_name)
++        return unless var_name
++
++        names = @content.scan(%r%
++          \b#{Regexp.escape var_name}\s*=
++          \s*rb_const_get(?:_at)?\s*\(
++            \s*(\w+)\s*,
++            \s*rb_intern(?:_const)?\s*\(\s*"(\w+)"\s*\)
++          \s*\)
++        %x).uniq
++
++        return unless names.length == 1
++
++        under, name = names.first
++        under_name = @known_classes[under]
++
++        return unless under_name
++        return name if under_name == 'Object'
++
++        "#{under_name}::#{name}"
++      end
++
+       ##
+       # Adds constants.  By providing some_value: at the start of the comment you
+       # can override the C value of the comment to give a friendly definition.
+diff --git a/lib/rdoc/store.rb b/lib/rdoc/store.rb
+index 3b934db..0206c3b 100644
+--- a/lib/rdoc/store.rb
++++ b/lib/rdoc/store.rb
+@@ -307,7 +307,8 @@ module RDoc
+ 
+     def resolve_c_superclasses
+       @classes_hash.each_value do |klass|
+-        if klass.superclass.is_a?(String) && (candidate = find_c_enclosure(klass.superclass))
++        if klass.superclass.is_a?(String) && (candidate = find_c_enclosure(klass.superclass)) &&
++           !candidate.equal?(klass)
+           klass.superclass = candidate
+         end
+       end
+diff --git a/test/rdoc/parser/c_test.rb b/test/rdoc/parser/c_test.rb
+index c2b92ae..40ff64a 100644
+--- a/test/rdoc/parser/c_test.rb
++++ b/test/rdoc/parser/c_test.rb
+@@ -497,6 +497,47 @@ class RDocParserCTest < RDoc::TestCase
+     assert_equal 'this is Kernel::Foo < A::B', klass.comment.text
+   end
+ 
++  def test_do_classes_class_under_rb_const_get
++    content = <<~C
++      VALUE mExample = rb_define_module("Example");
++      VALUE cSocket = rb_const_get(rb_cObject, rb_intern("Socket"));
++      cSocket = rb_define_class_under(mExample, "Socket", cSocket);
++    C
++
++    klass = util_get_class content, 'cSocket'
++
++    assert_equal 'Example::Socket', klass.full_name
++    assert_equal 'Socket', klass.superclass
++  end
++
++  def test_do_classes_class_rb_const_get_under_module
++    content = <<~C
++      VALUE mNet = rb_define_module("Net");
++      VALUE cProtocol = rb_const_get(mNet, rb_intern("Protocol"));
++      VALUE cFoo = rb_define_class("Foo", cProtocol);
++    C
++
++    klass = util_get_class content, 'cFoo'
++
++    assert_equal 'Foo', klass.full_name
++    assert_equal 'Net::Protocol', klass.superclass
++  end
++
++  def test_do_classes_class_rb_const_get_reassigned
++    content = <<~C
++      VALUE mA = rb_define_module("A");
++      VALUE klass = rb_const_get(rb_cObject, rb_intern("IO"));
++      VALUE cX = rb_define_class_under(mA, "X", klass);
++      klass = rb_const_get(rb_cObject, rb_intern("String"));
++      VALUE cY = rb_define_class_under(mA, "Y", klass);
++    C
++
++    klass = util_get_class content, 'cY'
++
++    assert_equal 'A::Y', klass.full_name
++    assert_equal 'klass', klass.superclass
++  end
++
+   def test_do_classes_singleton
+     content = <<~C
+       VALUE cFoo = rb_define_class("Foo", rb_cObject);
+diff --git a/test/rdoc/rdoc_store_test.rb b/test/rdoc/rdoc_store_test.rb
+index 6caccdc..3c0cdae 100644
+--- a/test/rdoc/rdoc_store_test.rb
++++ b/test/rdoc/rdoc_store_test.rb
+@@ -299,6 +299,17 @@ class RDocStoreTest < XrefTestCase
+     assert_equal(parent, @s.classes_hash['Child'].superclass)
+   end
+ 
++  def test_resolve_c_superclasses_self
++    c_file = @s.add_file 'ext.c'
++    klass = c_file.add_class RDoc::NormalClass, 'Socket', 'cSocket'
++
++    @s.add_c_enclosure('cSocket', klass)
++
++    @s.resolve_c_superclasses
++
++    assert_equal 'cSocket', @s.classes_hash['Socket'].superclass
++  end
++
+   def test_find_class_named
+     assert_equal @c1, @store.find_class_named('C1')
+ 
+-- 
+2.43.0
+
