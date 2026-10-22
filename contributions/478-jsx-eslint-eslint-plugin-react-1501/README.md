@@ -7,7 +7,7 @@
 | Labels | bug, help wanted |
 | 维护者态度 | ljharb（2017-10-26）："No, we can't justify that - you're correct."（自动修复不该改变渲染结果），随即标 bug + help wanted。 |
 | Base 分支 | `master`（补丁基于 b6ba4e1） |
-| 状态 | 🚧 待独立复核 |
+| 状态 | ✅ 可提交（独立复核 PASS） |
 | 重复检查 | 2026-10-22：issue 无指派、无关联 PR。Moong0122 在 2020-10 说过 "I will take a look"，6 年无后续，视为放弃。 |
 | AI 政策 | 无 |
 | CLA/DCO | 无 |
@@ -35,3 +35,9 @@ issue 标题写的是 jsx-closing-bracket-location，但例子 `foo </div>` 实�
 git clone https://github.com/jsx-eslint/eslint-plugin-react && cd eslint-plugin-react && git checkout -b fix-1501 origin/master
 git am --keep-non-patch /path/to/0001-*.patch   # 保留提交标题里的 [Fix]
 ```
+
+## 独立复核（2026-10-22）
+- 新克隆 b6ba4e1，`git am --keep-non-patch` 干净；红 52/6 → 绿 58；全量 18298；eslint/tsc/lint:docs 通过。
+- 用 @babel/preset-react 编译前后对比渲染文本：单/多空格、fragment、`{x} </div>`、`<b/> </div>`、line-aligned、引号/反斜杠文本均保持一致且二次修复稳定；NBSP 不动；jsx-curly-brace-presence 默认配置不报 `{' '}`。
+- 小差异：制表符在 Babel 下原本渲染为空格，修复后保留为 `\t`（与 TypeScript 一致），PR 正文已注明。
+- 无竞争 PR。

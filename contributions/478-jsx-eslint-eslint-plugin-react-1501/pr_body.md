@@ -20,7 +20,7 @@ is fixed to
 
 (The issue title names `jsx-closing-bracket-location`, but the example is about the closing tag, and it is `jsx-closing-tag-location` whose fix does this. It still reproduces on master.)
 
-As agreed in #1501, the autofix shouldn't change what is rendered. With this change, when the last child is text ending in spaces or tabs, the fixer moves those characters into an expression container before the newline:
+As agreed in #1501, the autofix shouldn't change what is rendered. With this change, when the last child is text ending in spaces or tabs, the fixer moves those characters into an expression container (`{' '}`) before the newline (tabs are kept as written):
 
 ```jsx
 <div>
@@ -28,7 +28,7 @@ As agreed in #1501, the autofix shouldn't change what is rendered. With this cha
 </div>
 ```
 
-`{' '}` is the same form `jsx-one-expression-per-line` uses to keep significant spaces. Everything else about the fix is unchanged: content without trailing spaces gets only the newline, and the `matchIndent` / `alignWithOpening` re-indent path isn't touched.
+You suggested `{'foo '}` in the issue; `foo{' '}` changes less of the user's text, but I'm happy to switch. `{' '}` is the same form `jsx-one-expression-per-line` uses to keep significant spaces. Everything else about the fix is unchanged: content without trailing spaces gets only the newline, and the `matchIndent` / `alignWithOpening` re-indent path isn't touched.
 
 **Motivation / disclosure:** I had some spare AI-assistant quota (Claude Code) and am using it to try to help projects with open issues. The change was prepared with Claude Code and verified as listed below. If it doesn't fit, isn't up to your bar, or you'd simply rather not take it — please feel free to close it, no hard feelings at all 🙂
 

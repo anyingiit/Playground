@@ -107,3 +107,4 @@
 | 475 | [sql-formatter-org/sql-formatter#864](https://github.com/sql-formatter-org/sql-formatter/issues/864) | 可提交（复核 PASS）；与 476 同仓库，先交 475 |
 | 476 | [sql-formatter-org/sql-formatter#773](https://github.com/sql-formatter-org/sql-formatter/issues/773) | 可提交（复核 PASS）；在 475 之后提交 |
 | 477 | [jsx-eslint/eslint-plugin-react#3357](https://github.com/jsx-eslint/eslint-plugin-react/issues/3357) | 可提交（复核 PASS） |
+| 478 | [jsx-eslint/eslint-plugin-react#1501](https://github.com/jsx-eslint/eslint-plugin-react/issues/1501) | 可提交（复核 PASS）；与 477 同仓库，CHANGELOG 链接区可能有一行小冲突 |
