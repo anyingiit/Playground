@@ -1,0 +1,284 @@
+From 3e0a55222ee0e0f3edf1ff6a0f411b5ce74e91df Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 03:06:56 +0800
+Subject: [PATCH] feat(sorted-keys): add ignoredKeys parameter
+
+Add an `ignoredKeys` parameter to the sorted-keys template. The values of
+the listed keys are not checked for sorting at any nesting level, e.g.
+`ignoredKeys: ["labels", "annotations"]` skips label and annotation maps
+that Helm charts often render from user input via `include`. The position
+of the ignored key among its siblings is still checked.
+
+Fixes #1194
+---
+ docs/generated/templates.md                   |  9 ++++
+ .../sortedkeys/internal/params/gen-params.go  | 17 +++++++
+ .../sortedkeys/internal/params/params.go      |  6 +++
+ pkg/templates/sortedkeys/template.go          | 27 +++++++---
+ pkg/templates/sortedkeys/template_test.go     | 51 ++++++++++++++++++-
+ .../testdata/unsorted-labels-annotations.yaml | 23 +++++++++
+ 6 files changed, 125 insertions(+), 8 deletions(-)
+ create mode 100644 pkg/templates/sortedkeys/testdata/unsorted-labels-annotations.yaml
+
+diff --git a/docs/generated/templates.md b/docs/generated/templates.md
+index 8d378db..ec12fc6 100644
+--- a/docs/generated/templates.md
++++ b/docs/generated/templates.md
+@@ -925,6 +925,15 @@ KubeLinter supports the following templates:
+   name: recursive
+   required: false
+   type: boolean
++- arrayElemType: string
++  description: IgnoredKeys is a list of keys whose values are not checked for sorting,
++    at any nesting level, for example "labels" and "annotations". The order of the
++    ignored key itself among its siblings is still checked.
++  name: ignoredKeys
++  negationAllowed: false
++  regexAllowed: false
++  required: false
++  type: array
+ ```
+ 
+ ## Startup Port Exposed
+diff --git a/pkg/templates/sortedkeys/internal/params/gen-params.go b/pkg/templates/sortedkeys/internal/params/gen-params.go
+index 47e838d..8bfdc19 100644
+--- a/pkg/templates/sortedkeys/internal/params/gen-params.go
++++ b/pkg/templates/sortedkeys/internal/params/gen-params.go
+@@ -30,10 +30,27 @@ var (
+ 	"XXXStructFieldName": "Recursive",
+ 	"XXXIsPointer": false
+ }
++`)
++
++	ignoredKeysParamDesc = util.MustParseParameterDesc(`{
++	"Name": "ignoredKeys",
++	"Type": "array",
++	"Description": "IgnoredKeys is a list of keys whose values are not checked for sorting, at any nesting level, for example \"labels\" and \"annotations\". The order of the ignored key itself among its siblings is still checked.",
++	"Examples": null,
++	"Enum": null,
++	"SubParameters": null,
++	"ArrayElemType": "string",
++	"Required": false,
++	"NoRegex": true,
++	"NotNegatable": true,
++	"XXXStructFieldName": "IgnoredKeys",
++	"XXXIsPointer": false
++}
+ `)
+ 
+ 	ParamDescs = []check.ParameterDesc{
+ 		recursiveParamDesc,
++		ignoredKeysParamDesc,
+ 	}
+ )
+ 
+diff --git a/pkg/templates/sortedkeys/internal/params/params.go b/pkg/templates/sortedkeys/internal/params/params.go
+index f7559fe..1e5bb56 100644
+--- a/pkg/templates/sortedkeys/internal/params/params.go
++++ b/pkg/templates/sortedkeys/internal/params/params.go
+@@ -5,4 +5,10 @@ type Params struct {
+ 	// Recursive determines whether to check keys recursively at all nesting levels.
+ 	// Default is true.
+ 	Recursive bool
++
++	// IgnoredKeys is a list of keys whose values are not checked for sorting, at any nesting level,
++	// for example "labels" and "annotations". The order of the ignored key itself among its siblings is still checked.
++	// +noregex
++	// +notnegatable
++	IgnoredKeys []string `json:"ignoredKeys"`
+ }
+diff --git a/pkg/templates/sortedkeys/template.go b/pkg/templates/sortedkeys/template.go
+index 5a0ee63..100103c 100644
+--- a/pkg/templates/sortedkeys/template.go
++++ b/pkg/templates/sortedkeys/template.go
+@@ -29,6 +29,10 @@ func init() {
+ 		Parameters:             params.ParamDescs,
+ 		ParseAndValidateParams: params.ParseAndValidate,
+ 		Instantiate: params.WrapInstantiateFunc(func(p params.Params) (check.Func, error) {
++			ignoredKeys := make(map[string]struct{}, len(p.IgnoredKeys))
++			for _, key := range p.IgnoredKeys {
++				ignoredKeys[key] = struct{}{}
++			}
+ 			return func(_ lintcontext.LintContext, object lintcontext.Object) []diagnostic.Diagnostic {
+ 				// Parse the raw YAML to preserve key order
+ 				file, err := parser.ParseBytes(object.Metadata.Raw, parser.ParseComments)
+@@ -38,11 +42,12 @@ func init() {
+ 				}
+ 
+ 				var diagnostics []diagnostic.Diagnostic
++				c := checker{recursive: p.Recursive, ignoredKeys: ignoredKeys}
+ 
+ 				// Check all documents in the file
+ 				for _, doc := range file.Docs {
+ 					if doc != nil && doc.Body != nil {
+-						diagnostics = append(diagnostics, checkNode(doc.Body, "", p.Recursive)...)
++						diagnostics = append(diagnostics, c.checkNode(doc.Body, "")...)
+ 					}
+ 				}
+ 
+@@ -52,8 +57,13 @@ func init() {
+ 	})
+ }
+ 
++type checker struct {
++	recursive   bool
++	ignoredKeys map[string]struct{}
++}
++
+ // checkNode recursively checks if keys in a YAML node are sorted
+-func checkNode(node ast.Node, path string, recursive bool) []diagnostic.Diagnostic {
++func (c checker) checkNode(node ast.Node, path string) []diagnostic.Diagnostic {
+ 	if node == nil {
+ 		return nil
+ 	}
+@@ -105,9 +115,12 @@ func checkNode(node ast.Node, path string, recursive bool) []diagnostic.Diagnost
+ 		}
+ 
+ 		// Recursively check child nodes if recursive is enabled
+-		if recursive {
++		if c.recursive {
+ 			for _, value := range n.Values {
+ 				key := getKeyString(value.Key)
++				if _, ignored := c.ignoredKeys[key]; ignored {
++					continue
++				}
+ 				childPath := path
+ 				if childPath == "" {
+ 					childPath = key
+@@ -115,24 +128,24 @@ func checkNode(node ast.Node, path string, recursive bool) []diagnostic.Diagnost
+ 					childPath = path + "." + key
+ 				}
+ 
+-				childDiagnostics := checkNode(value.Value, childPath, recursive)
++				childDiagnostics := c.checkNode(value.Value, childPath)
+ 				diagnostics = append(diagnostics, childDiagnostics...)
+ 			}
+ 		}
+ 
+ 	case *ast.SequenceNode:
+ 		// For sequences, check each element if it's a mapping
+-		if recursive {
++		if c.recursive {
+ 			for idx, item := range n.Values {
+ 				childPath := fmt.Sprintf("%s[%d]", path, idx)
+-				childDiagnostics := checkNode(item, childPath, recursive)
++				childDiagnostics := c.checkNode(item, childPath)
+ 				diagnostics = append(diagnostics, childDiagnostics...)
+ 			}
+ 		}
+ 
+ 	case *ast.AnchorNode:
+ 		// Handle anchor nodes by checking their value
+-		diagnostics = append(diagnostics, checkNode(n.Value, path, recursive)...)
++		diagnostics = append(diagnostics, c.checkNode(n.Value, path)...)
+ 
+ 	case *ast.AliasNode:
+ 		// Skip alias nodes - they reference already checked content
+diff --git a/pkg/templates/sortedkeys/template_test.go b/pkg/templates/sortedkeys/template_test.go
+index 5347200..8e4c6f4 100644
+--- a/pkg/templates/sortedkeys/template_test.go
++++ b/pkg/templates/sortedkeys/template_test.go
+@@ -34,6 +34,7 @@ type testCase struct {
+ 	yamlFile            string
+ 	deploymentName      string
+ 	recursive           bool
++	ignoredKeys         []string
+ 	expectedDiagnostics []string
+ }
+ 
+@@ -216,6 +217,53 @@ func (s *SortedKeysTestSuite) TestSortedKeysTableDriven() {
+ 				"Keys are not sorted at data.service-b-config. Expected order: [<<, aa-priority, zz-custom], got: [<<, zz-custom, aa-priority]",
+ 			},
+ 		},
++
++		// Ignored keys test cases
++		{
++			name:           "labels_annotations_not_ignored",
++			yamlFile:       "unsorted-labels-annotations.yaml",
++			deploymentName: "unsorted-labels-annotations",
++			recursive:      true,
++			expectedDiagnostics: []string{
++				"Keys are not sorted at metadata.annotations. Expected order: [aa-custom, zz-custom], got: [zz-custom, aa-custom]",
++				"Keys are not sorted at metadata.labels. Expected order: [app, version], got: [version, app]",
++				"Keys are not sorted at spec.template.metadata.annotations. Expected order: [aa-custom, zz-custom], got: [zz-custom, aa-custom]",
++				"Keys are not sorted at spec.template.metadata.labels. Expected order: [app, version], got: [version, app]",
++				"Keys are not sorted at spec.template.spec.containers[0]. Expected order: [image, name], got: [name, image]",
++			},
++		},
++		{
++			name:           "labels_annotations_ignored",
++			yamlFile:       "unsorted-labels-annotations.yaml",
++			deploymentName: "unsorted-labels-annotations",
++			recursive:      true,
++			ignoredKeys:    []string{"labels", "annotations"},
++			expectedDiagnostics: []string{
++				"Keys are not sorted at spec.template.spec.containers[0]. Expected order: [image, name], got: [name, image]",
++			},
++		},
++		{
++			name:           "only_annotations_ignored",
++			yamlFile:       "unsorted-labels-annotations.yaml",
++			deploymentName: "unsorted-labels-annotations",
++			recursive:      true,
++			ignoredKeys:    []string{"annotations"},
++			expectedDiagnostics: []string{
++				"Keys are not sorted at metadata.labels. Expected order: [app, version], got: [version, app]",
++				"Keys are not sorted at spec.template.metadata.labels. Expected order: [app, version], got: [version, app]",
++				"Keys are not sorted at spec.template.spec.containers[0]. Expected order: [image, name], got: [name, image]",
++			},
++		},
++		{
++			name:           "ignored_key_still_sorted_among_siblings",
++			yamlFile:       "unsorted-top-level.yaml",
++			deploymentName: "unsorted-deployment",
++			recursive:      true,
++			ignoredKeys:    []string{"kind"},
++			expectedDiagnostics: []string{
++				"Keys are not sorted at root. Expected order: [apiVersion, kind, metadata, spec], got: [apiVersion, metadata, spec, kind]",
++			},
++		},
+ 	}
+ 
+ 	for _, tc := range testCases {
+@@ -256,7 +304,8 @@ func (s *SortedKeysTestSuite) TestSortedKeysTableDriven() {
+ 			s.Validate(s.ctx, []templates.TestCase{
+ 				{
+ 					Param: params.Params{
+-						Recursive: tc.recursive,
++						Recursive:   tc.recursive,
++						IgnoredKeys: tc.ignoredKeys,
+ 					},
+ 					Diagnostics:              expectedDiags,
+ 					ExpectInstantiationError: false,
+diff --git a/pkg/templates/sortedkeys/testdata/unsorted-labels-annotations.yaml b/pkg/templates/sortedkeys/testdata/unsorted-labels-annotations.yaml
+new file mode 100644
+index 0000000..0d39090
+--- /dev/null
++++ b/pkg/templates/sortedkeys/testdata/unsorted-labels-annotations.yaml
+@@ -0,0 +1,23 @@
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  annotations:
++    zz-custom: "true"
++    aa-custom: "true"
++  labels:
++    version: v1
++    app: myapp
++  name: unsorted-labels-annotations
++spec:
++  template:
++    metadata:
++      annotations:
++        zz-custom: "true"
++        aa-custom: "true"
++      labels:
++        version: v1
++        app: myapp
++    spec:
++      containers:
++        - name: app
++          image: myapp:latest
+-- 
+2.45.0
+
