@@ -95,3 +95,4 @@
 | 428 | [OpenCHAMI/ochami#191](https://github.com/OpenCHAMI/ochami/issues/191) | **已提交** [#216](https://github.com/OpenCHAMI/ochami/pull/216) |
 | 339 | [hrsh7th/nvim-cmp#2232](https://github.com/hrsh7th/nvim-cmp/issues/2232) | main | 无需认领；无 DCO、无 CLA；Lua；高星；复核 PASS |
 | 395 | [sinelaw/fresh#3074](https://github.com/sinelaw/fresh/issues/3074) | 待提交（base `master`；无需认领；无 DCO/CLA，PR 模板的 GPL 许可框已勾；Rust；新锐；复核 PASS；提交信息带 `Assisted-by: Claude Code`） |
+| 396 | [sinelaw/fresh#2944](https://github.com/sinelaw/fresh/issues/2944) | 待提交（base `master`；无需认领；无 DCO/CLA，PR 模板 GPL 许可框已勾；Rust；新锐；复核 PASS；与 395 同仓库不同文件） |

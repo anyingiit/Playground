@@ -1,0 +1,209 @@
+From 4c8b8454497c28ff04a93188fc10b5c94a867f07 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:31:28 +0000
+Subject: [PATCH] Let the remote agent decide whether a remote file is writable
+
+Over SSH, Fresh judged a remote file's writability by comparing the
+file's uid/gid with the local process's own ids. Those come from
+different hosts, so with `auto_read_only` on, a file only its owner may
+write was opened read-only whenever the local and remote uids differ
+(Termux is one easy way to get there), and the other way round a file
+the remote user can't write could look writable (#2944).
+
+The agent's `stat` now reports `writable`, from `os.access(W_OK)` as the
+remote user, and the client uses it. An agent that doesn't send it
+falls back to the old comparison.
+
+Fixes #2944
+
+Assisted-by: Claude Code
+---
+ .../fresh-editor/src/services/remote/agent.py |  6 ++
+ .../src/services/remote/filesystem.rs         | 63 ++++++++++++++++---
+ .../src/services/remote/protocol.rs           |  5 ++
+ .../fresh-editor/src/services/remote/tests.rs | 47 ++++++++++++++
+ 4 files changed, 114 insertions(+), 7 deletions(-)
+
+diff --git a/crates/fresh-editor/src/services/remote/agent.py b/crates/fresh-editor/src/services/remote/agent.py
+index ac9c877..b2d6d5d 100644
+--- a/crates/fresh-editor/src/services/remote/agent.py
++++ b/crates/fresh-editor/src/services/remote/agent.py
+@@ -172,6 +172,12 @@ def cmd_stat(id, p):
+             "dir": stat.S_ISDIR(st.st_mode),
+             "file": stat.S_ISREG(st.st_mode),
+             "link": is_link,
++            # Whether this host's user may write the path. The client can't
++            # tell from uid/gid: its own ids mean nothing on this host. The
++            # kernel's answer also covers ACLs and read-only mounts.
++            "writable": os.access(
++                path, os.W_OK, effective_ids=os.access in os.supports_effective_ids
++            ),
+         },
+     )
+ 
+diff --git a/crates/fresh-editor/src/services/remote/filesystem.rs b/crates/fresh-editor/src/services/remote/filesystem.rs
+index 5aac6da..7a21170 100644
+--- a/crates/fresh-editor/src/services/remote/filesystem.rs
++++ b/crates/fresh-editor/src/services/remote/filesystem.rs
+@@ -163,14 +163,24 @@ impl RemoteFileSystem {
+         let is_hidden = name.starts_with('.');
+         let permissions = FilePermissions::from_mode(rm.mode);
+ 
+-        #[cfg(unix)]
+-        let is_readonly = {
+-            let (euid, user_groups) =
+-                crate::model::filesystem::StdFileSystem::current_user_groups();
+-            permissions.is_readonly_for_user(euid, rm.uid, rm.gid, &user_groups)
++        // The agent decides writability as the remote user. Comparing the
++        // file's uid/gid with this process's ids is only a fallback: the two
++        // hosts' ids need not match (#2944).
++        let is_readonly = match rm.writable {
++            Some(writable) => !writable,
++            None => {
++                #[cfg(unix)]
++                {
++                    let (euid, user_groups) =
++                        crate::model::filesystem::StdFileSystem::current_user_groups();
++                    permissions.is_readonly_for_user(euid, rm.uid, rm.gid, &user_groups)
++                }
++                #[cfg(not(unix))]
++                {
++                    permissions.is_readonly()
++                }
++            }
+         };
+-        #[cfg(not(unix))]
+-        let is_readonly = permissions.is_readonly();
+ 
+         let mut meta = FileMetadata::new(rm.size)
+             .with_hidden(is_hidden)
+@@ -1030,6 +1040,7 @@ mod tests {
+             dir: false,
+             file: true,
+             link: false,
++            writable: None,
+         };
+ 
+         let meta = RemoteFileSystem::convert_metadata(&rm, "test.txt");
+@@ -1041,6 +1052,44 @@ mod tests {
+         assert!(meta.is_hidden);
+     }
+ 
++    /// Writability comes from the agent, which checks it as the remote user:
++    /// the remote file's uid/gid say nothing about this process's ids (#2944).
++    #[test]
++    fn test_convert_metadata_uses_the_agents_writable() {
++        #[cfg(unix)]
++        let (own_uid, own_gid) = {
++            let (euid, groups) = crate::model::filesystem::StdFileSystem::current_user_groups();
++            (euid, *groups.first().unwrap_or(&0u32))
++        };
++        #[cfg(not(unix))]
++        let (own_uid, own_gid) = (1000u32, 1000u32);
++
++        // Owned by another uid and only owner-writable, the way a file of
++        // the SSH user looks from a local user with a different uid.
++        let theirs = RemoteMetadata {
++            size: 1,
++            mtime: 0,
++            mode: 0o100644,
++            uid: own_uid.wrapping_add(4242),
++            gid: own_gid.wrapping_add(4242),
++            dir: false,
++            file: true,
++            link: false,
++            writable: Some(true),
++        };
++        assert!(!RemoteFileSystem::convert_metadata(&theirs, "notes.txt").is_readonly);
++
++        // And the other way round: the ids match ours, but the remote user
++        // may not write it.
++        let denied = RemoteMetadata {
++            uid: own_uid,
++            gid: own_gid,
++            writable: Some(false),
++            ..theirs
++        };
++        assert!(RemoteFileSystem::convert_metadata(&denied, "notes.txt").is_readonly);
++    }
++
+     #[test]
+     fn test_convert_dir_entry() {
+         let re = RemoteDirEntry {
+diff --git a/crates/fresh-editor/src/services/remote/protocol.rs b/crates/fresh-editor/src/services/remote/protocol.rs
+index d5a5671..d4d15b0 100644
+--- a/crates/fresh-editor/src/services/remote/protocol.rs
++++ b/crates/fresh-editor/src/services/remote/protocol.rs
+@@ -108,6 +108,11 @@ pub struct RemoteMetadata {
+     pub file: bool,
+     #[serde(default)]
+     pub link: bool,
++    /// Whether the remote user may write the path, as the agent's
++    /// `os.access` decides it on the remote host. `None` from an agent that
++    /// doesn't report it.
++    #[serde(default)]
++    pub writable: Option<bool>,
+ }
+ 
+ /// Process execution result
+diff --git a/crates/fresh-editor/src/services/remote/tests.rs b/crates/fresh-editor/src/services/remote/tests.rs
+index eb267fb..c6ca573 100644
+--- a/crates/fresh-editor/src/services/remote/tests.rs
++++ b/crates/fresh-editor/src/services/remote/tests.rs
+@@ -354,6 +354,53 @@ mod agent_integration {
+         assert!(result.get("dir").and_then(|v| v.as_bool()).unwrap_or(false));
+     }
+ 
++    /// The agent reports whether the remote user may write a path, so the
++    /// client doesn't have to guess from uid/gid that belong to another host
++    /// (#2944).
++    #[test]
++    fn test_agent_stat_reports_writable() {
++        let Some((mut stdin, mut stdout)) = spawn_agent() else {
++            eprintln!("Skipping test: Python3 not available");
++            return;
++        };
++
++        let mut line = String::new();
++        stdout.read_line(&mut line).unwrap();
++
++        let dir = tempfile::tempdir().unwrap();
++        let file = dir.path().join("notes.txt");
++        std::fs::write(&file, "x").unwrap();
++        let path = file.to_string_lossy().into_owned();
++
++        let writable = |stdin: &mut std::process::ChildStdin,
++                        stdout: &mut BufReader<std::process::ChildStdout>| {
++            send_request(stdin, stdout, "stat", serde_json::json!({ "path": path }))
++                .and_then(|resp| resp.result)
++                .and_then(|result| result.get("writable").and_then(|v| v.as_bool()))
++        };
++
++        assert_eq!(writable(&mut stdin, &mut stdout), Some(true));
++
++        #[cfg(unix)]
++        {
++            use std::os::unix::fs::PermissionsExt;
++            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444)).unwrap();
++            // Root may write a read-only file, so ask the kernel what this
++            // user may do and expect the agent to agree.
++            let c_path = std::ffi::CString::new(path.as_bytes()).unwrap();
++            // SAFETY: `c_path` is a valid NUL-terminated path for the call.
++            let kernel = unsafe {
++                libc::faccessat(
++                    libc::AT_FDCWD,
++                    c_path.as_ptr(),
++                    libc::W_OK,
++                    libc::AT_EACCESS,
++                )
++            } == 0;
++            assert_eq!(writable(&mut stdin, &mut stdout), Some(kernel));
++        }
++    }
++
+     #[test]
+     fn test_agent_exists_command() {
+         let Some((mut stdin, mut stdout)) = spawn_agent() else {
+-- 
+2.43.0
+
