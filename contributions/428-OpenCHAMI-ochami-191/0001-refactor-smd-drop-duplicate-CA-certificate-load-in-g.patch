@@ -1,0 +1,123 @@
+From 44a2926500e1536d0df68dee53b830fb57d4b0d4 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:11:01 +0000
+Subject: [PATCH] refactor(smd): drop duplicate CA certificate load in
+ group/rfe add
+
+smd.GetClient already loads --cacert into the client it returns, so the
+UseCACert calls in "smd group add" and "smd rfe add" read and parsed the
+CA file a second time without changing anything.
+
+Add TestSMDAdd_TrustsCACert, which checks that both commands still reach
+a TLS server that is trusted only through --cacert. An invalid --cacert
+is still rejected with CodePayload (TestCommands_RejectInvalidCACert).
+
+Fixes #191
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ cmd/smd/group/add.go |  5 -----
+ cmd/smd/rfe/add.go   |  5 -----
+ cmd/smd_test.go      | 45 ++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 45 insertions(+), 10 deletions(-)
+
+diff --git a/cmd/smd/group/add.go b/cmd/smd/group/add.go
+index 34a45dd..fbed021 100644
+--- a/cmd/smd/group/add.go
++++ b/cmd/smd/group/add.go
+@@ -30,11 +30,6 @@ func runCoreGroupAdd(cmd *cobra.Command, opts *groupAddOptions, args []string, s
+ 		return err
+ 	}
+ 
+-	// Check if a CA certificate was passed and load it into client if valid
+-	if err := rt.UseCACert(smdClient.OchamiClient); err != nil {
+-		return err
+-	}
+-
+ 	var groups []smd.Group
+ 	if cmd.Flag("data").Changed {
+ 		// Use payload file if passed
+diff --git a/cmd/smd/rfe/add.go b/cmd/smd/rfe/add.go
+index 5cbc3cc..ed750fb 100644
+--- a/cmd/smd/rfe/add.go
++++ b/cmd/smd/rfe/add.go
+@@ -32,11 +32,6 @@ func runCoreRfeAdd(cmd *cobra.Command, opts *rfeAddOptions, args []string, smdCl
+ 		return err
+ 	}
+ 
+-	// Check if a CA certificate was passed and load it into client if valid
+-	if err := rt.UseCACert(smdClient.OchamiClient); err != nil {
+-		return err
+-	}
+-
+ 	var rfes smd.RedfishEndpointSlice
+ 	if cmd.Flag("data").Changed {
+ 		// Use payload file if passed
+diff --git a/cmd/smd_test.go b/cmd/smd_test.go
+index 35c2a10..5ab0b2c 100644
+--- a/cmd/smd_test.go
++++ b/cmd/smd_test.go
+@@ -11,8 +11,11 @@ package cmd
+ // HTTP-failure cases are covered in smd_errors_test.go.
+ 
+ import (
++	"encoding/pem"
+ 	"net/http"
+ 	"net/http/httptest"
++	"os"
++	"path/filepath"
+ 	"strings"
+ 	"testing"
+ )
+@@ -82,6 +85,48 @@ func TestSMDGroupDelete_NoConfirm(t *testing.T) {
+ 	}
+ }
+ 
++// TestSMDAdd_TrustsCACert verifies that "smd group add" and "smd rfe add"
++// issue their POST to a TLS server whose certificate is trusted only through
++// --cacert.
++func TestSMDAdd_TrustsCACert(t *testing.T) {
++	t.Parallel()
++
++	tests := []struct {
++		name string
++		args []string
++	}{
++		{name: "group", args: []string{"smd", "group", "add", "compute"}},
++		{name: "rfe", args: []string{"smd", "rfe", "add", "x0", "n", "172.16.0.1", "de:ad:be:ef:00:00"}},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			t.Parallel()
++
++			var gotMethod string
++			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				gotMethod = r.Method
++				w.WriteHeader(http.StatusCreated)
++			}))
++			defer srv.Close()
++
++			caPath := filepath.Join(t.TempDir(), "ca.pem")
++			caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
++			if err := os.WriteFile(caPath, caPEM, 0o600); err != nil {
++				t.Fatalf("failed to write CA certificate: %v", err)
++			}
++
++			full := append(tc.args, "--ignore-config", "--uri", srv.URL, "--token", "t", "--cacert", caPath)
++			res := runOchamiWithRuntime(t, full...)
++			if res.err != nil {
++				t.Fatalf("unexpected error: %v (exit %d)", res.err, res.exitCode)
++			}
++			if gotMethod != http.MethodPost {
++				t.Errorf("method = %q, want POST", gotMethod)
++			}
++		})
++	}
++}
++
+ // TestSMDGroupMembership_Get verifies "smd group membership" issues GET
+ // /memberships.
+ func TestSMDGroupMembership_Get(t *testing.T) {
+-- 
+2.43.0
+
