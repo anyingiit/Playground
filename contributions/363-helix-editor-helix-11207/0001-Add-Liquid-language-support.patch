@@ -1,0 +1,243 @@
+From 3358a8389b3a715a4d8f0d552a43457f99b1b015 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:47:19 +0000
+Subject: [PATCH] Add Liquid language support
+
+---
+ book/src/generated/lang-support.md        |   1 +
+ languages.toml                            |  12 ++
+ runtime/queries/liquid/highlights.scm     | 128 ++++++++++++++++++++++
+ runtime/queries/liquid/injections.scm     |  22 ++++
+ tests/query/highlights/liquid/tags.liquid |  21 ++++
+ 5 files changed, 184 insertions(+)
+ create mode 100644 runtime/queries/liquid/highlights.scm
+ create mode 100644 runtime/queries/liquid/injections.scm
+ create mode 100644 tests/query/highlights/liquid/tags.liquid
+
+diff --git a/book/src/generated/lang-support.md b/book/src/generated/lang-support.md
+index eac6942..f356978 100644
+--- a/book/src/generated/lang-support.md
++++ b/book/src/generated/lang-support.md
+@@ -169,6 +169,7 @@
+ | lean | ✓ |  |  |  |  | `lake` |
+ | ledger | ✓ |  |  |  |  |  |
+ | less | ✓ |  | ✓ |  | ✓ | `vscode-css-language-server` |
++| liquid | ✓ |  |  |  |  |  |
+ | llvm | ✓ | ✓ | ✓ |  |  |  |
+ | llvm-mir | ✓ | ✓ | ✓ |  |  |  |
+ | llvm-mir-yaml | ✓ |  | ✓ |  |  |  |
+diff --git a/languages.toml b/languages.toml
+index a5403e6..e6b62a5 100644
+--- a/languages.toml
++++ b/languages.toml
+@@ -1411,6 +1411,18 @@ indent = { tab-width = 2, unit = "  " }
+ name = "twig"
+ source = { git = "https://github.com/gbprod/tree-sitter-twig", rev = "0afd9a6d808944e65a7be393e31868b85345735f" }
+ 
++[[language]]
++name = "liquid"
++scope = "source.liquid"
++injection-regex = "liquid"
++file-types = ["liquid"]
++block-comment-tokens = { start = "{% comment %}", end = "{% endcomment %}" }
++indent = { tab-width = 2, unit = "  " }
++
++[[grammar]]
++name = "liquid"
++source = { git = "https://github.com/hankthetank27/tree-sitter-liquid", rev = "e45dbac8c5fa95b1f0e00e7e0c04bc8855823391" }
++
+ [[language]]
+ name = "latex"
+ scope = "source.tex"
+diff --git a/runtime/queries/liquid/highlights.scm b/runtime/queries/liquid/highlights.scm
+new file mode 100644
+index 0000000..497eb45
+--- /dev/null
++++ b/runtime/queries/liquid/highlights.scm
+@@ -0,0 +1,128 @@
++(raw_statement) @markup.raw
++
++(identifier) @variable
++
++(string) @string
++
++(boolean) @constant.builtin.boolean
++
++(number) @constant.numeric
++
++(filter
++  name: (identifier) @function)
++
++[
++  "{{"
++  "}}"
++  "{{-"
++  "-}}"
++  "{%"
++  "%}"
++  "{%-"
++  "-%}"
++] @punctuation.special
++
++[
++  "("
++  ")"
++  "["
++  "]"
++] @punctuation.bracket
++
++[
++  ","
++  "."
++] @punctuation.delimiter
++
++[
++  "|"
++  ":"
++  "="
++  (predicate)
++] @operator
++
++[
++  "and"
++  "contains"
++  "in"
++  "or"
++] @keyword.operator
++
++[
++  "as"
++  "assign"
++  "by"
++  "capture"
++  "cycle"
++  "decrement"
++  "echo"
++  "endcapture"
++  "endform"
++  "endjavascript"
++  "endpaginate"
++  "endraw"
++  "endschema"
++  "endstyle"
++  "endstylesheet"
++  "form"
++  "increment"
++  "javascript"
++  "liquid"
++  "paginate"
++  "raw"
++  "schema"
++  "style"
++  "stylesheet"
++  "with"
++  (custom_unpaired_statement)
++] @keyword
++
++[
++  "case"
++  "else"
++  "elsif"
++  "endcase"
++  "endif"
++  "endunless"
++  "if"
++  "unless"
++  "when"
++] @keyword.control.conditional
++
++[
++  "endfor"
++  "endtablerow"
++  "for"
++  "tablerow"
++  (break_statement)
++  (continue_statement)
++] @keyword.control.repeat
++
++[
++  "include"
++  "include_relative"
++  "layout"
++  "render"
++  "section"
++  "sections"
++] @keyword.control.import
++
++(comment) @comment
++
++[
++  (doc)
++  (doc_content)
++  (doc_example_annotation)
++] @comment.block.documentation
++
++[
++  "doc"
++  "enddoc"
++  "@param"
++  "@example"
++  (doc_description_annotation)
++] @keyword
++
++(doc_type) @type
++
++(doc_param_name) @variable.parameter
+diff --git a/runtime/queries/liquid/injections.scm b/runtime/queries/liquid/injections.scm
+new file mode 100644
+index 0000000..517f2b7
+--- /dev/null
++++ b/runtime/queries/liquid/injections.scm
+@@ -0,0 +1,22 @@
++((template_content) @injection.content
++  (#set! injection.language "html")
++  (#set! injection.combined))
++
++((json_content) @injection.content
++  (#set! injection.language "json")
++  (#set! injection.combined))
++
++((style_content) @injection.content
++  (#set! injection.language "css")
++  (#set! injection.combined))
++
++((stylesheet_content) @injection.content
++  (#set! injection.language "css")
++  (#set! injection.combined))
++
++((js_content) @injection.content
++  (#set! injection.language "javascript")
++  (#set! injection.combined))
++
++((front_matter) @injection.content
++  (#set! injection.language "yaml"))
+diff --git a/tests/query/highlights/liquid/tags.liquid b/tests/query/highlights/liquid/tags.liquid
+new file mode 100644
+index 0000000..e78b4fd
+--- /dev/null
++++ b/tests/query/highlights/liquid/tags.liquid
+@@ -0,0 +1,21 @@
++{% if user.name == "x" and true %}
++// ^ @keyword.control.conditional
++//    ^ @variable
++//                  ^ @string
++//                       ^ @keyword.operator
++//                           ^ @constant.builtin.boolean
++<p>{{ product.price | money: 2 }}</p>
++//                     ^ @function
++//                           ^ @constant.numeric
++{% endif %}
++{% for item in collection.items %}{% break %}{% endfor %}
++// ^ @keyword.control.repeat
++//          ^ @keyword.operator
++//                                    ^ @keyword.control.repeat
++{% render 'card', item: item %}
++// ^ @keyword.control.import
++//        ^ @string
++{% raw %}{{ not parsed }}{% endraw %}
++//          ^ @markup.raw
++{% comment %} a comment {% endcomment %}
++//              ^ @comment
+-- 
+2.43.0
+
