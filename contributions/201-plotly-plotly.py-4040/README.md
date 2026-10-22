@@ -46,3 +46,9 @@ git am /path/to/contributions/201-plotly-plotly.py-4040/0001-*.patch
 
 ## PR
 标题见 `pr_title.txt`，正文见 `pr_body.md`。
+
+## 独立复核 (2026-10-23)
+- 上游复查：#4040 仍 open、无 assignee、无新认领；`gh pr list --state all --search 4040` → 0。原 patch 在当前 main (0de8a38) 上 `git am` 干净。
+- **发现缺陷并已修复**：原触发条件里的 "或混有真实列名"（`len(missing) < len(argument)`）会让 main 上原本能正常出图的调用报错，例如 `px.histogram(df, x=["a", "zz"])`、`px.scatter(df, x=["a", "zz"], y=[1, 2])`、`px.scatter(df, x=("a","zz"), y=(1,2))`（df 有列 `a`、行数≠2，字符串列表本意是数据）。已收窄为只在 `length and len(argument) != length` 时报错，即只替换本来就会抛出的 "same length" 错误，不再改变任何可正常运行调用的行为。
+- 相应调整测试：删去 "x 先处理时的 typo" 用例（该情形现在仍是旧报错，与 "全部拼错且先处理" 同属已知未覆盖）；"无 x 时 y typo" 用例仅对 pandas 断言（polars/pyarrow 无 index，main 上该调用本就能出图，不应报错）；守护测试新增含列名的字符串数据用例。commit message、pr_body 描述同步更新。
+- 复核验证（Python 3.12 uv venv：pandas numpy pytest polars pyarrow narwhals ruff==0.11.12）：red→green `-k "column_name_in_list or strings_as_values"` 修复前 5 failed/1 passed，修复后 6 passed；`tests/test_optional/test_px`（忽略 imshow/trendline）1069 passed, 3 failed（test_render_mode，缺 statsmodels）；`ruff format --check .` 与 `ruff check` 改动文件均通过。

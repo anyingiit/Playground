@@ -1,4 +1,4 @@
-From 22fc42c6c3cfc19c3487d24ba7417feb54941b2e Mon Sep 17 00:00:00 2001
+From 1b57250a591b859eb9c303292f8ff1f78482ea47 Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Fri, 23 Oct 2026 03:04:10 +0800
 Subject: [PATCH] Improve px error for unknown column names in a list passed to
@@ -7,19 +7,19 @@ Subject: [PATCH] Improve px error for unknown column names in a list passed to
 When x or y is a list of column names and one of them is not a column of
 data_frame (e.g. a typo), Plotly Express does not switch to wide mode and
 treats the list as data, which then fails with a misleading "All
-arguments should have the same length" error. Detect a list of strings
-that cannot be valid data (wrong length, or a mix of column names and
-other strings) and raise an error naming the missing column(s) instead.
+arguments should have the same length" error. In that case, raise an
+error naming the missing column(s) instead. Lists of strings whose
+length matches the other arguments are still treated as data.
 
 Closes #4040
 ---
  CHANGELOG.md                                 |  1 +
  plotly/express/_core.py                      | 36 ++++++++++++++++++++
- tests/test_optional/test_px/test_px_input.py | 30 ++++++++++++++++
- 3 files changed, 67 insertions(+)
+ tests/test_optional/test_px/test_px_input.py | 33 ++++++++++++++++++
+ 3 files changed, 70 insertions(+)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 32590d34..727243e7 100644
+index 32590d3..727243e 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
 @@ -21,6 +21,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
@@ -31,7 +31,7 @@ index 32590d34..727243e7 100644
  ## [7.1.0] - 2026-09-15
  
 diff --git a/plotly/express/_core.py b/plotly/express/_core.py
-index 9994720b..2583c10c 100644
+index 9994720..4026405 100644
 --- a/plotly/express/_core.py
 +++ b/plotly/express/_core.py
 @@ -1188,6 +1188,39 @@ def _is_col_list(columns, arg, is_pd_like, native_namespace):
@@ -53,9 +53,9 @@ index 9994720b..2583c10c 100644
 +    missing = [c for c in argument if c not in df_input.columns]
 +    if not missing or len(argument) == len(df_input):
 +        return
-+    # Only raise if `argument` can't be valid data: its length doesn't match the
-+    # previously-processed arguments, or it mixes column names with other strings
-+    if (length and len(argument) != length) or len(missing) < len(argument):
++    # Only raise where a length error would be raised anyway, so that lists of
++    # strings used as data keep working even if some of them match column names
++    if length and len(argument) != length:
 +        raise ValueError(
 +            "Value of '%s' looks like a list of column names, but %s %s in "
 +            "'data_frame'. Expected one of %s but received: %s"
@@ -85,10 +85,10 @@ index 9994720b..2583c10c 100644
                      raise ValueError(
                          "All arguments should have the same length. "
 diff --git a/tests/test_optional/test_px/test_px_input.py b/tests/test_optional/test_px/test_px_input.py
-index ce09e251..140eca88 100644
+index ce09e25..00ae3e6 100644
 --- a/tests/test_optional/test_px/test_px_input.py
 +++ b/tests/test_optional/test_px/test_px_input.py
-@@ -756,3 +756,33 @@ def test_no_futurewarning():
+@@ -756,3 +756,36 @@ def test_no_futurewarning():
          warn for warn in warn_list if issubclass(warn.category, FutureWarning)
      ]
      assert len(future_warnings) == 0, "FutureWarning(s) raised!"
@@ -104,15 +104,13 @@ index ce09e251..140eca88 100644
 +    assert "Value of 'y' looks like a list of column names" in msg
 +    assert "'Data2' is not the name of a column in 'data_frame'" in msg
 +    assert "same length" not in msg
-+    # no previously-processed argument
-+    with pytest.raises(ValueError, match="'Data2' is not the name of a column"):
-+        px.line(df, y=["data1", "Data2"])
++    if isinstance(df, pd.DataFrame):
++        # without x, y is compared with the length of the index
++        with pytest.raises(ValueError, match="'Data2' is not the name of a column"):
++            px.line(df, y=["data1", "Data2"])
 +    # all names wrong
 +    with pytest.raises(ValueError, match="'Data1', 'Data2' are not names of columns"):
 +        px.line(df, x="x", y=["Data1", "Data2"])
-+    # typo in x, processed before y
-+    with pytest.raises(ValueError, match="Value of 'x' looks like a list of column"):
-+        px.scatter(df, x=["x", "X2"], y="data1")
 +
 +
 +def test_list_of_strings_as_values_with_data_frame():
@@ -122,6 +120,11 @@ index ce09e251..140eca88 100644
 +    assert list(fig.data[0].x) == ["u", "v", "w"]
 +    fig = px.scatter(df, x=["u", "v"], y=["w", "z"])
 +    assert list(fig.data[0].y) == ["w", "z"]
++    # even if some of the strings are also column names
++    fig = px.scatter(df, x=["a", "u"], y=[1, 2])
++    assert list(fig.data[0].x) == ["a", "u"]
++    fig = px.histogram(df, x=["a", "u"])
++    assert list(fig.data[0].x) == ["a", "u"]
 -- 
 2.45.0
 

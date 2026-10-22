@@ -45,3 +45,8 @@ git am /path/to/contributions/200-plotly-plotly.py-2059/0001-*.patch
 
 ## PR
 标题见 `pr_title.txt`，正文见 `pr_body.md`。
+
+## 独立复核 (2026-10-23)
+- 上游复查：#2059 仍 open、无 assignee、无认领；`gh pr list --state all --search 2059` → 0。patch 在当前 main (0de8a38) 上单独 `git am` 干净（与 201 各自独立都能应用；两者同改 CHANGELOG 同一位置，先合并一个后另一个需 rebase）。
+- 复核验证（Python 3.12 uv venv：pandas numpy pytest polars pyarrow narwhals ruff==0.11.12）：red→green 修复前 16 failed/4 passed，修复后 20 passed（test_marginals.py 全部 181 passed）；`tests/test_optional/test_px`（忽略 imshow/trendline）1083 passed, 3 failed（test_render_mode，缺 statsmodels）；ruff format/check 通过。
+- 代码审查：用已 import 的 `ColorscaleValidator` 归一化后取 `[0][1]`，与同文件 coloraxis 处理一致；`_r` 反转、小写名、颜色列表、`[pos,color]` 列表都覆盖。PR 文本准确，无改动。
