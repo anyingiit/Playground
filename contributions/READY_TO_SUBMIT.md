@@ -69,7 +69,6 @@
 | 336 | phpmyadmin/motranslator#59 | **已提交** [#67](https://github.com/phpmyadmin/motranslator/pull/67) |
 | 251 | [simonives/redwrench#57](https://github.com/simonives/redwrench/issues/57) | **已提交** [#97](https://github.com/simonives/redwrench/pull/97) |
 | 250 | [femboypuppy/Tessera-Notes#38](https://github.com/femboypuppy/Tessera-Notes/issues/38) | **已提交** [#116](https://github.com/femboypuppy/Tessera-Notes/pull/116) |
-| 214 | [mitmproxy/pdoc#775](https://github.com/mitmproxy/pdoc/issues/775) | **已提交** [#902](https://github.com/mitmproxy/pdoc/pull/902) |
 | 391 | [Gaurav-Gosain/tuios#980](https://github.com/Gaurav-Gosain/tuios/issues/980) | **已提交** [#1038](https://github.com/Gaurav-Gosain/tuios/pull/1038) |
 | 392 | [Gaurav-Gosain/tuios#585](https://github.com/Gaurav-Gosain/tuios/issues/585) | **已提交** [#1039](https://github.com/Gaurav-Gosain/tuios/pull/1039) |
 | 278 | [ruby/rdoc#1782](https://github.com/ruby/rdoc/issues/1782) | **已提交** [#1861](https://github.com/ruby/rdoc/pull/1861) |
