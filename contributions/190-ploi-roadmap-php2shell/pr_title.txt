@@ -1,0 +1,1 @@
+Use the maintained Alpine 3.24 PHP image in the Docker setup (PHP2Shell)

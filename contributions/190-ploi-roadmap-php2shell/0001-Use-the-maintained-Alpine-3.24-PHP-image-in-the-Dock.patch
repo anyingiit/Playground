@@ -1,0 +1,26 @@
+From 734e1a3775d3e4f2c0e47455041f8ac2e3b75760 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 03:45:06 +0800
+Subject: [PATCH] Use the maintained Alpine 3.24 PHP image in the Docker setup
+
+The php:8.4-fpm-alpine3.21 tag stopped receiving updates in November
+2025, so building the Docker setup still gives PHP 8.4.15, which is
+affected by CVE-2026-109618 and CVE-2026-109619 (PHP2Shell). The
+alpine3.24 variant is maintained and currently ships PHP 8.4.27.
+---
+ docker/Dockerfile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/docker/Dockerfile b/docker/Dockerfile
+index ed95f5e..466e73d 100644
+--- a/docker/Dockerfile
++++ b/docker/Dockerfile
+@@ -1,4 +1,4 @@
+-FROM php:8.4-fpm-alpine3.21
++FROM php:8.4-fpm-alpine3.24
+ 
+ WORKDIR /var/www/html
+ 
+-- 
+2.45.0
+
