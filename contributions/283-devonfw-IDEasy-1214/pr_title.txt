@@ -1,0 +1,1 @@
+#1214: preserve line endings of repository properties in upgrade-settings

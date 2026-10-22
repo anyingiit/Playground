@@ -1,0 +1,109 @@
+From 6681ae2f418341aca9b08b89b8cf8694322b6f02 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:13:58 +0000
+Subject: [PATCH] #1214: preserve line endings of repository properties in
+ upgrade-settings
+
+upgrade-settings rewrote updated settings/repositories/*.properties files
+with Files.write, which uses the platform line separator. On Windows this
+turned LF files into CRLF files (and on Linux/Mac the other way round),
+causing unwanted diffs in the settings git repository.
+
+Now the line separator of the original file is detected and reused, and a
+missing final newline is kept as well.
+---
+ CHANGELOG.adoc                                |  1 +
+ .../commandlet/UpgradeSettingsCommandlet.java | 12 +++++++++--
+ .../UpgradeSettingsCommandletTest.java        | 21 +++++++++++++++++++
+ 3 files changed, 32 insertions(+), 2 deletions(-)
+
+diff --git a/CHANGELOG.adoc b/CHANGELOG.adoc
+index cd1bc6e..af94352 100644
+--- a/CHANGELOG.adoc
++++ b/CHANGELOG.adoc
+@@ -18,6 +18,7 @@ Release with new features and bugfixes:
+ * https://github.com/devonfw/IDEasy/issues/2607[#2607]: Align tool help for corepack
+ * https://github.com/devonfw/IDEasy/issues/2322[#2322]: Use a consistent IDEasy icon across all operating systems
+ * https://github.com/devonfw/IDEasy/issues/1209[#1209]: Improve confusing migration version message of `ide status`
++* https://github.com/devonfw/IDEasy/issues/1214[#1214]: Preserve line endings of repository properties in `ide upgrade-settings`
+ 
+ The full list of changes for this release can be found in https://github.com/devonfw/IDEasy/milestone/51?closed=1[milestone 2026.10.001].
+ 
+diff --git a/cli/src/main/java/com/devonfw/tools/ide/commandlet/UpgradeSettingsCommandlet.java b/cli/src/main/java/com/devonfw/tools/ide/commandlet/UpgradeSettingsCommandlet.java
+index 84c6b51..23a645f 100644
+--- a/cli/src/main/java/com/devonfw/tools/ide/commandlet/UpgradeSettingsCommandlet.java
++++ b/cli/src/main/java/com/devonfw/tools/ide/commandlet/UpgradeSettingsCommandlet.java
+@@ -5,6 +5,7 @@ import java.nio.file.Files;
+ import java.nio.file.Path;
+ import java.nio.file.StandardCopyOption;
+ import java.nio.file.StandardOpenOption;
++import java.util.ArrayList;
+ import java.util.List;
+ import java.util.function.Function;
+ 
+@@ -214,7 +215,10 @@ public class UpgradeSettingsCommandlet extends AbstractCommandlet {
+   }
+ 
+   private void updateRepositoryPropertiesFile(Path filePath) throws IOException {
+-    List<String> lines = Files.readAllLines(filePath);
++    String content = Files.readString(filePath);
++    // preserve the line endings of the file to avoid unwanted diffs in the settings git repository
++    String newline = content.contains("\r\n") ? "\r\n" : "\n";
++    List<String> lines = new ArrayList<>(content.lines().toList());
+     boolean updated = false;
+ 
+     for (int i = 0; i < lines.size(); i++) {
+@@ -232,7 +236,11 @@ public class UpgradeSettingsCommandlet extends AbstractCommandlet {
+     }
+     if (updated) {
+       try {
+-        Files.write(filePath, lines, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
++        String updatedContent = String.join(newline, lines);
++        if (content.endsWith("\n") || content.endsWith("\r")) {
++          updatedContent += newline;
++        }
++        Files.writeString(filePath, updatedContent, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+         IdeLogLevel.SUCCESS.log(LOG, "Successfully updated repository configuration file {}", filePath);
+       } catch (IOException e) {
+         LOG.error("Failed to write updated repository configuration file {}", filePath);
+diff --git a/cli/src/test/java/com/devonfw/tools/ide/commandlet/UpgradeSettingsCommandletTest.java b/cli/src/test/java/com/devonfw/tools/ide/commandlet/UpgradeSettingsCommandletTest.java
+index 9f96a11..8e1140f 100644
+--- a/cli/src/test/java/com/devonfw/tools/ide/commandlet/UpgradeSettingsCommandletTest.java
++++ b/cli/src/test/java/com/devonfw/tools/ide/commandlet/UpgradeSettingsCommandletTest.java
+@@ -1,5 +1,7 @@
+ package com.devonfw.tools.ide.commandlet;
+ 
++import java.io.IOException;
++import java.nio.file.Files;
+ import java.nio.file.Path;
+ 
+ import org.junit.jupiter.api.Test;
+@@ -35,6 +37,25 @@ class UpgradeSettingsCommandletTest extends AbstractIdeContextTest {
+     verifyUpdateWorkspaceTemplates();
+   }
+ 
++  /**
++   * Test of {@link UpgradeSettingsCommandlet} preserving the line endings of updated repository properties files.
++   */
++  @Test
++  void testUpdateRepositoryPropertiesPreservesLineEndings() throws IOException {
++    // arrange
++    Path legacyRepositoriesPath = UPGRADE_SETTINGS_PATH.resolve("settings/projects");
++    Files.writeString(legacyRepositoriesPath.resolve("crlf.properties"), "path=crlf\r\ngit.url=https://host.tld/crlf.git\r\neclipse=import\r\n");
++    Files.writeString(legacyRepositoriesPath.resolve("lf.properties"), "path=lf\ngit.url=https://host.tld/lf.git\neclipse=import");
++    UpgradeSettingsCommandlet upgradeSettingsCommandlet = new UpgradeSettingsCommandlet(context);
++    // act
++    upgradeSettingsCommandlet.run();
++    // assert
++    Path repositoriesPath = UPGRADE_SETTINGS_PATH.resolve("settings/repositories");
++    assertThat(Files.readString(repositoriesPath.resolve("crlf.properties"))).isEqualTo(
++        "path=crlf\r\ngit_url=https://host.tld/crlf.git\r\nimport=eclipse\r\n");
++    assertThat(Files.readString(repositoriesPath.resolve("lf.properties"))).isEqualTo("path=lf\ngit_url=https://host.tld/lf.git\nimport=eclipse");
++  }
++
+   private void verifyUpdateProperties() {
+ 
+     assertThat(UPGRADE_SETTINGS_PATH.resolve("home/.ide/ide.properties")).exists();
+-- 
+2.43.0
+
