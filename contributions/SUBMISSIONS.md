@@ -216,6 +216,9 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 393 | [zerobrewhq/zerobrew#414](https://github.com/zerobrewhq/zerobrew/issues/414) | [zerobrewhq/zerobrew#480](https://github.com/zerobrewhq/zerobrew/pull/480) | 2026-10-22 提交（独立复核 PASS）；Frameworks 部分（sbin 已由维护者修） |
 | 362 | [helix-editor/helix#5817](https://github.com/helix-editor/helix/issues/5817) | [helix-editor/helix#16406](https://github.com/helix-editor/helix/pull/16406) | 2026-10-22 提交（独立复核 PASS） |
 | 363 | [helix-editor/helix#11207](https://github.com/helix-editor/helix/issues/11207) | [helix-editor/helix#16407](https://github.com/helix-editor/helix/pull/16407) | 2026-10-22 提交（独立复核 PASS） |
+| 337 | [synolia/SyliusMaintenancePlugin#54](https://github.com/synolia/SyliusMaintenancePlugin/issues/54) | [synolia/SyliusMaintenancePlugin#55](https://github.com/synolia/SyliusMaintenancePlugin/pull/55) | 2026-10-22 提交（独立复核 PASS） |
+| 425 | [BSC-ES/autosubmit#3104](https://github.com/BSC-ES/autosubmit/issues/3104) | [BSC-ES/autosubmit#3371](https://github.com/BSC-ES/autosubmit/pull/3371) | 2026-10-22 提交（独立复核 PASS） |
+| 281 | [ruby/rdoc#1857](https://github.com/ruby/rdoc/issues/1857) | [ruby/rdoc#1862](https://github.com/ruby/rdoc/pull/1862) | 2026-10-22 提交（独立复核 PASS）；按 AGENTS.md 正文无 AI 声明段 |
 
 备注：088 解冲突后适配上游 `formatSettingValueForEdit` 新签名，`go test ./...` 全过，回退源码则新测试编译失败（红）。099 解冲突并把上游新增的公开 `AnyCol` 用法一并展开，`:core/:dataframe-arrow` compileTestKotlin + apiCheck + ktlint 通过（未跑全量测试）。118 装了 PHP 8.5：红→绿、全量 phpunit 363 通过、phpstan 无错，已在 issue #1070 留言。121 两个改动文件上游无变化，沿用之前 sclang 红→绿结果。123 为纯改名，解冲突后无残留旧名，未本地编译（依赖太多，靠 CI）。128 已在 issue #4292 留言认领，最新 main 上红→绿。208 是协调员撤回提交员任务前已开出的。
 旧会话 9 个 PR 本地重跑：grpc-gateway、ipython（test_system_interrupt 偶发超时，重跑通过，与改动无关）、pyinstaller、OpsiMate、PathMap、xterm.js、compiler-explorer 均通过；NLog（无 dotnet）、phpmyadmin（未跑）只能看 CI。

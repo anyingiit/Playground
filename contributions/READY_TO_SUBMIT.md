@@ -84,6 +84,6 @@
 | 279 | [hanami/hanami-view#264](https://github.com/hanami/hanami-view/issues/264) | **已提交** [#291](https://github.com/hanami/hanami-view/pull/291) |
 | 362 | [helix-editor/helix#5817](https://github.com/helix-editor/helix/issues/5817) | **已提交** [#16406](https://github.com/helix-editor/helix/pull/16406) |
 | 363 | [helix-editor/helix#11207](https://github.com/helix-editor/helix/issues/11207) | **已提交** [#16407](https://github.com/helix-editor/helix/pull/16407) |
-| 337 | [synolia/SyliusMaintenancePlugin#54](https://github.com/synolia/SyliusMaintenancePlugin/issues/54) | main | 无需认领；无 DCO、无 CLA |
-| 281 | [ruby/rdoc#1857](https://github.com/ruby/rdoc/issues/1857) | 待提交（base `master`；无需认领；无 DCO/CLA；Ruby；高星；复核 PASS；正文按 AGENTS.md 不加 AI 署名；本轮第 3 个 rdoc PR，最后提交） |
-| 425 | [BSC-ES/autosubmit#3104](https://github.com/BSC-ES/autosubmit/issues/3104) | 待提交（base `master`；无需认领；无 DCO/CLA；Python；与 422 同仓库，两补丁互不冲突；复核 PASS） |
+| 337 | [synolia/SyliusMaintenancePlugin#54](https://github.com/synolia/SyliusMaintenancePlugin/issues/54) | **已提交** [#55](https://github.com/synolia/SyliusMaintenancePlugin/pull/55) |
+| 281 | [ruby/rdoc#1857](https://github.com/ruby/rdoc/issues/1857) | **已提交** [#1862](https://github.com/ruby/rdoc/pull/1862) |
+| 425 | [BSC-ES/autosubmit#3104](https://github.com/BSC-ES/autosubmit/issues/3104) | **已提交** [#3371](https://github.com/BSC-ES/autosubmit/pull/3371) |
