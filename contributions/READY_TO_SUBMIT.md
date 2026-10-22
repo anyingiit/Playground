@@ -97,3 +97,4 @@
 | 429 | [supabase/terraform-provider-supabase#372](https://github.com/supabase/terraform-provider-supabase/issues/372) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；高星；复核 PASS；未对真实 API 验证，正文已说明） |
 | 430 | [curiousdannii/remglk-rs#18](https://github.com/curiousdannii/remglk-rs/issues/18) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Rust；补丁含 2KB 二进制 .ulx，用 git am 应用；复核 PASS） |
 | 431 | [OpenCHAMI/ochami#206](https://github.com/OpenCHAMI/ochami/issues/206) | 待提交（base `main`；无需认领；DCO 已签；无 CLA；man 文档；同仓库第 4 个，最后提交；复核 PASS） |
+| 340 | [stevearc/oil.nvim#754](https://github.com/stevearc/oil.nvim/issues/754) | master | 无需认领；无 DCO、无 CLA；Lua；高星；复核 PASS |
