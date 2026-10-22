@@ -1,6 +1,6 @@
-From 58ccb243022041e3a4912a5b9eb8f80682615086 Mon Sep 17 00:00:00 2001
+From 8b587577be5c20a223163f7511bfbf504ab1ba6c Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
-Date: Thu, 1 Oct 2026 23:32:56 +0000
+Date: Fri, 23 Oct 2026 02:53:21 +0800
 Subject: [PATCH] Replace the modules removed in Cucumber-JVM 8.0.0
 
 Cucumber-JVM 8.0.0 removed cucumber-openejb and cucumber-cdi2 in favor of
@@ -18,13 +18,13 @@ Part of #63
  create mode 100644 src/test/java/org/openrewrite/cucumber/jvm/ReplaceRemovedCucumber8ModulesTest.java
 
 diff --git a/src/main/resources/META-INF/rewrite/cucumber.yml b/src/main/resources/META-INF/rewrite/cucumber.yml
-index 8281537..6948e4e 100755
+index 75150a9..ba36a83 100755
 --- a/src/main/resources/META-INF/rewrite/cucumber.yml
 +++ b/src/main/resources/META-INF/rewrite/cucumber.yml
-@@ -516,3 +516,38 @@ recipeList:
-       version: 1.9.x
-       onlyIfUsing: org.junit.platform.suite.api.*
-       acceptTransitive: true
+@@ -570,3 +570,38 @@ recipeList:
+       artifactId: docstring
+       newVersion: 7.x
+       overrideManagedVersion: true
 +---
 +type: specs.openrewrite.org/v1beta/recipe
 +name: org.openrewrite.cucumber.jvm.ReplaceRemovedCucumber8Modules
@@ -61,10 +61,10 @@ index 8281537..6948e4e 100755
 +      groupIdPattern: io.cucumber
 +      artifactIdPattern: cucumber-deltaspike
 diff --git a/src/main/resources/META-INF/rewrite/recipes.csv b/src/main/resources/META-INF/rewrite/recipes.csv
-index a4dee4d..70f4bf0 100644
+index ad7c178..d05a5e2 100644
 --- a/src/main/resources/META-INF/rewrite/recipes.csv
 +++ b/src/main/resources/META-INF/rewrite/recipes.csv
-@@ -19,6 +19,7 @@ maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.M
+@@ -20,6 +20,7 @@ maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.M
  maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.MigrateScenarioWriteAndEmbed,Migrate `Scenario.write` and `Scenario.embed`,"Cucumber-JVM 6.0.0 removed `Scenario.write(String)` and `Scenario.embed(byte[], String)` along with `Scenario.embed(byte[], String, String)`, in favor of `Scenario.log(String)` and `Scenario.attach(byte[], String, String)`. The two argument `embed` emitted an attachment without a name, which `attach` expresses as a `null` name.",7,Cucumber-JVM,Cucumber,Recipes for upgrading [Cucumber-JVM](https://github.com/cucumber/cucumber-jvm/).,Recipes for upgrading [Cucumber](https://cucumber.io/).
  maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.RegexToCucumberExpression,Replace `cucumber-java` step definition regexes with Cucumber expressions,Strip regex prefix and suffix from step annotation expressions arguments where possible.,1,Cucumber-JVM,Cucumber,Recipes for upgrading [Cucumber-JVM](https://github.com/cucumber/cucumber-jvm/).,Recipes for upgrading [Cucumber](https://cucumber.io/).
  maven,org.openrewrite.recipe:rewrite-cucumber-jvm,org.openrewrite.cucumber.jvm.RemoveCucumberJava8Dependency,Remove `cucumber-java8` once nothing is left needing it,"Removes the `cucumber-java8` dependency where every `LambdaGlue` call migrates to `cucumber-java`, and retains it wherever one is left behind. Read from the glue as it stands before the migration, as what the migration leaves behind only becomes visible to a scanning recipe in the cycle after, which a build tool run never reaches. Glue left anywhere retains the dependency everywhere, an unused dependency being the one outcome here that still compiles.",1,Cucumber-JVM,Cucumber,Recipes for upgrading [Cucumber-JVM](https://github.com/cucumber/cucumber-jvm/).,Recipes for upgrading [Cucumber](https://cucumber.io/).
@@ -236,5 +236,5 @@ index 0000000..3228dbf
 +    }
 +}
 -- 
-2.43.0
+2.45.0
 

@@ -37,3 +37,5 @@
 - 137：仍需 owner 先在 issue 认领。
 - tools/submit_pr.sh：改为从上游 forks 列表找自己的 fork（hanami/cli 的 fork 叫 hanami-cli，同名 anyingiit/cli 是 npm/cli 的 fork）。
 - 本机 git push 到 Playground 经常断（HTTP2/SSL），可用 GitHub API 推送。
+- 151 已提交 rewrite-cucumber-jvm#73。本地跑法：settings 里去掉 codegenome 仓库换 mavenCentral()，build.gradle.kts 顶部加 buildscript resolutionStrategy 把 org.openrewrite:rewrite-* 固定到 Maven Central 的 8.90.4（不进补丁）。
+- 130–171 批次剩余：137、153 等 owner 在 issue 认领；157、171 已放弃。

@@ -91,6 +91,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 146 | [github-linguist/linguist#7949](https://github.com/github-linguist/linguist/issues/7949) | [github-linguist/linguist#8288](https://github.com/github-linguist/linguist/pull/8288) | 2026-10-22 提交 |
 | 150 | [infection/infection#2582](https://github.com/infection/infection/issues/2582) | [infection/infection#3699](https://github.com/infection/infection/pull/3699) | 2026-10-22 提交；变异测试门槛（MSI 100%）漏掉 `formatDiff` 的 ProtectedVisibility，已改为抽象方法并 force-push |
 | 148 | [valkey-io/valkey-glide-ruby#309](https://github.com/valkey-io/valkey-glide-ruby/issues/309) | [valkey-io/valkey-glide-ruby#385](https://github.com/valkey-io/valkey-glide-ruby/pull/385) | 2026-10-22 提交；GPG 签名 + DCO；macOS arm64 上红→绿，test:unit 512/0 |
+| 151 | [openrewrite/rewrite-cucumber-jvm#63](https://github.com/openrewrite/rewrite-cucumber-jvm/issues/63) | [openrewrite/rewrite-cucumber-jvm#73](https://github.com/openrewrite/rewrite-cucumber-jvm/pull/73) | 2026-10-22 提交；红 4/4 失败→绿 4/4 通过；check 157 例 6 失败与 main 相同（本地 rewrite 版本旧） |
 | 152 | [uutils/acl#21](https://github.com/uutils/acl/issues/21) | [uutils/acl#356](https://github.com/uutils/acl/pull/356) | 2026-10-22 提交 |
 | 155 | [pmxt-dev/pmxt#2353](https://github.com/pmxt-dev/pmxt/issues/2353) | [pmxt-dev/pmxt#2586](https://github.com/pmxt-dev/pmxt/pull/2586) | 2026-10-22 提交 |
 | 169 | [hanami/hanami#1284](https://github.com/hanami/hanami/issues/1284) | [hanami/hanami-cli#464](https://github.com/hanami/hanami-cli/pull/464) | 2026-10-22 提交；CHANGELOG 已填 PR 号 |
