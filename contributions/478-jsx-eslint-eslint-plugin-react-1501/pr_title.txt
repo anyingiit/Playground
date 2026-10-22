@@ -1,0 +1,1 @@
+[Fix] `jsx-closing-tag-location`: keep rendered trailing spaces when autofixing
