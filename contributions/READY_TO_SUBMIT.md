@@ -39,7 +39,7 @@
 | 422 | [BSC-ES/autosubmit#3240](https://github.com/BSC-ES/autosubmit/issues/3240) | **已提交** [#3370](https://github.com/BSC-ES/autosubmit/pull/3370) |
 | 301 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278) | **已提交** [#2334](https://github.com/seladb/PcapPlusPlus/pull/2334) |
 | 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278) | **已提交** [#2335](https://github.com/seladb/PcapPlusPlus/pull/2335) |
-| 360 | [helix-editor/helix#3115](https://github.com/helix-editor/helix/issues/3115) | **已提交** [#16404](https://github.com/helix-editor/helix/pull/16404) |
+| 360 | [helix-editor/helix#3115](https://github.com/helix-editor/helix/issues/3115) | **已提交** [#16404](https://github.com/helix-editor/helix/pull/16404) ；**待跟进**：在 PR 分支 `git am contributions/360-helix-editor-helix-3115/followup-inline-table.patch` 推送，并把 PR 正文 toml 块换成 pr_body.md 新版（按 helix 惯例移到内联表） |
 | 334 | [Euro-Office/eurooffice-nextcloud#173](https://github.com/Euro-Office/eurooffice-nextcloud/issues/173) | **已提交** [#250](https://github.com/Euro-Office/eurooffice-nextcloud/pull/250) |
 | 335 | [Euro-Office/eurooffice-nextcloud#151](https://github.com/Euro-Office/eurooffice-nextcloud/issues/151) | **已提交** [#251](https://github.com/Euro-Office/eurooffice-nextcloud/pull/251) |
 | 277 | [ruby/rdoc#1567](https://github.com/ruby/rdoc/issues/1567) | **已提交** [#1860](https://github.com/ruby/rdoc/pull/1860) |
