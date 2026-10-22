@@ -1,0 +1,261 @@
+From 4b5a01bb288e0a2255f178f159ac8b6abab11274 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:33:09 +0000
+Subject: [PATCH] fix: migrate type references to imported types
+
+DMN 1.1 references an imported type by an XML QName (`types:Applicant`)
+while DMN 1.2+ uses a FEEL qualified name based on the import's name
+(`types.Applicant`). The migration gave imports a generated name and kept
+the QName, leaving such type references unresolved.
+
+Name an unnamed import after the namespace prefix bound to its namespace
+and rewrite every `typeRef` using that prefix. Imports without a bound
+prefix, prefixes containing `-` or `.` (ambiguous in FEEL) and other
+type references are left as before.
+
+Closes #60
+---
+ src/migrateDiagram.js            |  70 ++++++++++++++++++++
+ test/fixtures/imported-types.dmn |  24 +++++++
+ test/spec/migrateDiagramSpec.js  | 106 +++++++++++++++++++++++++++++++
+ 3 files changed, 200 insertions(+)
+ create mode 100644 test/fixtures/imported-types.dmn
+
+diff --git a/src/migrateDiagram.js b/src/migrateDiagram.js
+index 69c2fe2..c503e63 100644
+--- a/src/migrateDiagram.js
++++ b/src/migrateDiagram.js
+@@ -103,6 +103,8 @@ async function migrateFrom11To13(xml) {
+ 
+   addIds(definitions);
+ 
++  migrateImports(definitions);
++
+   addNames(definitions);
+ 
+   migrateDI(definitions, moddle);
+@@ -187,6 +189,74 @@ function addNames(element) {
+   });
+ }
+ 
++/**
++ * Name imports after the XML namespace prefix bound to their namespace and
++ * migrate type references to imported types from XML QNames (`prefix:Type`)
++ * to FEEL qualified names (`importName.Type`), as expected since DMN 1.2.
++ *
++ * @param {Object} definitions
++ */
++function migrateImports(definitions) {
++  const namespaceDeclarations = definitions.$attrs || {};
++
++  const importPrefixes = [];
++
++  (definitions.get('import') || []).forEach(importElement => {
++    if (importElement.name) {
++      return;
++    }
++
++    const declaration = Object.keys(namespaceDeclarations).find(attr => {
++      return attr.startsWith('xmlns:') && namespaceDeclarations[ attr ] === importElement.namespace;
++    });
++
++    if (!declaration) {
++      return;
++    }
++
++    const prefix = declaration.slice('xmlns:'.length);
++
++    // `-` and `.` are allowed in a namespace prefix but would make
++    // `prefix.Type` ambiguous in FEEL
++    if (/[.-]/.test(prefix)) {
++      return;
++    }
++
++    importElement.name = prefix;
++
++    importPrefixes.push(prefix);
++  });
++
++  migrateTypeRefs(definitions, importPrefixes);
++}
++
++/**
++ * Migrate `typeRef` of element and all its descendants that reference an
++ * imported type by one of the given namespace prefixes.
++ *
++ * @param {Object} element
++ * @param {string[]} importPrefixes
++ */
++function migrateTypeRefs(element, importPrefixes) {
++  if (isString(element.typeRef)) {
++    const [ prefix, localName ] = element.typeRef.split(/:(.*)/s);
++
++    if (localName && importPrefixes.includes(prefix)) {
++      element.typeRef = `${ prefix }.${ localName }`;
++    }
++  }
++
++  Object.values(element).forEach(value => {
++    if (value.$type) {
++      migrateTypeRefs(value, importPrefixes);
++    }
++
++    if (isArray(value)) {
++      value.forEach(child => migrateTypeRefs(child, importPrefixes));
++    }
++  });
++}
++
+ /**
+  * Create and return `dmndi:DMNDI`.
+  *
+diff --git a/test/fixtures/imported-types.dmn b/test/fixtures/imported-types.dmn
+new file mode 100644
+index 0000000..72ae876
+--- /dev/null
++++ b/test/fixtures/imported-types.dmn
+@@ -0,0 +1,24 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<definitions xmlns="http://www.omg.org/spec/DMN/20151101/dmn.xsd" xmlns:types="urn:example:types" xmlns:other="urn:example:other" xmlns:my-types="urn:example:my-types" id="Definitions_1" name="DRD" namespace="http://camunda.org/schema/1.0/dmn">
++  <import namespace="urn:example:types" locationURI="types.dmn" importType="http://www.omg.org/spec/DMN/20151101/dmn.xsd" />
++  <import namespace="urn:example:unbound" locationURI="unbound.dmn" importType="http://www.omg.org/spec/DMN/20151101/dmn.xsd" />
++  <import namespace="urn:example:my-types" locationURI="my-types.dmn" importType="http://www.omg.org/spec/DMN/20151101/dmn.xsd" />
++  <itemDefinition id="ItemDefinition_1" name="Applicants">
++    <typeRef>types:Applicant</typeRef>
++  </itemDefinition>
++  <inputData id="InputData_1" name="Applicant">
++    <variable id="InformationItem_1" name="Applicant" typeRef="types:Applicant" />
++  </inputData>
++  <inputData id="InputData_2" name="Other">
++    <variable id="InformationItem_2" name="Other" typeRef="other:Thing" />
++  </inputData>
++  <decision id="Decision_1" name="Decision">
++    <variable id="InformationItem_3" name="Decision" typeRef="string" />
++    <literalExpression id="LiteralExpression_1" typeRef="types:Result">
++      <text>"ok"</text>
++    </literalExpression>
++  </decision>
++  <inputData id="InputData_3" name="Hyphenated">
++    <variable id="InformationItem_4" name="Hyphenated" typeRef="my-types:Thing" />
++  </inputData>
++</definitions>
+diff --git a/test/spec/migrateDiagramSpec.js b/test/spec/migrateDiagramSpec.js
+index a9a793a..daed67b 100644
+--- a/test/spec/migrateDiagramSpec.js
++++ b/test/spec/migrateDiagramSpec.js
+@@ -120,6 +120,112 @@ describe('migrateDiagram', function() {
+   });
+ 
+ 
++  describe('imports', function() {
++
++    it('should migrate DMN 1.1 diagram with imports', async function() {
++
++      // given
++      let xml = read('test/fixtures/imported-types.dmn');
++
++      // when
++      xml = await migrateDiagram(xml);
++
++      const result = await validate(xml);
++
++      // then
++      expect(result.valid).to.be.true;
++    });
++
++
++    it('should name import after its namespace prefix', async function() {
++
++      // given
++      let xml = read('test/fixtures/imported-types.dmn');
++
++      // when
++      xml = await migrateDiagram(xml);
++
++      const definitions = await parse(xml);
++
++      // then
++      expect(definitions.import[0].name).to.eql('types');
++    });
++
++
++    it('should name import without namespace prefix after its ID', async function() {
++
++      // given
++      let xml = read('test/fixtures/imported-types.dmn');
++
++      // when
++      xml = await migrateDiagram(xml);
++
++      const definitions = await parse(xml);
++
++      // then
++      expect(definitions.import[1].name).to.eql(definitions.import[1].id);
++    });
++
++
++    it('should name import with prefix that is no valid FEEL name after its ID', async function() {
++
++      // given
++      let xml = read('test/fixtures/imported-types.dmn');
++
++      // when
++      xml = await migrateDiagram(xml);
++
++      const definitions = await parse(xml);
++
++      // then
++      const [ , , hyphenated ] = definitions.import;
++      const [ , , , input ] = definitions.drgElement;
++
++      expect(hyphenated.name).to.eql(hyphenated.id);
++      expect(input.variable.typeRef).to.eql('my-types:Thing');
++    });
++
++
++    it('should migrate type references to imported types', async function() {
++
++      // given
++      let xml = read('test/fixtures/imported-types.dmn');
++
++      // when
++      xml = await migrateDiagram(xml);
++
++      const definitions = await parse(xml);
++
++      // then
++      const [ itemDefinition ] = definitions.itemDefinition;
++      const [ applicant, , decision ] = definitions.drgElement;
++
++      expect(itemDefinition.typeRef).to.eql('types.Applicant');
++      expect(applicant.variable.typeRef).to.eql('types.Applicant');
++      expect(decision.decisionLogic.typeRef).to.eql('types.Result');
++    });
++
++
++    it('should NOT migrate other type references', async function() {
++
++      // given
++      let xml = read('test/fixtures/imported-types.dmn');
++
++      // when
++      xml = await migrateDiagram(xml);
++
++      const definitions = await parse(xml);
++
++      // then
++      const [ , other, decision ] = definitions.drgElement;
++
++      expect(other.variable.typeRef).to.eql('other:Thing');
++      expect(decision.variable.typeRef).to.eql('string');
++    });
++
++  });
++
++
+   it('should NOT create DMNDI if no DI', async function() {
+ 
+     // given
+-- 
+2.43.0
+
