@@ -1,0 +1,1 @@
+Don't convert Google-style sections inside fenced code blocks

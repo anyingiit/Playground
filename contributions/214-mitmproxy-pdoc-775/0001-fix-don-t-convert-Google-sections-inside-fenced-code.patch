@@ -1,0 +1,141 @@
+From eeb474045ad5d1209427c7961064283085567cff Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:31:23 +0000
+Subject: [PATCH] fix: don't convert Google sections inside fenced code blocks
+
+Fixes #775
+---
+ CHANGELOG.md            |  1 +
+ pdoc/docstrings.py      | 61 +++++++++++++++++++++++++++++++++--------
+ test/test_docstrings.py | 20 ++++++++++++++
+ 3 files changed, 71 insertions(+), 11 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index d64bb2a..2300598 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -4,6 +4,7 @@
+ 
+ ## Unreleased: pdoc next
+ 
++- Fix Google-style section headers being converted inside fenced code blocks.
+ - Fix incorrect ordering of `start-after`/`end-before` in RST include directives.
+   ([#876](https://github.com/mitmproxy/pdoc/pull/876), @JohanKarlbergg)
+ - Support Pydantic [`computed_field`](https://docs.pydantic.dev/2.0/usage/computed_fields/) descriptions ([#855](https://github.com/mitmproxy/pdoc/pull/855), @avhz)
+diff --git a/pdoc/docstrings.py b/pdoc/docstrings.py
+index 4577c78..463edc0 100644
+--- a/pdoc/docstrings.py
++++ b/pdoc/docstrings.py
+@@ -14,6 +14,7 @@ accompanied by matching snapshot tests in `test/testdata/`.
+ from __future__ import annotations
+ 
+ import base64
++from collections.abc import Callable
+ from functools import cache
+ import inspect
+ import mimetypes
+@@ -89,21 +90,59 @@ def embed_images(docstring: str, source_file: Path) -> str:
+ 
+ def google(docstring: str) -> str:
+     """Convert Google-style docstring sections into Markdown."""
+-    return re.sub(
+-        r"""
+-        ^(?P<name>[A-Z][A-Z a-z]+):\n
+-        (?P<contents>(
+-            \n        # empty lines
+-            |         # or
+-            [ \t]+.+  # lines with indentation
+-        )+)$
+-        """,
+-        _google_section,
++    return _outside_fenced_code_blocks(
+         docstring,
+-        flags=re.VERBOSE | re.MULTILINE,
++        lambda text: re.sub(
++            r"""
++            ^(?P<name>[A-Z][A-Z a-z]+):\n
++            (?P<contents>(
++                \n        # empty lines
++                |         # or
++                [ \t]+.+  # lines with indentation
++            )+)$
++            """,
++            _google_section,
++            text,
++            flags=re.VERBOSE | re.MULTILINE,
++        ),
+     )
+ 
+ 
++_FENCE_OPEN = re.compile(r"(?P<fence>`{3,}|~{3,})(?P<info>.*)")
++_FENCE_CLOSE = re.compile(r"(?P<fence>`{3,}|~{3,})[ \t]*")
++
++
++def _outside_fenced_code_blocks(docstring: str, convert: Callable[[str], str]) -> str:
++    """
++    Apply `convert` to all parts of `docstring` that are not in a fenced code block.
++
++    Only fences at the start of a line are considered: indented ones are part of a
++    section's contents and are left in place. A block is closed by a fence of the same
++    character that is at least as long as the opening one. An unterminated fence is
++    treated as regular text.
++    """
++    lines = docstring.splitlines(keepends=True)
++    parts = []
++    text_start = 0
++    block_start: int | None = None
++    fence = ""
++    for i, line in enumerate(lines):
++        if block_start is None:
++            m = _FENCE_OPEN.fullmatch(line.rstrip("\r\n"))
++            if m and not (m["fence"][0] == "`" and "`" in m["info"]):
++                block_start = i
++                fence = m["fence"]
++        else:
++            m = _FENCE_CLOSE.fullmatch(line.rstrip("\r\n"))
++            if m and m["fence"][0] == fence[0] and len(m["fence"]) >= len(fence):
++                parts.append(convert("".join(lines[text_start:block_start])))
++                parts.append("".join(lines[block_start : i + 1]))
++                text_start = i + 1
++                block_start = None
++    parts.append(convert("".join(lines[text_start:])))
++    return "".join(parts)
++
++
+ GOOGLE_LIST_SECTIONS = ["Args", "Raises", "Attributes", "Keyword Args"]
+ """Section headers listed in the official Google docstring style guide."""
+ 
+diff --git a/test/test_docstrings.py b/test/test_docstrings.py
+index c03ea86..c4c3cf6 100644
+--- a/test/test_docstrings.py
++++ b/test/test_docstrings.py
+@@ -37,6 +37,26 @@ def test_rst_extract_options_fuzz(s):
+     assert not s or content or options
+ 
+ 
++def test_google_fenced_code_block():
++    """Google section headers inside a fenced code block are left alone (#775)."""
++    s = "Lorem dolor sit amet.\n\n```\nABC:\n    DEF\nGHI\n```\n"
++    assert docstrings.google(s) == s
++
++    s = "Args:\n    x: foo\n\n~~~\nABC:\n    DEF\n~~~\n\nReturns:\n    bar\n"
++    ret = docstrings.google(s)
++    assert "~~~\nABC:\n    DEF\n~~~" in ret
++    assert "###### Arguments:" in ret
++    assert "###### Returns:" in ret
++
++    # a longer fence is only closed by a fence of at least the same length
++    s = "````md\n```\nx\n```\nABC:\n    DEF\n````\n"
++    assert docstrings.google(s) == s
++
++    # unterminated fences are treated as regular text
++    s = "```\nArgs:\n    x: foo\n"
++    assert "###### Arguments:" in docstrings.google(s)
++
++
+ def test_convert_exception(monkeypatch):
+     def raise_(*_):
+         raise Exception
+-- 
+2.43.0
+
