@@ -112,3 +112,4 @@
 | 289 | [benbalter/site-inspector#126](https://github.com/benbalter/site-inspector/issues/126) | **已提交** [#133](https://github.com/benbalter/site-inspector/pull/133) |
 | 290 | [benbalter/site-inspector#128](https://github.com/benbalter/site-inspector/issues/128) | **已提交** [#134](https://github.com/benbalter/site-inspector/pull/134) |
 | 291 | [benbalter/situation-clock#24](https://github.com/benbalter/situation-clock/issues/24) | 待提交（base `gh-pages`；无需认领；无 DCO/CLA；CSS；复核 PASS） |
+| 292 | [benbalter/avatar-montage#4](https://github.com/benbalter/avatar-montage/issues/4) | 待提交（base `main`；无需认领；无 DCO/CLA；Bash；复核 PASS） |

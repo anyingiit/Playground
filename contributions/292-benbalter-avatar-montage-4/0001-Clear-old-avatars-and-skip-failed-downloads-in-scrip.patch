@@ -1,0 +1,48 @@
+From c8ecdd9fc49588de98bd62206070d5ab192a9c32 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:28:48 +0000
+Subject: [PATCH] Clear old avatars and skip failed downloads in
+ script/download
+
+The cleanup step quoted its glob, so rm looked for a file literally
+named *.png and stale avatars from a previous handles.txt stayed in the
+montage. Unquote it, keeping avatars/.gitkeep.
+
+curl also saved GitHub's 404 page as <handle>.png for a mistyped or
+deleted handle, which made montage fail. Pass --fail, remove anything
+a failed download left behind, and list the handles that failed.
+
+Fixes #4.
+---
+ script/download | 14 +++++++++++---
+ 1 file changed, 11 insertions(+), 3 deletions(-)
+
+diff --git a/script/download b/script/download
+index 3b1d786..41f51b9 100755
+--- a/script/download
++++ b/script/download
+@@ -4,9 +4,17 @@
+ 
+ HANDLES=$(cat handles.txt)
+ 
+-rm -Rf "./avatars/*.png"
++rm -f ./avatars/*.png
+ 
++FAILED=()
+ for HANDLE in $HANDLES; do
+   echo "Downloading avatar for $HANDLE"
+-  curl -L -o "./avatars/$HANDLE.png" "https://github.com/$HANDLE.png"
+-done
+\ No newline at end of file
++  if ! curl -fL -o "./avatars/$HANDLE.png" "https://github.com/$HANDLE.png"; then
++    rm -f "./avatars/$HANDLE.png"
++    FAILED+=("$HANDLE")
++  fi
++done
++
++if [ ${#FAILED[@]} -gt 0 ]; then
++  echo "Couldn't download avatars for: ${FAILED[*]}" >&2
++fi
+-- 
+2.43.0
+

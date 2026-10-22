@@ -1,0 +1,1 @@
+Clear old avatars and skip failed downloads in script/download
