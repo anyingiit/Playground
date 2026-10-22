@@ -1,0 +1,1 @@
+Update Docker base image to Alpine 3.24 for patched PHP (PHP2Shell)
