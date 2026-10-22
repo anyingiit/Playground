@@ -44,3 +44,4 @@
 | 335 | [Euro-Office/eurooffice-nextcloud#151](https://github.com/Euro-Office/eurooffice-nextcloud/issues/151) | **已提交** [#251](https://github.com/Euro-Office/eurooffice-nextcloud/pull/251) |
 | 277 | [ruby/rdoc#1567](https://github.com/ruby/rdoc/issues/1567) | **已提交** [#1860](https://github.com/ruby/rdoc/pull/1860) |
 | 421 | [tuProlog/2p-kt#946](https://github.com/tuProlog/2p-kt/issues/946) | **已提交** [#1044](https://github.com/tuProlog/2p-kt/pull/1044) |
+| 336 | phpmyadmin/motranslator#59 | master | 无需认领；提交用 --signoff（DCO），无 CLA |
