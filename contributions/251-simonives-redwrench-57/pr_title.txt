@@ -1,0 +1,1 @@
+test: check Developer tier rules for empty descriptions (#57)
