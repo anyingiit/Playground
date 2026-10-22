@@ -98,4 +98,4 @@
 | 430 | [curiousdannii/remglk-rs#18](https://github.com/curiousdannii/remglk-rs/issues/18) | **已提交** [#19](https://github.com/curiousdannii/remglk-rs/pull/19) |
 | 431 | [OpenCHAMI/ochami#206](https://github.com/OpenCHAMI/ochami/issues/206) | **已提交** [#217](https://github.com/OpenCHAMI/ochami/pull/217) |
 | 340 | [stevearc/oil.nvim#754](https://github.com/stevearc/oil.nvim/issues/754) | **已提交** [#793](https://github.com/stevearc/oil.nvim/pull/793) |
-| 432 | [bpmn-io/dmn-migrate#60](https://github.com/bpmn-io/dmn-migrate/issues/60) | 待提交（base `main`；无需认领；**需签 CLA assistant**（GitHub 登录即可，bot 评论后签）；JS；**git am 必须加 --keep-cr**（CRLF）；PR 模板标题/清单勿改；复核 PASS） |
+| 432 | [bpmn-io/dmn-migrate#60](https://github.com/bpmn-io/dmn-migrate/issues/60) | **已提交** [#63](https://github.com/bpmn-io/dmn-migrate/pull/63)（CLA 待签） |
