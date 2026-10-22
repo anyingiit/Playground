@@ -19,3 +19,4 @@
 | 271 | [dry-rb/dry-schema#504](https://github.com/dry-rb/dry-schema/issues/504) | **已提交** [#521](https://github.com/dry-rb/dry-schema/pull/521) |
 | 272 | [dry-rb/dry-schema#455](https://github.com/dry-rb/dry-schema/issues/455) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；与 271 同改 CHANGELOG，第二个提交时冲突两行都保留） |
 | 300 | [zigtools/zls#2098](https://github.com/zigtools/zls/issues/2098) | 待提交（base `master`；无需认领；无 DCO/CLA；Zig；复核 PASS；维护者曾因 LLM markdown 文件关掉同题 PR，本补丁只有 2 个 .zig 文件） |
+| 211 | [troessner/reek#1429](https://github.com/troessner/reek/issues/1429) | 待提交（base `master`；无需认领；无 DCO/CLA；无 PR 模板；复核 PASS） |

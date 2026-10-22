@@ -1,0 +1,1 @@
+Respect exclude_paths for source piped with --stdin-filename
