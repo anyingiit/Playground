@@ -17,8 +17,8 @@
 | 244 | [Rohit-Dnath/RAMen#63](https://github.com/Rohit-Dnath/RAMen/issues/63) | 不提交：issue 已被维护者自行修复关闭（932787e，10-22 19:34 UTC） |
 | 204 | [git-ai-project/git-ai#1036](https://github.com/git-ai-project/git-ai/issues/1036) | **已提交** [#2436](https://github.com/git-ai-project/git-ai/pull/2436) |
 | 271 | [dry-rb/dry-schema#504](https://github.com/dry-rb/dry-schema/issues/504) | **已提交** [#521](https://github.com/dry-rb/dry-schema/pull/521) |
-| 272 | [dry-rb/dry-schema#455](https://github.com/dry-rb/dry-schema/issues/455) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；与 271 同改 CHANGELOG，第二个提交时冲突两行都保留） |
-| 300 | [zigtools/zls#2098](https://github.com/zigtools/zls/issues/2098) | 待提交（base `master`；无需认领；无 DCO/CLA；Zig；复核 PASS；维护者曾因 LLM markdown 文件关掉同题 PR，本补丁只有 2 个 .zig 文件） |
-| 211 | [troessner/reek#1429](https://github.com/troessner/reek/issues/1429) | 待提交（base `master`；无需认领；无 DCO/CLA；无 PR 模板；复核 PASS） |
-| 245 | [vyncint/termlens#594](https://github.com/vyncint/termlens/issues/594) | 待提交：base `main`；无需认领；无 CLA；DCO 已签（CI 强制）。**禁止 AI 署名**：不加 `--trailer`，正文已无 Generated 脚注/emoji |
+| 272 | [dry-rb/dry-schema#455](https://github.com/dry-rb/dry-schema/issues/455) | **已提交** [#522](https://github.com/dry-rb/dry-schema/pull/522) |
+| 300 | [zigtools/zls#2098](https://github.com/zigtools/zls/issues/2098) | **已提交** [#3304](https://github.com/zigtools/zls/pull/3304) |
+| 211 | [troessner/reek#1429](https://github.com/troessner/reek/issues/1429) | **已提交** [#1848](https://github.com/troessner/reek/pull/1848) |
+| 245 | [vyncint/termlens#594](https://github.com/vyncint/termlens/issues/594) | **已提交** [#604](https://github.com/vyncint/termlens/pull/604) |
 | 273 | [dry-rb/dry-schema#468](https://github.com/dry-rb/dry-schema/issues/468) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；与 271/272 同改 CHANGELOG，冲突时保留全部行） |
