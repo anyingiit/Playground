@@ -141,6 +141,21 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 
 备注：每个都在最新上游上重新跑过测试。096 上游把 `backend/compilers` 挪到了 `cromper/`，测试已改为 cromper 下的 pytest（红→绿复现）。104 的 #4497 是别人做的函数高亮，与本补丁无关。125 mocha 需 owner 签 OpenJS EasyCLA（链接已发线程）。119 ipfs-cluster 放弃：维护者 hsanjuan 明确反对无索引的服务端名字过滤。
 
+## 第二轮提交（2026-10-22，088–129 收尾会话）
+
+| # | PR |
+|---|---|
+| 088 | https://github.com/SurgeDM/Surge/pull/734 |
+| 099 | https://github.com/Kotlin/dataframe/pull/2182 |
+| 118 | https://github.com/getsentry/sentry-laravel/pull/1204 |
+| 121 | https://github.com/supercollider/supercollider/pull/7812 |
+| 123 | https://github.com/OpenRCT2/OpenRCT2/pull/27317 |
+| 128 | https://github.com/spec-kitty/spec-kitty/pull/6620（draft） |
+| 208 | https://github.com/image-rs/image-png/pull/722 |
+
+备注：088 解冲突后适配上游 `formatSettingValueForEdit` 新签名，`go test ./...` 全过，回退源码则新测试编译失败（红）。099 解冲突并把上游新增的公开 `AnyCol` 用法一并展开，`:core/:dataframe-arrow` compileTestKotlin + apiCheck + ktlint 通过（未跑全量测试）。118 装了 PHP 8.5：红→绿、全量 phpunit 363 通过、phpstan 无错，已在 issue #1070 留言。121 两个改动文件上游无变化，沿用之前 sclang 红→绿结果。123 为纯改名，解冲突后无残留旧名，未本地编译（依赖太多，靠 CI）。128 已在 issue #4292 留言认领，最新 main 上红→绿。208 是协调员撤回提交员任务前已开出的。
+旧会话 9 个 PR 本地重跑：grpc-gateway、ipython（test_system_interrupt 偶发超时，重跑通过，与改动无关）、pyinstaller、OpsiMate、PathMap、xterm.js、compiler-explorer 均通过；NLog（无 dotnet）、phpmyadmin（未跑）只能看 CI。
+
 ## PHP2Shell 专题（2026-10-22，CVE-2026-109618/109619，编号 187–199）
 
 | # | PR |

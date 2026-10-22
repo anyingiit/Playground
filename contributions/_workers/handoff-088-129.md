@@ -25,3 +25,6 @@
 - 提交队列：同目录 `../list.txt`（编号 仓库 base 分支名；`-` 表示用 README 里 `checkout -b` 的名字）
 - 带署名的 PR 正文：同目录 `../bodies/NNN.md`
 - 提交脚本：`/private/tmp/claude-501/-Users-user-laptop-Workspace/03588dd0-eda0-43ad-a518-1da4b60eba60/scratchpad/sub.sh <NNN> [--draft]`（查重、rebase、推 fork、开 PR、加 assignee/reviewer；有其他人的 open PR 提到该 issue 时退出 3，确认无关后用 `KNOWN="<url>"` 放行）
+
+## 收尾（2026-10-22 19:40 UTC）
+088、099、118、121、123、128 全部已提交（见 SUBMISSIONS.md「收尾会话」一节），088–129 没有剩余待提交项。
