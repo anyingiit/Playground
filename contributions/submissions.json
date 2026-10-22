@@ -57,9 +57,18 @@
  "091": "https://github.com/ipython/ipython/pull/15448",
  "092": "https://github.com/pyinstaller/pyinstaller/pull/9555",
  "094": "https://github.com/OpsiMate/OpsiMate/pull/1293",
+ "096": "https://github.com/decompme/decomp.me/pull/2167",
  "098": "https://github.com/Adam-Vandervorst/PathMap/pull/167",
  "100": "https://github.com/phpmyadmin/phpmyadmin/pull/20553",
  "102": "https://github.com/xtermjs/xterm.js/pull/6253",
  "103": "https://github.com/compiler-explorer/compiler-explorer/pull/9344",
+ "104": "https://github.com/highlightjs/highlight.js/pull/4564",
+ "108": "https://github.com/scikit-hep/pyhf/pull/2777",
+ "114": "https://github.com/scikit-hep/hist/pull/740",
+ "115": "https://github.com/conventional-changelog/commitlint/pull/5070",
+ "116": "https://github.com/pylint-dev/pylint/pull/11717",
+ "120": "https://github.com/jasonjmcghee/ron-lsp/pull/28",
+ "125": "https://github.com/mochajs/mocha/pull/6444",
+ "129": "https://github.com/maciejhirsz/logos/pull/585",
  "187": "https://github.com/ErugoOSS/Erugo/pull/294"
 }

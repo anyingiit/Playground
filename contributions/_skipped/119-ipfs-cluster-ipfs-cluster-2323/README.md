@@ -65,3 +65,6 @@ tools/submit_pr.sh contributions/119-ipfs-cluster-ipfs-cluster-2323 ipfs-cluster
 ## PR
 - Title：见 `pr_title.txt`
 - Body：见 `pr_body.md`
+
+## 2026-10-22 复查：放弃
+issue 里维护者 hsanjuan 明确反对：没有名字反向索引时在服务端遍历过滤，和客户端 `pin ls | grep` 没区别，他也不想加新表。本补丁正是服务端线性过滤，不提交。

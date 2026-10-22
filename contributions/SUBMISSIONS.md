@@ -110,6 +110,22 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 
 备注：100 解决了 ChangeLog 冲突后提交（base QA_5_2）；090 已在 issue 下留言链接 PR；094 已在 issue 下认领。其余 088–129 由续接会话处理。
 
+## 第二轮提交（2026-10-22，088–129 续接会话）
+
+| # | PR |
+|---|---|
+| 096 | https://github.com/decompme/decomp.me/pull/2167 |
+| 104 | https://github.com/highlightjs/highlight.js/pull/4564 |
+| 108 | https://github.com/scikit-hep/pyhf/pull/2777 |
+| 114 | https://github.com/scikit-hep/hist/pull/740 |
+| 115 | https://github.com/conventional-changelog/commitlint/pull/5070 |
+| 116 | https://github.com/pylint-dev/pylint/pull/11717 |
+| 120 | https://github.com/jasonjmcghee/ron-lsp/pull/28 |
+| 125 | https://github.com/mochajs/mocha/pull/6444 |
+| 129 | https://github.com/maciejhirsz/logos/pull/585 |
+
+备注：每个都在最新上游上重新跑过测试。096 上游把 `backend/compilers` 挪到了 `cromper/`，测试已改为 cromper 下的 pytest（红→绿复现）。104 的 #4497 是别人做的函数高亮，与本补丁无关。125 mocha 需 owner 签 OpenJS EasyCLA（链接已发线程）。119 ipfs-cluster 放弃：维护者 hsanjuan 明确反对无索引的服务端名字过滤。
+
 ## PHP2Shell 专题（2026-10-22，CVE-2026-109618/109619，编号 187–199）
 
 | # | PR |
