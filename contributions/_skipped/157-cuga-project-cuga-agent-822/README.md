@@ -96,3 +96,6 @@ PR 标题见 `pr_title.txt`，正文见 `pr_body.md`。
 - 未发现需要修改的问题，提交没有 amend。
 
 Status: ✅ ready：修复正确且完整，新测试修复前失败、修复后通过，交付物齐全且彼此一致。
+
+## 2026-10-22 放弃
+已有竞争 PR：cuga-project/cuga-apps#33（himanshu748，2026-10-03 开，改同一文件 mcp_servers/text/server.py），不再提交。

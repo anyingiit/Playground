@@ -77,6 +77,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 072 | [vega/altair#3619](https://github.com/vega/altair/issues/3619) | [vega/altair#4162](https://github.com/vega/altair/pull/4162) | 待 review；CI 全绿（16/16） |
 | 074 | [zitadel/oidc#967](https://github.com/zitadel/oidc/issues/967) | [zitadel/oidc#994](https://github.com/zitadel/oidc/pull/994) | 维护者 wim07101993 暂缓（10-02）：不确定是否该修，已在 issue 下开讨论；失败的 check 只是 kanban 机器人 |
 | 082 | [carthage-software/mago#2182](https://github.com/carthage-software/mago/issues/2182) | [carthage-software/mago#2417](https://github.com/carthage-software/mago/pull/2417) | ✅ 已合并（2026-10-03，azjezz） |
+| 130 | [rjsf-team/react-jsonschema-form#3882](https://github.com/rjsf-team/react-jsonschema-form/issues/3882) | [rjsf-team/react-jsonschema-form#5622](https://github.com/rjsf-team/react-jsonschema-form/pull/5622) | 2026-10-22 提交 |
 
 ## 接续说明（2026-09-25 快照）
 

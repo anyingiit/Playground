@@ -66,3 +66,6 @@ PR 标题见 `pr_title.txt`，正文见 `pr_body.md`。
 - 仓库没有 AI 政策、不要求 DCO、没有 AI trailer 要求。PR 正文已经包含 Claude Code 的披露段落。
 - 可能的 review 点：维护者 Egorand 在 #2332 建议过把同样的处理推广到 property initializer 和默认参数值。本 PR 只修 issue 范围内的问题，如果维护者要求可以再跟进。
 - 本地 clone（含 commit）：`/home/user/work/square-kotlinpoet`，分支 `fix-delegated-constructor-call-formatting`。
+
+## 2026-10-22 放弃
+Square 个人 CLA 要求填写的个人信息过多，owner 决定不签，因此不提交。

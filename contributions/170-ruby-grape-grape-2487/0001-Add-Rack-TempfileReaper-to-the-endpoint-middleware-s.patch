@@ -1,6 +1,6 @@
-From 41a927c27986abad14408d16a6df1153e67f95aa Mon Sep 17 00:00:00 2001
+From 22a690e7f34ca240dffb0933bcf81bd8698694b9 Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
-Date: Thu, 1 Oct 2026 23:02:30 +0000
+Date: Fri, 23 Oct 2026 02:50:36 +0800
 Subject: [PATCH] Add Rack::TempfileReaper to the endpoint middleware stack
 
 Multipart uploads parsed by Rack::Multipart create tempfiles that were
@@ -16,24 +16,24 @@ Fixes #2487
  3 files changed, 42 insertions(+)
 
 diff --git a/CHANGELOG.md b/CHANGELOG.md
-index 5c36121..36e808d 100644
+index 034d240..4c46e89 100644
 --- a/CHANGELOG.md
 +++ b/CHANGELOG.md
-@@ -9,6 +9,7 @@
- * [#2960](https://github.com/ruby-grape/grape/pull/2960): Lint every response of an API once under `lint!`, including the router's 404 and mounted Rack apps, instead of inside each endpoint's stack - [@ericproulx](https://github.com/ericproulx).
- * [#2966](https://github.com/ruby-grape/grape/pull/2966): Require Ruby 3.3.1, the first 3.3 release that parses anonymous argument forwarding from inside a block - [@ericproulx](https://github.com/ericproulx).
+@@ -11,6 +11,7 @@
  * [#3008](https://github.com/ruby-grape/grape/pull/3008): Add the grape-on-rack app as a live-server memory profiling harness - [@ericproulx](https://github.com/ericproulx).
+ * [#3025](https://github.com/ruby-grape/grape/pull/3025): Add `:md` and `:markdown` formatters that render an object's `to_markdown`, for APIs that declare a `text/markdown` content type - [@ericproulx](https://github.com/ericproulx).
+ * [#3029](https://github.com/ruby-grape/grape/pull/3029): Add a built-in `:jsonl` (JSON Lines) format that streams an Enumerator body - [@ericproulx](https://github.com/ericproulx).
 +* [#XXXX](https://github.com/ruby-grape/grape/pull/XXXX): Add `Rack::TempfileReaper` to every endpoint's middleware stack so multipart upload tempfiles are unlinked after the response - [@anyingiit](https://github.com/anyingiit).
  * Your contribution here.
  
  #### Fixes
 diff --git a/lib/grape/endpoint.rb b/lib/grape/endpoint.rb
-index a59a5b9..be59d53 100644
+index fd68663..96f0c2c 100644
 --- a/lib/grape/endpoint.rb
 +++ b/lib/grape/endpoint.rb
-@@ -393,6 +393,7 @@ module Grape
-       content_types = inheritable_setting.content_types
-       format = inheritable_setting.format
+@@ -462,6 +462,7 @@ module Grape
+       content_types = setting.content_types
+       format = setting.format
  
 +      stack.use Rack::TempfileReaper
        stack.use Rack::Head
@@ -91,5 +91,5 @@ index 174da58..e39d191 100644
      let(:ping_mount) do
        Class.new(Grape::API) do
 -- 
-2.43.0
+2.45.0
 
