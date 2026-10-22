@@ -39,3 +39,4 @@
 - 本机 git push 到 Playground 经常断（HTTP2/SSL），可用 GitHub API 推送。
 - 151 已提交 rewrite-cucumber-jvm#73。本地跑法：settings 里去掉 codegenome 仓库换 mavenCentral()，build.gradle.kts 顶部加 buildscript resolutionStrategy 把 org.openrewrite:rewrite-* 固定到 Maven Central 的 8.90.4（不进补丁）。
 - 130–171 批次剩余：137、153 等 owner 在 issue 认领；157、171 已放弃。
+- 137、153 已按 owner 授权在 issue 下认领并提交：OpenRefine#8036、sysknife#639。130–171 批次全部处理完。
