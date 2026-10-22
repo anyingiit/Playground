@@ -1,0 +1,114 @@
+From 7f7ff8720d41b365d85d440383554ba58089ede2 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:08:53 +0000
+Subject: [PATCH] fix(scripts): keep help() out of the env-docs read scan, and
+ test it
+
+The names that help() prints counted as reads, so a row for a variable the
+code stopped reading never failed with "remove the row". Blank help()'s body
+(line breaks kept) before scanning, fail when help() or the end of its
+template literal cannot be found, and take the Environment block from that
+body so the last help line no longer needs a trailing newline.
+
+Add a case to scripts/release.test.mjs that runs the check on a scratch tree
+and expects the "remove the row" failure.
+
+Assisted-by: Claude Code
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ scripts/check-env-docs.mjs | 25 +++++++++++++++++++++----
+ scripts/release.test.mjs   | 28 ++++++++++++++++++++++++++++
+ 2 files changed, 49 insertions(+), 4 deletions(-)
+
+diff --git a/scripts/check-env-docs.mjs b/scripts/check-env-docs.mjs
+index a621bd1..1c96d8f 100644
+--- a/scripts/check-env-docs.mjs
++++ b/scripts/check-env-docs.mjs
+@@ -36,10 +36,30 @@ const INTERNAL = new Map([
+ // path check covers a test/ directory nested under src/ as well.
+ const isTest = (path) => /\.test\.[cm]?[jt]sx?$/.test(path) || /(^|[\\/])test[\\/]/.test(path);
+ 
++// help() prints the Environment block, so the names in it are not reads: were
++// they counted, a row would stay "read" after the code stopped reading it and
++// the "remove the row" failure below could never fire. Its body is blanked,
++// line breaks kept, before the scan, and also searched for the block.
++const HELP_START = "function help(): void {";
++const failures = [];
++let helpEnvironment;
++const withoutHelp = (source) => {
++  const start = source.indexOf(HELP_START);
++  const end = start === -1 ? -1 : source.indexOf("`);", start);
++  if (end === -1) {
++    failures.push(`${HELP}: could not find help() and the end of its template literal`);
++    return source;
++  }
++  const body = source.slice(start + HELP_START.length, end);
++  helpEnvironment = /\nEnvironment:\n([\s\S]*)$/.exec(body)?.[1];
++  return source.slice(0, start + HELP_START.length) + body.replace(/[^\n]/g, "") + source.slice(end);
++};
++
+ const readBy = new Map();
+ for await (const path of glob("{apps,packages}/*/src/**/*.{ts,mts,cts,js,mjs}")) {
+   if (isTest(path)) continue;
+-  const lines = (await readFile(path, "utf8")).split(/\r?\n/);
++  const source = await readFile(path, "utf8");
++  const lines = (path.replaceAll("\\", "/") === HELP ? withoutHelp(source) : source).split(/\r?\n/);
+   lines.forEach((line, index) => {
+     for (const [name] of line.matchAll(/MELRA_[A-Z0-9_]+/g)) {
+       if (!readBy.has(name)) readBy.set(name, `${path.replaceAll("\\", "/")}:${index + 1}`);
+@@ -54,7 +74,6 @@ const documented = new Map();
+   if (name && !documented.has(name)) documented.set(name, index + 1);
+ });
+ 
+-const failures = [];
+ for (const [name, where] of [...readBy].sort()) {
+   if (!INTERNAL.has(name) && !documented.has(name)) {
+     failures.push(`${name} (first seen at ${where}) has no row in the environment table in ${DOC}`);
+@@ -68,8 +87,6 @@ for (const [name, line] of documented) {
+ // The Environment block is the tail of the help() template literal: each
+ // variable starts a line indented by two spaces; continuation lines are
+ // indented further and never start with a name.
+-const helpSource = await readFile(HELP, "utf8");
+-const helpEnvironment = /\nEnvironment:\n([\s\S]*?)\n`\);/.exec(helpSource)?.[1];
+ if (helpEnvironment === undefined) {
+   failures.push(`${HELP}: could not find the Environment block of help()`);
+ } else {
+diff --git a/scripts/release.test.mjs b/scripts/release.test.mjs
+index dcc1b47..e31cd2e 100644
+--- a/scripts/release.test.mjs
++++ b/scripts/release.test.mjs
+@@ -153,3 +153,31 @@ test("the release workflows publish in that order, gate the container, and relea
+   before(dry, 'channel="$(node scripts/release-channel.mjs)"', 'npm publish "${tarball}" --dry-run --tag "${channel}"');
+   assert.doesNotMatch(dry, /--tag alpha/);
+ });
++
++test("a row the code no longer reads fails docs:check, even though melra help still lists it", () => {
++  const docs = (names) => `| Variable | Meaning |\n| --- | --- |\n${names.map((name) => `| \`${name}\` | x |`).join("\n")}\n`;
++  // The last help line runs straight into the closing backtick.
++  const cli = (reads) => `${reads}
++function help(): void {
++  process.stdout.write(\`MELRA
++
++Environment:
++  MELRA_HOME                       Data directory
++  MELRA_GONE                       No longer read\`);
++}
++`;
++  const check = (reads) =>
++    node("scripts/check-env-docs.mjs", [], scratch({
++      "docs/INSTALLATION.md": docs(["MELRA_HOME", "MELRA_GONE"]),
++      "apps/cli/src/index.ts": cli(reads),
++    }));
++
++  // The scratch tree has none of the Windows script variables, so the
++  // allowlist complains in both runs; only the lines about these two matter.
++  const stale = check("const home = process.env.MELRA_HOME;");
++  assert.match(stale.stderr, /MELRA_GONE is documented but nothing in \{apps,packages\}\/\*\/src reads it; remove the row/);
++  assert.doesNotMatch(stale.stderr, /missing from the Environment block|could not find/);
++
++  const read = check("const home = process.env.MELRA_HOME;\nconst gone = process.env.MELRA_GONE;");
++  assert.doesNotMatch(read.stderr, /MELRA_HOME|MELRA_GONE|help\(\)/);
++});
+-- 
+2.43.0
+
