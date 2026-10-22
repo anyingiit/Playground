@@ -1,0 +1,182 @@
+From 258cca28bec5b8eed60dc01670efcf5b453a76d5 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:17:49 +0000
+Subject: [PATCH] Generate base struct classes in generate struct if missing
+
+`hanami generate struct` generates structs inheriting from the app's or
+slice's `DB::Struct` base class, but did not create that class when it
+was missing (e.g. in an app generated with `--skip-db` or a slice
+generated before the db layer was added), leaving the new struct
+referencing an undefined constant.
+
+Create `app/db/struct.rb` (and, for a slice, `slices/<slice>/db/struct.rb`)
+when it does not exist yet, matching what `hanami new` and
+`hanami generate slice` produce, as `generate part` already does for
+the base part.
+
+Fixes #450
+---
+ CHANGELOG.md                                  |  1 +
+ lib/hanami/cli/generators/app/struct.rb       | 30 +++++++
+ .../cli/commands/app/generate/struct_spec.rb  | 78 +++++++++++++++++++
+ 3 files changed, 109 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 834950a..f035590 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -11,6 +11,7 @@ and this project adheres to [Break Versioning](https://www.taoensso.com/break-ve
+ 
+ - Add `hanami new --skip-git` to generate an app without initializing a git repository or generating a `.gitignore`. (@aaronmallen #441)
+ - Proper support for MariaDB (@katafrakt in #458)
++- Generate the app or slice base struct class (`db/struct.rb`) in `hanami generate struct` when it does not exist yet, as `hanami generate part` does for the base part. (@anyingiit in #450)
+ 
+ ### Changed
+ 
+diff --git a/lib/hanami/cli/generators/app/struct.rb b/lib/hanami/cli/generators/app/struct.rb
+index 8c0e5e1..716cd2d 100644
+--- a/lib/hanami/cli/generators/app/struct.rb
++++ b/lib/hanami/cli/generators/app/struct.rb
+@@ -18,6 +18,9 @@ module Hanami
+           # @since 2.2.0
+           # @api private
+           def call(key:, namespace:, base_path:, force: false)
++            create_app_base_struct_if_missing
++            create_slice_base_struct_if_missing(namespace:, base_path:) unless namespace == Hanami.app.namespace
++
+             RubyClassFile.new(
+               fs: fs,
+               inflector: inflector,
+@@ -32,6 +35,33 @@ module Hanami
+           private
+ 
+           attr_reader :fs, :inflector, :stdout
++
++          def create_app_base_struct_if_missing
++            return if fs.exist?(fs.join(APP_DIR, "db", "struct.rb"))
++
++            RubyClassFile.new(
++              fs: fs,
++              inflector: inflector,
++              namespace: Hanami.app.namespace,
++              key: "db.struct",
++              base_path: APP_DIR,
++              parent_class_name: "Hanami::DB::Struct",
++              requires: ["hanami/db/struct"]
++            ).create
++          end
++
++          def create_slice_base_struct_if_missing(namespace:, base_path:)
++            return if fs.exist?(fs.join(base_path, "db", "struct.rb"))
++
++            RubyClassFile.new(
++              fs: fs,
++              inflector: inflector,
++              namespace: namespace,
++              key: "db.struct",
++              base_path: base_path,
++              parent_class_name: "#{Hanami.app.namespace}::DB::Struct"
++            ).create
++          end
+         end
+       end
+     end
+diff --git a/spec/unit/hanami/cli/commands/app/generate/struct_spec.rb b/spec/unit/hanami/cli/commands/app/generate/struct_spec.rb
+index b70b3a9..56d76e5 100644
+--- a/spec/unit/hanami/cli/commands/app/generate/struct_spec.rb
++++ b/spec/unit/hanami/cli/commands/app/generate/struct_spec.rb
+@@ -71,6 +71,43 @@ RSpec.describe Hanami::CLI::Commands::App::Generate::Struct, :app do
+       expect(output).to include("Created app/structs/book/published/hardcover.rb")
+     end
+ 
++    context "without base struct" do
++      it "generates the app base struct" do
++        subject.call(name: "book")
++
++        base_struct = <<~EXPECTED
++          # frozen_string_literal: true
++
++          require "hanami/db/struct"
++
++          module Test
++            module DB
++              class Struct < Hanami::DB::Struct
++              end
++            end
++          end
++        EXPECTED
++
++        expect(fs.read("app/db/struct.rb")).to eq(base_struct)
++        expect(output).to include("Created app/db/struct.rb")
++      end
++    end
++
++    context "with base struct" do
++      before do
++        fs.write("app/db/struct.rb", "existing base struct")
++        stdout.truncate 0
++      end
++
++      it "does not overwrite the app base struct" do
++        subject.call(name: "book")
++
++        expect(fs.read("app/db/struct.rb")).to eq("existing base struct")
++        expect(output).not_to include("Created app/db/struct.rb")
++        expect(fs.exist?("app/structs/book.rb")).to be(true)
++      end
++    end
++
+     context "with existing file" do
+       let(:file_path) { "app/structs/book/published/hardcover.rb" }
+ 
+@@ -127,6 +164,47 @@ RSpec.describe Hanami::CLI::Commands::App::Generate::Struct, :app do
+       expect(output).to include("Created slices/main/structs/book/draft_book.rb")
+     end
+ 
++    context "without base structs" do
++      it "generates the app and slice base structs" do
++        fs.mkdir("slices/main")
++        subject.call(name: "book", slice: "main")
++
++        slice_base_struct = <<~EXPECTED
++          # frozen_string_literal: true
++
++          module Main
++            module DB
++              class Struct < Test::DB::Struct
++              end
++            end
++          end
++        EXPECTED
++
++        expect(fs.read("slices/main/db/struct.rb")).to eq(slice_base_struct)
++        expect(output).to include("Created slices/main/db/struct.rb")
++        expect(fs.exist?("app/db/struct.rb")).to be(true)
++        expect(output).to include("Created app/db/struct.rb")
++      end
++    end
++
++    context "with base structs" do
++      before do
++        fs.write("app/db/struct.rb", "existing app base struct")
++        fs.write("slices/main/db/struct.rb", "existing slice base struct")
++        stdout.truncate 0
++      end
++
++      it "does not overwrite the base structs" do
++        subject.call(name: "book", slice: "main")
++
++        expect(fs.read("app/db/struct.rb")).to eq("existing app base struct")
++        expect(fs.read("slices/main/db/struct.rb")).to eq("existing slice base struct")
++        expect(output).not_to include("Created app/db/struct.rb")
++        expect(output).not_to include("Created slices/main/db/struct.rb")
++        expect(fs.exist?("slices/main/structs/book.rb")).to be(true)
++      end
++    end
++
+     context "with existing file" do
+       let(:file_path) { "slices/main/structs/book/draft_book.rb" }
+ 
+-- 
+2.43.0
+
