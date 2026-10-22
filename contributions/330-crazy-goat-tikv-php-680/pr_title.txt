@@ -1,0 +1,1 @@
+refactor: spell the RegionErrorHandler cache guard with its short name and state the NotLeader exception (#680)

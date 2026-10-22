@@ -25,3 +25,6 @@
 | 213 | [PyCQA/pyflakes#548](https://github.com/PyCQA/pyflakes/issues/548) | 待提交（base `main`；无需认领；无 DCO/CLA；复核 PASS；维护者几乎只合自己的 PR，优先级放低） |
 | 275 | [hanami/hanami-minitest#11](https://github.com/hanami/hanami-minitest/issues/11) | 待提交（base `main`；无需认领；无 DCO/CLA；纯文档；复核 PASS） |
 | 247 | [vyncint/termlens#586](https://github.com/vyncint/termlens/issues/586) | 待提交：base `main`；无需认领；无 CLA；DCO 已签（CI 强制）。**禁止 AI 署名**：不加 `--trailer`。与 245 同仓库互不依赖（CHANGELOG 不同位置） |
+| 330 | [crazy-goat/tikv-php#680](https://github.com/crazy-goat/tikv-php/issues/680) | 待提交（base `master`；无需认领；无 DCO/CLA；复核 PASS；与 331/332 同改 CHANGELOG `[Unreleased]`，后提交者可能需 rebase） |
+| 331 | [crazy-goat/tikv-php#682](https://github.com/crazy-goat/tikv-php/issues/682) | 待提交（base `master`；无需认领；无 DCO/CLA；复核 PASS） |
+| 332 | [crazy-goat/tikv-php#662](https://github.com/crazy-goat/tikv-php/issues/662) | 待提交（base `master`；无需认领；无 DCO/CLA；复核 PASS） |

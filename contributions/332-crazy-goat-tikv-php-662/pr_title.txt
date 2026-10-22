@@ -1,0 +1,1 @@
+test: honour backslash escapes in the pick-issue guard's comment stripper (#662)

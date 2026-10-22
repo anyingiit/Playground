@@ -1,0 +1,219 @@
+From 9a4480e240b8204bf1e361fd99a067c21b52dfb9 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:55:51 +0000
+Subject: [PATCH] test: pin the fail-closed contract directly instead of
+ probing for it (#682)
+
+RawKvBatchUnresolvedKeyTest and CommitPrewriteKeyCoverageTest probed
+whether RegionResolver::batchResolveRegions() fails closed (#244) and
+kept a placeholder branch - expectNotToPerformAssertions() and an
+E_USER_WARNING - for the case where it does not. #244 is merged, so the
+branch was dead, and a regression of the contract would have made the
+tests pass without running their assertions.
+
+Both files now pin the contract with a direct expectException() test and
+drop the probe, and the dependent tests run unconditionally.
+
+Closes #682
+---
+ CHANGELOG.md                                  |  4 ++
+ .../RawKv/RawKvBatchUnresolvedKeyTest.php     | 67 ++++++-------------
+ .../TxnKv/CommitPrewriteKeyCoverageTest.php   | 40 +++++------
+ 3 files changed, 44 insertions(+), 67 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index af36e5a..ad93e69 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -23,6 +23,10 @@ policy now classifies as internal.
+ 
+ ## [Unreleased]
+ 
++### Tests
++
++- `RawKvBatchUnresolvedKeyTest` and `CommitPrewriteKeyCoverageTest` no longer probe whether the fail-closed contract of #244 is implemented. The probe kept a branch for the "not implemented yet" case — `expectNotToPerformAssertions()` plus an `E_USER_WARNING` — that could never run once #244 merged, and that would have turned a regression of the contract into a passing run that skipped the real assertions. Each file now pins the contract directly with a `testResolverFailsClosedForAKeyOutsideTheReturnedRegions()` that expects the `TiKvException` of `RegionResolver::batchResolveRegions()`, and the dependent tests run unconditionally. (#682)
++
+ ## [v0.9.0] - 2026-10-21
+ 
+ ### Added
+diff --git a/tests/Unit/RawKv/RawKvBatchUnresolvedKeyTest.php b/tests/Unit/RawKv/RawKvBatchUnresolvedKeyTest.php
+index 7433126..b4808c5 100644
+--- a/tests/Unit/RawKv/RawKvBatchUnresolvedKeyTest.php
++++ b/tests/Unit/RawKv/RawKvBatchUnresolvedKeyTest.php
+@@ -23,10 +23,10 @@ use Psr\Log\NullLogger;
+  * so a skipped key means the write was never sent while the caller observed
+  * success (silent data loss).
+  *
+- * Note: the fail-closed contract is implemented by issue #244 (PR #531),
+- * which is not merged yet. The guarded tests below probe whether that fix
+- * is present and warn (instead of failing) until it merges; they then
+- * permanently pin the contract.
++ * The tests build on the fail-closed contract of issue #244 (PR #531):
++ * RegionResolver::batchResolveRegions() throws for a key outside the
++ * regions PD returned. testResolverFailsClosedForAKeyOutsideTheReturnedRegions()
++ * pins that contract directly.
+  */
+ final class RawKvBatchUnresolvedKeyTest extends TestCase
+ {
+@@ -49,41 +49,6 @@ final class RawKvBatchUnresolvedKeyTest extends TestCase
+         );
+     }
+ 
+-    /**
+-     * Probe whether the fail-closed contract of issue #244 is implemented:
+-     * batchResolveRegions() must throw for a key outside the returned
+-     * regions instead of omitting it from the result.
+-     * @return bool true when the contract is implemented — the caller
+-     *              proceeds; false when it is pending — the caller stops
+-     *              after the emitted warning
+-     */
+-    private function requireFailClosedContract(): bool
+-    {
+-        $region = $this->region(1, 'a', 'm');
+-        $this->pdClient->method('scanRegions')->willReturn([$region]);
+-        $this->regionCache->method('put');
+-
+-        $resolver = new RegionResolver($this->pdClient, $this->regionCache);
+-        try {
+-            $resolver->batchResolveRegions(['z']);
+-        } catch (TiKvException) {
+-            return true; // fail-closed: implemented — run the real assertions
+-        }
+-
+-        // Fail-closed contract not implemented yet (issue #244, PR #531):
+-        // emit a non-failing warning naming the pending contract and stop.
+-        // (markTestSkipped() is not an option — the CI `unit-tests` job runs
+-        // with --fail-on-skipped, so a skip would break the build.)
+-        $this->expectNotToPerformAssertions();
+-        trigger_error(
+-            'Fail-closed contract not implemented yet (issue #244, PR #531); '
+-            . 'this test pins the issue #329 criteria and activates once #244 merges.',
+-            E_USER_WARNING,
+-        );
+-
+-        return false;
+-    }
+-
+     /**
+      * Issue #244 redacts keys in fail-closed messages (KeyRedactor
+      * convention): the unresolvable key is identified by its hex form plus
+@@ -119,6 +84,22 @@ final class RawKvBatchUnresolvedKeyTest extends TestCase
+         );
+     }
+ 
++    /**
++     * The fail-closed contract of issue #244 the tests below build on:
++     * batchResolveRegions() throws for a key outside the returned regions
++     * instead of omitting it from the result.
++     */
++    public function testResolverFailsClosedForAKeyOutsideTheReturnedRegions(): void
++    {
++        $this->pdClient->method('scanRegions')->willReturn([$this->region(1, 'a', 'm')]);
++        $this->regionCache->method('put');
++
++        $this->expectException(TiKvException::class);
++        $this->expectExceptionMessage($this->expectedRedactedKeyFragment('z'));
++
++        (new RegionResolver($this->pdClient, $this->regionCache))->batchResolveRegions(['z']);
++    }
++
+     /**
+      * Issue #329 criterion: batchPut must either send every key or raise an
+      * exception — never return normally having sent only a subset.
+@@ -129,10 +110,6 @@ final class RawKvBatchUnresolvedKeyTest extends TestCase
+      */
+     public function testBatchPutThrowsWhenAKeyCannotBeResolved(): void
+     {
+-        if (!$this->requireFailClosedContract()) {
+-            return;
+-        }
+-
+         $this->pdClient->method('scanRegions')->willReturn([$this->region(1, 'a', 'm')]);
+         $this->regionCache->method('put');
+         $this->grpc->expects($this->never())->method('getChannel');
+@@ -155,10 +132,6 @@ final class RawKvBatchUnresolvedKeyTest extends TestCase
+      */
+     public function testBatchPutSendsResolvableNeighboursOfUnresolvableKey(): void
+     {
+-        if (!$this->requireFailClosedContract()) {
+-            return;
+-        }
+-
+         $this->pdClient->method('scanRegions')->willReturn([$this->region(1, 'a', 'm')]);
+         $this->regionCache->method('put');
+ 
+diff --git a/tests/Unit/TxnKv/CommitPrewriteKeyCoverageTest.php b/tests/Unit/TxnKv/CommitPrewriteKeyCoverageTest.php
+index 36c9a35..f53d8cb 100644
+--- a/tests/Unit/TxnKv/CommitPrewriteKeyCoverageTest.php
++++ b/tests/Unit/TxnKv/CommitPrewriteKeyCoverageTest.php
+@@ -8,6 +8,7 @@ use CrazyGoat\Proto\Kvrpcpb\CommitResponse;
+ use CrazyGoat\Proto\Kvrpcpb\PrewriteResponse;
+ use CrazyGoat\TiKV\Client\Cache\RegionCacheInterface;
+ use CrazyGoat\TiKV\Client\Connection\PdClientInterface;
++use CrazyGoat\TiKV\Client\Exception\TiKvException;
+ use CrazyGoat\TiKV\Client\Grpc\GrpcClientInterface;
+ use CrazyGoat\TiKV\Client\Region\Dto\RegionInfo;
+ use CrazyGoat\TiKV\Client\Region\RegionResolver;
+@@ -26,10 +27,10 @@ use PHPUnit\Framework\TestCase;
+  * while staying in the write set, so the commit phase either referenced a
+  * key TiKV never saw, or the write was silently lost.
+  *
+- * Note: the fail-closed contract is implemented by issue #244 (PR #531),
+- * which is not merged yet. The guarded tests below probe whether that fix
+- * is present and warn (instead of failing) until it merges; they then
+- * permanently pin the contract.
++ * The tests build on the fail-closed contract of issue #244 (PR #531):
++ * RegionResolver::batchResolveRegions() throws for a key outside the
++ * regions PD returned. testResolverFailsClosedForAKeyOutsideTheReturnedRegions()
++ * pins that contract directly.
+  */
+ final class CommitPrewriteKeyCoverageTest extends TestCase
+ {
+@@ -188,6 +189,21 @@ final class CommitPrewriteKeyCoverageTest extends TestCase
+         self::assertEqualsCanonicalizing(['a', 'z'], $committed);
+     }
+ 
++    /**
++     * The fail-closed contract of issue #244 the test below builds on:
++     * batchResolveRegions() throws for a key outside the returned regions
++     * instead of omitting it from the result.
++     */
++    public function testResolverFailsClosedForAKeyOutsideTheReturnedRegions(): void
++    {
++        $this->pdClient->method('scanRegions')->willReturn([$this->region(1, '', 'm')]);
++        $this->regionCache->method('put');
++
++        $this->expectException(TiKvException::class);
++
++        $this->regionResolver->batchResolveRegions(['z']);
++    }
++
+     /**
+      * Issue #329 criterion: a key whose region cannot be resolved must not
+      * be dropped from prewrite while remaining in the write set (the commit
+@@ -202,22 +218,6 @@ final class CommitPrewriteKeyCoverageTest extends TestCase
+         $this->pdClient->method('scanRegions')->willReturn([$this->region(1, '', 'm')]);
+         $this->regionCache->method('put');
+ 
+-        // Probe whether the fail-closed contract (issue #244) is implemented.
+-        try {
+-            $this->regionResolver->batchResolveRegions(['z']);
+-        } catch (\CrazyGoat\TiKV\Client\Exception\TiKvException) {
+-            $failClosed = true;
+-        }
+-        if (!($failClosed ?? false)) {
+-            $this->expectNotToPerformAssertions();
+-            trigger_error(
+-                'Fail-closed contract not implemented yet (issue #244, PR #531); '
+-                . 'this test pins the issue #329 criteria and activates once #244 merges.',
+-                E_USER_WARNING,
+-            );
+-            return;
+-        }
+-
+         [$txn, $getRequests] = $this->makeTransactionAndCaptureRpcs();
+         $txn->set('a', 'v1');
+         $txn->set('z', 'v2');
+-- 
+2.43.0
+

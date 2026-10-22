@@ -1,0 +1,92 @@
+From f0a6357469fd593f1778e37f683bc0da3020c8ef Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:53:27 +0000
+Subject: [PATCH] refactor: spell the RegionErrorHandler cache guard with its
+ short name and state the NotLeader exception (#680)
+
+The invalidation guard of RegionErrorHandler::check() tested the optional
+cache against the fully-qualified RegionCacheInterface name although the
+file imports it. The check is the null check of ?RegionCacheInterface
+$cache (a region id without a cache must not call invalidate() on null),
+and Rector's FlipTypeControlToUseExclusiveTypeRector turns $cache !== null
+back into an instanceof, so it keeps that form with the short name.
+
+The first paragraph of the docblock said a cache and a region id always
+invalidate the region; it now names the NotLeader exception the docblock
+describes further down.
+
+Closes #680
+---
+ CHANGELOG.md                             |  4 ++++
+ docs/helpers/faq.md                      | 15 ++++++++++++++-
+ src/Client/Region/RegionErrorHandler.php |  8 +++++---
+ 3 files changed, 23 insertions(+), 4 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index af36e5a..7dfed57 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -23,6 +23,10 @@ policy now classifies as internal.
+ 
+ ## [Unreleased]
+ 
++### Changed
++
++- `RegionErrorHandler::check()` spells its cache guard with the imported short name (`$cache instanceof RegionCacheInterface`) instead of the fully-qualified interface name, and the first paragraph of its docblock now states the NotLeader exception that the same docblock describes further down: a NotLeader error at a site owned by a `RetryExecutor` is left cached even when a cache and a region id are passed. The guard is not always true — it is the null check of the optional `$cache` (`testRegionErrorWithoutCacheDoesNotThrowFromInvalidation()` pins it) — and it stays an `instanceof` because Rector's `FlipTypeControlToUseExclusiveTypeRector` rewrites `$cache !== null` back into it. No behaviour change. (#680)
++
+ ## [v0.9.0] - 2026-10-21
+ 
+ ### Added
+diff --git a/docs/helpers/faq.md b/docs/helpers/faq.md
+index b12205f..7ff5b43 100644
+--- a/docs/helpers/faq.md
++++ b/docs/helpers/faq.md
+@@ -2497,4 +2497,17 @@ Say so where the behaviour is documented (`docs/configuration.md`), and say
+ what the user has to do: configure the logger's level and handlers before
+ the client is built, and build a new client after changing them. A
+ limitation that is only described in the commit message is a limitation
+-that the next integrator re-discovers the hard way.
+\ No newline at end of file
++that the next integrator re-discovers the hard way.
++
++## An `instanceof` of a parameter's own nullable type is its null check, and Rector keeps it that way
++
++`RegionErrorHandler::check()` takes `?RegionCacheInterface $cache` and guards the
++invalidation with `$cache instanceof RegionCacheInterface`. That is not an
++always-true check: it is the only thing that stops `$cache->invalidate()` from
++being called on `null` when a caller passes a region id without a cache
++(`testRegionErrorWithoutCacheDoesNotThrowFromInvalidation()` pins it). Do not
++rewrite it as `$cache !== null` either: Rector's
++`FlipTypeControlToUseExclusiveTypeRector` flips a null comparison of an
++object-typed variable into an `instanceof`, so `bin/lint.sh` fails until the
++`instanceof` is back. Spell it with the imported short name — Rector writes the
++fully-qualified name when it does the flip itself. (#680)
+diff --git a/src/Client/Region/RegionErrorHandler.php b/src/Client/Region/RegionErrorHandler.php
+index 230a557..b6cdabc 100644
+--- a/src/Client/Region/RegionErrorHandler.php
++++ b/src/Client/Region/RegionErrorHandler.php
+@@ -33,8 +33,10 @@ final class RegionErrorHandler
+      * instead of a silently accepted response.
+      *
+      * When a $cache and $regionId are provided, the region is invalidated
+-     * from the cache before the exception is thrown. This is the consistent
+-     * behaviour expected by Transaction and LockResolver callers.
++     * from the cache before the exception is thrown — except for a NotLeader
++     * error at a site owned by a RetryExecutor, which is left cached (see
++     * below). This is the consistent behaviour expected by Transaction and
++     * LockResolver callers.
+      *
+      * NotLeader ownership depends on where check() runs:
+      *
+@@ -68,7 +70,7 @@ final class RegionErrorHandler
+                 $isNotLeader = $regionError->getNotLeader() !== null;
+                 if (
+                     (!$isNotLeader || !$notLeaderOwnedByRetryExecutor)
+-                    && $cache instanceof \CrazyGoat\TiKV\Client\Cache\RegionCacheInterface
++                    && $cache instanceof RegionCacheInterface
+                     && $regionId !== null
+                 ) {
+                     $cache->invalidate($regionId, $isNotLeader ? 'not_leader' : 'region_error');
+-- 
+2.43.0
+

@@ -1,0 +1,1 @@
+test: pin the fail-closed contract directly instead of probing for it (#682)
