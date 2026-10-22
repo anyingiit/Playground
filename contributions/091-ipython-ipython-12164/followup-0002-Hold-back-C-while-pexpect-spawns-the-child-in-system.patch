@@ -1,0 +1,63 @@
+From 7f7e11d975c3f291fb00d6131f7770ef4c61f8a7 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:32:36 +0000
+Subject: [PATCH 2/2] Hold back ^C while pexpect spawns the child in system()
+
+A ^C that arrived after pexpect had forked the shell but before spawn()
+returned left system() without a handle on the child, so it kept running.
+Defer SIGINT until spawn() returns and raise it then, so the usual handler
+forwards ^C to the child and terminates it. Also cope with child.before
+still being None in that handler.
+---
+ IPython/utils/_process_posix.py | 28 +++++++++++++++++++++++-----
+ 1 file changed, 23 insertions(+), 5 deletions(-)
+
+diff --git a/IPython/utils/_process_posix.py b/IPython/utils/_process_posix.py
+index f79c6b9..b7f10f1 100644
+--- a/IPython/utils/_process_posix.py
++++ b/IPython/utils/_process_posix.py
+@@ -123,10 +123,27 @@ def system(self, cmd: str) -> int:
+             # We only search for the 'patterns' timeout or EOF, which aren't in
+             # the text itself.
+             #child = pexpect.spawn(pcmd, searchwindowsize=1)
+-            if hasattr(pexpect, 'spawnb'):
+-                child = pexpect.spawnb(self.sh, args=['-c', cmd]) # Pexpect-U
+-            else:
+-                child = pexpect.spawn(self.sh, args=['-c', cmd])  # Vanilla Pexpect
++            # Hold back ^C while spawning: pexpect may already have forked the
++            # child when it arrives, and we would lose the handle to stop it.
++            # It is raised again as soon as spawn() has returned.
++            deferred = []
++            try:
++                previous_handler = signal.signal(
++                    signal.SIGINT, lambda signum, frame: deferred.append(signum)
++                )
++            except ValueError:
++                # Not the main thread, where Python never raises ^C anyway.
++                previous_handler = None
++            try:
++                if hasattr(pexpect, 'spawnb'):
++                    child = pexpect.spawnb(self.sh, args=['-c', cmd]) # Pexpect-U
++                else:
++                    child = pexpect.spawn(self.sh, args=['-c', cmd])  # Vanilla Pexpect
++            finally:
++                if previous_handler is not None:
++                    signal.signal(signal.SIGINT, previous_handler)
++            if deferred:
++                raise KeyboardInterrupt
+             flush = sys.stdout.flush
+             while True:
+                 # res is the index of the pattern that caused the match, so we
+@@ -151,7 +168,8 @@ def system(self, cmd: str) -> int:
+             # Read and print any more output the program might produce on its
+             # way out.
+             try:
+-                out_size = len(child.before)
++                # child.before is None until the first expect has returned.
++                out_size = len(child.before or b"")
+                 child.expect_list(patterns, self.terminate_timeout)
+                 print(child.before[out_size:].decode(enc, 'replace'), end='')
+                 sys.stdout.flush()
+-- 
+2.43.0
+

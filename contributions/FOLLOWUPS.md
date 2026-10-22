@@ -11,6 +11,7 @@
 | [hrsh7th/nvim-cmp#2234](https://github.com/hrsh7th/nvim-cmp/pull/2234) | contributions/339-hrsh7th-nvim-cmp-2232 | 推 `followup-0001-col-offset-fit.patch` 到 `anyingiit/nvim-cmp:fix-2232-menu-clamp`，再回复 reply.md | Codex P2：适配检查未计入 col_offset。已用 nvim 0.11.4 headless 复现（修前 col=0，修后 col=7 贴右边）并新增 spec；vusted 未装，spec 本身未跑 |
 | [bpmn-io/dmn-migrate#63](https://github.com/bpmn-io/dmn-migrate/pull/63) | contributions/432-bpmn-io-dmn-migrate-60 | 推 `followup-0001-all-namespace-prefixes.patch` 到 `anyingiit/dmn-migrate:migrate-imported-typerefs`，再回复 reply.md。CLA 仍待 owner 签 | Copilot 请求修改：同一命名空间多个前缀。红→绿（新测试，21 passing），eslint 通过 |
 | [tuProlog/2p-kt#1046](https://github.com/tuProlog/2p-kt/pull/1046) | contributions/284-tuProlog-2p-kt-945 | 推 `followup-0001-kdoc-exception.patch` 到 `anyingiit/2p-kt:fix/945-theory-deobjectifier-errors`；回复 reply.md 可选 | Codex：KDoc 仍写 ClassCastException。纯文档 |
+| [ipython/ipython#15448](https://github.com/ipython/ipython/pull/15448) | contributions/091-ipython-ipython-12164 | 按顺序推 `followup-0001-TST-*.patch`、`followup-0002-Hold-back-*.patch` 到 `anyingiit/ipython:fix-system-interrupt-during-spawn`（两个提交，不 rebase），再回复 reply.md | Codex 3 条 P1 全处理：测试先提交且在断言上失败；^C 在 fork 后到达时子进程会被终止（红→绿，test_process 22 passed） |
 
 ## 只需登记状态（无需操作）
 
@@ -29,7 +30,6 @@
 
 ## 机器人提出、尚未处理（价值较低或需更多时间）
 
-- ipython/ipython#15448：Codex 3 条 P1（spawn 期间子进程可能遗留；测试报错而非断言失败；测试与修复同一提交）。
 - jasonjmcghee/ron-lsp#28：Codex 多条 P1（src 路径推导、别名解析、嵌套类型元数据）。
 - stackrox/kube-linter#1280：Codex 指出跳过的锚点。
 - KnockOutEZ/wigolo#663：CodeRabbit 指出 CDP 存储状态未应用、池回退泄漏、认证上下文无上限。
