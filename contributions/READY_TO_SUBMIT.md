@@ -111,6 +111,6 @@
 | 288 | [benbalter/jekyll-titles-from-headings#109](https://github.com/benbalter/jekyll-titles-from-headings/issues/109) | **已提交** [#111](https://github.com/benbalter/jekyll-titles-from-headings/pull/111) |
 | 289 | [benbalter/site-inspector#126](https://github.com/benbalter/site-inspector/issues/126) | **已提交** [#133](https://github.com/benbalter/site-inspector/pull/133) |
 | 290 | [benbalter/site-inspector#128](https://github.com/benbalter/site-inspector/issues/128) | **已提交** [#134](https://github.com/benbalter/site-inspector/pull/134) |
-| 291 | [benbalter/situation-clock#24](https://github.com/benbalter/situation-clock/issues/24) | 待提交（base `gh-pages`；无需认领；无 DCO/CLA；CSS；复核 PASS） |
-| 292 | [benbalter/avatar-montage#4](https://github.com/benbalter/avatar-montage/issues/4) | 待提交（base `main`；无需认领；无 DCO/CLA；Bash；复核 PASS） |
-| 293 | [higher-kinded-j/higher-kinded-j#1221](https://github.com/higher-kinded-j/higher-kinded-j/issues/1221) | 待提交（base `main`；可选评论认领；无 DCO/CLA；Java 文档；复核 PASS） |
+| 291 | [benbalter/situation-clock#24](https://github.com/benbalter/situation-clock/issues/24) | **已提交** [#34](https://github.com/benbalter/situation-clock/pull/34) |
+| 292 | [benbalter/avatar-montage#4](https://github.com/benbalter/avatar-montage/issues/4) | **已提交** [#5](https://github.com/benbalter/avatar-montage/pull/5) |
+| 293 | [higher-kinded-j/higher-kinded-j#1221](https://github.com/higher-kinded-j/higher-kinded-j/issues/1221) | **已提交** [#1223](https://github.com/higher-kinded-j/higher-kinded-j/pull/1223) |
