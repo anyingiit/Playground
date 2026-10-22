@@ -59,5 +59,4 @@
 | 422 | [BSC-ES/autosubmit#3240](https://github.com/BSC-ES/autosubmit/issues/3240) | 待提交（base `master`；无需认领；无 DCO/CLA；Python；复核 PASS） |
 | 301 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（GTP） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS；先交 301 再交 302，两者改不同文件不冲突） |
 | 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（QUIC） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS） |
-| 360 | [helix-editor/helix#3115](https://github.com/helix-editor/helix/issues/3115) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；gherkin 默认接 cucumber-language-server，纯 languages.toml + 生成文档） |
 | 361 | [helix-editor/helix#11198](https://github.com/helix-editor/helix/issues/11198) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；SQL 默认接 sqls；与 360 同仓库、可任意顺序提交） |
