@@ -1,0 +1,32 @@
+From 7c624686a995205b29a9c1b818fa5d64e335fc93 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:26:28 +0000
+Subject: [PATCH] Size Unix-time clocks by timezone, not by name
+
+The smaller font for the 10-digit Unix time was keyed to the .epoch
+class, which comes from the clock's display name. Match on the
+data-timezone="EPOCH" attribute instead, so a clock named anything
+that shows Unix time gets the smaller font, and a clock named EPOCH
+with a real timezone doesn't.
+
+Fixes #24.
+---
+ assets/style.css | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/assets/style.css b/assets/style.css
+index 6045032..d9a8e8d 100644
+--- a/assets/style.css
++++ b/assets/style.css
+@@ -40,7 +40,7 @@ body {
+   padding-top: 0.5em;
+ }
+ 
+-.epoch .time {
++.clock[data-timezone="EPOCH"] .time {
+   font-size: 1.25em;
+ }
+ 
+-- 
+2.43.0
+
