@@ -197,6 +197,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 360 | [helix-editor/helix#3115](https://github.com/helix-editor/helix/issues/3115) | [helix-editor/helix#16404](https://github.com/helix-editor/helix/pull/16404) | 2026-10-22 提交（独立复核 PASS） |
 | 334 | [Euro-Office/eurooffice-nextcloud#173](https://github.com/Euro-Office/eurooffice-nextcloud/issues/173) | [Euro-Office/eurooffice-nextcloud#250](https://github.com/Euro-Office/eurooffice-nextcloud/pull/250) | 2026-10-22 提交（独立复核 PASS） |
 | 335 | [Euro-Office/eurooffice-nextcloud#151](https://github.com/Euro-Office/eurooffice-nextcloud/issues/151) | [Euro-Office/eurooffice-nextcloud#251](https://github.com/Euro-Office/eurooffice-nextcloud/pull/251) | 2026-10-22 提交（独立复核 PASS） |
+| 277 | [ruby/rdoc#1567](https://github.com/ruby/rdoc/issues/1567) | [ruby/rdoc#1860](https://github.com/ruby/rdoc/pull/1860) | 2026-10-22 提交（独立复核 PASS）；按 AGENTS.md 正文无 AI 声明段 |
 
 备注：088 解冲突后适配上游 `formatSettingValueForEdit` 新签名，`go test ./...` 全过，回退源码则新测试编译失败（红）。099 解冲突并把上游新增的公开 `AnyCol` 用法一并展开，`:core/:dataframe-arrow` compileTestKotlin + apiCheck + ktlint 通过（未跑全量测试）。118 装了 PHP 8.5：红→绿、全量 phpunit 363 通过、phpstan 无错，已在 issue #1070 留言。121 两个改动文件上游无变化，沿用之前 sclang 红→绿结果。123 为纯改名，解冲突后无残留旧名，未本地编译（依赖太多，靠 CI）。128 已在 issue #4292 留言认领，最新 main 上红→绿。208 是协调员撤回提交员任务前已开出的。
 旧会话 9 个 PR 本地重跑：grpc-gateway、ipython（test_system_interrupt 偶发超时，重跑通过，与改动无关）、pyinstaller、OpsiMate、PathMap、xterm.js、compiler-explorer 均通过；NLog（无 dotnet）、phpmyadmin（未跑）只能看 CI。

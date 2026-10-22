@@ -42,5 +42,5 @@
 | 360 | [helix-editor/helix#3115](https://github.com/helix-editor/helix/issues/3115) | **已提交** [#16404](https://github.com/helix-editor/helix/pull/16404) |
 | 334 | [Euro-Office/eurooffice-nextcloud#173](https://github.com/Euro-Office/eurooffice-nextcloud/issues/173) | **已提交** [#250](https://github.com/Euro-Office/eurooffice-nextcloud/pull/250) |
 | 335 | [Euro-Office/eurooffice-nextcloud#151](https://github.com/Euro-Office/eurooffice-nextcloud/issues/151) | **已提交** [#251](https://github.com/Euro-Office/eurooffice-nextcloud/pull/251) |
-| 277 | [ruby/rdoc#1567](https://github.com/ruby/rdoc/issues/1567) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Ruby；复核 PASS；**按仓库 AGENTS.md，正文不加 AI 声明段**） |
+| 277 | [ruby/rdoc#1567](https://github.com/ruby/rdoc/issues/1567) | **已提交** [#1860](https://github.com/ruby/rdoc/pull/1860) |
 | 421 | [tuProlog/2p-kt#946](https://github.com/tuProlog/2p-kt/issues/946) | 待提交（base `master`；无需认领；无 DCO/CLA；Kotlin；Conventional Commits；复核 PASS） |
