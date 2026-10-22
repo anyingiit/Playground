@@ -1,0 +1,282 @@
+From 0a832afd6a328b55bc5f2c2be0239b0dcea4005f Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:45:34 +0000
+Subject: [PATCH] Update documentation references to RFC 9987
+
+The SSH agent protocol was published as RFC 9987. Point the crate
+documentation, code comments and README at the RFC instead of
+draft-miller-ssh-agent-14 (section 3.x of the draft is section 5.x of
+the RFC).
+
+While here:
+- fix the section label of the session-bind extension link, which said
+  8.8.1 while the URL already pointed at 8.1.1;
+- cite RFC 9987 section 5.1 (not 4.1) in the unknown-request test and
+  quote the RFC wording;
+- point the key constraint decoder comment at the constraint type
+  registry (section 8.2) instead of draft-12.
+
+Refs #116
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ README.md                                   | 2 +-
+ src/proto/extension.rs                      | 4 ++--
+ src/proto/extension/message.rs              | 4 ++--
+ src/proto/message/add_remove.rs             | 6 +++---
+ src/proto/message/add_remove/constrained.rs | 6 +++---
+ src/proto/message/extension.rs              | 2 +-
+ src/proto/message/identity.rs               | 2 +-
+ src/proto/message/request.rs                | 6 +++---
+ src/proto/message/response.rs               | 2 +-
+ src/proto/message/sign.rs                   | 4 ++--
+ src/proto/signature.rs                      | 4 ++--
+ tests/unknown_request.rs                    | 5 +++--
+ 12 files changed, 24 insertions(+), 23 deletions(-)
+
+diff --git a/README.md b/README.md
+index b667269..13ee584 100644
+--- a/README.md
++++ b/README.md
+@@ -5,7 +5,7 @@
+ 
+ A collection of types for writing custom SSH agents and connecting to existing ones.
+ 
+-The types in this crate closely follow the [SSH Agent Protocol Internet Draft](https://datatracker.ietf.org/doc/html/draft-miller-ssh-agent) specification and can be used to utilize remote keys not supported by the default OpenSSH agent.
++The types in this crate closely follow the [SSH Agent Protocol (RFC 9987)](https://www.rfc-editor.org/rfc/rfc9987.html) specification and can be used to utilize remote keys not supported by the default OpenSSH agent.
+ 
+ ## Examples
+ 
+diff --git a/src/proto/extension.rs b/src/proto/extension.rs
+index 336ccfa..c271e22 100644
+--- a/src/proto/extension.rs
++++ b/src/proto/extension.rs
+@@ -8,7 +8,7 @@ pub use self::message::*;
+ 
+ /// SSH agent protocol message extension
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3.8](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.8)
++/// Described in [RFC9987 § 5.8](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.8)
+ pub trait MessageExtension: 'static {
+     /// Extension name, indicating the type of the message (as a UTF-8 string).
+     ///
+@@ -19,7 +19,7 @@ pub trait MessageExtension: 'static {
+ 
+ /// SSH agent protocol key constraint extension
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3.2.7.3](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.2.7.3)
++/// Described in [RFC9987 § 5.2.7.3](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.2.7.3)
+ pub trait KeyConstraintExtension: 'static {
+     /// Extension name, indicating the type of the key constraint (as a UTF-8 string).
+     ///
+diff --git a/src/proto/extension/message.rs b/src/proto/extension/message.rs
+index aca12e2..7e74ae5 100644
+--- a/src/proto/extension/message.rs
++++ b/src/proto/extension/message.rs
+@@ -1,7 +1,7 @@
+ //! SSH agent protocol extension messages
+ //!
+ //! Includes extension message definitions from both:
+-//! - [draft-miller-ssh-agent-14](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html)
++//! - [RFC9987](https://www.rfc-editor.org/rfc/rfc9987.html)
+ //! - [OpenSSH `PROTOCOL.agent`](https://github.com/openssh/openssh-portable/blob/cbbdf868bce431a59e2fa36ca244d5739429408d/PROTOCOL.agent)
+ 
+ use signature::Verifier;
+@@ -16,7 +16,7 @@ use crate::proto::ProtoError;
+ /// An optional extension request "query" is defined to allow a
+ /// client to query which, if any, extensions are supported by an agent.
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3.8.1](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.8.1)
++/// Described in [RFC9987 § 5.8.1](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.8.1)
+ #[derive(Debug, Clone, PartialEq)]
+ pub struct QueryResponse {
+     /// List of supported message extension names
+diff --git a/src/proto/message/add_remove.rs b/src/proto/message/add_remove.rs
+index 22d78fa..1c64420 100644
+--- a/src/proto/message/add_remove.rs
++++ b/src/proto/message/add_remove.rs
+@@ -15,7 +15,7 @@ use crate::proto::{Error, Result};
+ ///
+ /// This structure is sent in a [`Request::AddIdentity`](super::Request::AddIdentity) (`SSH_AGENTC_ADD_IDENTITY`) message.
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3.2](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.2)
++/// Described in [RFC9987 § 5.2](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.2)
+ #[derive(Clone, PartialEq, Debug)]
+ pub struct AddIdentity {
+     /// A credential (private & public key, or private key / certificate) to add to the agent
+@@ -46,7 +46,7 @@ impl Encode for AddIdentity {
+ ///
+ /// This structure is sent in a [`Request::AddSmartcardKey`](super::Request::AddSmartcardKey) (`SSH_AGENTC_ADD_SMARTCARD_KEY`) message.
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3.2](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.2)
++/// Described in [RFC9987 § 5.2](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.2)
+ #[derive(Clone, Debug)]
+ pub struct SmartcardKey {
+     /// An opaque identifier for the hardware token
+@@ -97,7 +97,7 @@ impl PartialEq for SmartcardKey {
+ ///
+ /// This structure is sent in a [`Request::RemoveIdentity`](super::Request::RemoveIdentity) (`SSH_AGENTC_REMOVE_IDENTITY`) message.
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3.4](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.4)
++/// Described in [RFC9987 § 5.4](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.4)
+ #[derive(Clone, PartialEq, Debug)]
+ pub struct RemoveIdentity {
+     /// The public key portion of the [`Identity`](super::Identity) to be removed
+diff --git a/src/proto/message/add_remove/constrained.rs b/src/proto/message/add_remove/constrained.rs
+index ec1c07f..98f289b 100644
+--- a/src/proto/message/add_remove/constrained.rs
++++ b/src/proto/message/add_remove/constrained.rs
+@@ -35,7 +35,7 @@ impl Decode for KeyConstraint {
+ 
+     fn decode(reader: &mut impl Reader) -> Result<Self> {
+         let constraint_type = u8::decode(reader)?;
+-        // see: https://www.ietf.org/archive/id/draft-miller-ssh-agent-12.html#section-5.2
++        // see: https://www.rfc-editor.org/rfc/rfc9987.html#section-8.2
+         Ok(match constraint_type {
+             1 => KeyConstraint::Lifetime(u32::decode(reader)?),
+             2 => KeyConstraint::Confirm,
+@@ -92,7 +92,7 @@ impl Encode for KeyConstraint {
+ ///
+ /// This is a variant of [`Request::AddIdentity`](crate::proto::Request::AddIdentity) with a set of [`KeyConstraint`]s attached.
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3.2](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.2)
++/// Described in [RFC9987 § 5.2](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.2)
+ #[derive(Clone, PartialEq, Debug)]
+ pub struct AddIdentityConstrained {
+     /// The credential to be added to the agent.
+@@ -145,7 +145,7 @@ impl Encode for AddIdentityConstrained {
+ ///
+ /// This is a variant of [`Request::AddSmartcardKey`](crate::proto::Request::AddSmartcardKey) with a set of [`KeyConstraint`]s attached.
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3.2.6](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.2.6)
++/// Described in [RFC9987 § 5.2.6](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.2.6)
+ #[derive(Clone, PartialEq, Debug)]
+ pub struct AddSmartcardKeyConstrained {
+     /// A key stored on a hardware token.
+diff --git a/src/proto/message/extension.rs b/src/proto/message/extension.rs
+index b6d0063..e7151cc 100644
+--- a/src/proto/message/extension.rs
++++ b/src/proto/message/extension.rs
+@@ -11,7 +11,7 @@ use crate::proto::{
+ ///
+ /// This structure is sent as part of a [`Request::Extension`](super::Request::Extension) (`SSH_AGENT_EXTENSION_RESPONSE`) message.
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3.8](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.8).
++/// Described in [RFC9987 § 5.8](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.8).
+ #[derive(Clone, PartialEq, Debug)]
+ pub struct Extension {
+     /// Indicates the type of the extension message (as a UTF-8 string)
+diff --git a/src/proto/message/identity.rs b/src/proto/message/identity.rs
+index e3da708..eb2bf2b 100644
+--- a/src/proto/message/identity.rs
++++ b/src/proto/message/identity.rs
+@@ -9,7 +9,7 @@ use crate::proto::{Error, Result};
+ ///
+ /// A list of these structures are sent in a [`Response::IdentitiesAnswer`](super::Response::IdentitiesAnswer) (`SSH_AGENT_IDENTITIES_ANSWER`) message body.
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3.5](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.5)
++/// Described in [RFC9987 § 5.5](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.5)
+ #[derive(Clone, PartialEq, Debug)]
+ pub struct Identity {
+     /// A standard public-key encoding of an underlying key.
+diff --git a/src/proto/message/request.rs b/src/proto/message/request.rs
+index b0a850a..295dca5 100644
+--- a/src/proto/message/request.rs
++++ b/src/proto/message/request.rs
+@@ -12,7 +12,7 @@ use crate::proto::{Error, Result};
+ ///
+ /// These message types are sent from a client *to* an agent.
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3).
++/// Described in [RFC9987 § 5](https://www.rfc-editor.org/rfc/rfc9987.html#section-5).
+ #[derive(Clone, PartialEq, Debug)]
+ #[non_exhaustive]
+ pub enum Request {
+@@ -65,7 +65,7 @@ pub enum Request {
+     /// In other words, this is a fallback for message numbers that the
+     /// "SSH Agent Protocol Message Type Numbers" Registry ([RFC9987 § 9.2]) defines as:
+     /// * `Reserved` (1-4, 7-10, 15-16, and 24 (inclusive)),
+-    ///   * Notably (per [RFC9987 § 8.8.1]), this covers pre-RFC "legacy"
++    ///   * Notably (per [RFC9987 § 8.1.1]), this covers pre-RFC "legacy"
+     ///     (i.e. SSHv1 agent protocol) message types.
+     /// * `Private Use` (240-255), or
+     /// * Any ranges not explicitly defined.
+@@ -77,7 +77,7 @@ pub enum Request {
+     ///
+     /// [RFC9987 § 9.2]: https://www.rfc-editor.org/rfc/rfc9987.html#section-9.2
+     /// [RFC9987 § 5.1]: https://www.rfc-editor.org/rfc/rfc9987.html#section-5.1
+-    /// [RFC9987 § 8.8.1]: https://www.rfc-editor.org/rfc/rfc9987.html#section-8.1.1
++    /// [RFC9987 § 8.1.1]: https://www.rfc-editor.org/rfc/rfc9987.html#section-8.1.1
+     Unknown {
+         /// The raw protocol message type that
+         /// could not be parsed.
+diff --git a/src/proto/message/response.rs b/src/proto/message/response.rs
+index 66e45c8..c937231 100644
+--- a/src/proto/message/response.rs
++++ b/src/proto/message/response.rs
+@@ -9,7 +9,7 @@ use crate::proto::{Error, Result};
+ ///
+ /// These message types are sent to a client *from* an agent (in response to a [`Request`](super::Request) message).
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3).
++/// Described in [RFC9987 § 5](https://www.rfc-editor.org/rfc/rfc9987.html#section-5).
+ #[derive(Clone, PartialEq, Debug)]
+ #[non_exhaustive]
+ pub enum Response {
+diff --git a/src/proto/message/sign.rs b/src/proto/message/sign.rs
+index a515f3f..a1ae1a6 100644
+--- a/src/proto/message/sign.rs
++++ b/src/proto/message/sign.rs
+@@ -9,7 +9,7 @@ use crate::proto::{Error, Result};
+ ///
+ /// This structure is sent in a [`Request::SignRequest`](super::Request::SignRequest) (`SSH_AGENTC_SIGN_REQUEST`) message.
+ ///
+-/// Described in [draft-miller-ssh-agent-14 § 3.6](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.6)
++/// Described in [RFC9987 § 5.6](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.6)
+ #[derive(Clone, PartialEq, Debug)]
+ pub struct SignRequest {
+     /// The public key portion of the [`Identity`](super::Identity) in the agent to sign the data with
+@@ -19,7 +19,7 @@ pub struct SignRequest {
+     pub data: Vec<u8>,
+ 
+     /// Signature flags, as described in
+-    /// [draft-miller-ssh-agent-14 § 3.6.1](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.6.1)
++    /// [RFC9987 § 5.6.1](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.6.1)
+     pub flags: u32,
+ }
+ 
+diff --git a/src/proto/signature.rs b/src/proto/signature.rs
+index 322f217..dc05e01 100644
+--- a/src/proto/signature.rs
++++ b/src/proto/signature.rs
+@@ -1,8 +1,8 @@
+ //! Agent protocol signature flag constants.
+ 
+ /// The `SSH_AGENT_RSA_SHA2_256` signature flag, as described in
+-/// [draft-miller-ssh-agent-14 § 3.6.1](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.6.1)
++/// [RFC9987 § 5.6.1](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.6.1)
+ pub const RSA_SHA2_256: u32 = 0x02;
+ /// The `SSH_AGENT_RSA_SHA2_512` signature flag, as described in
+-/// [draft-miller-ssh-agent-14 § 3.6.1](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-3.6.1)
++/// [RFC9987 § 5.6.1](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.6.1)
+ pub const RSA_SHA2_512: u32 = 0x04;
+diff --git a/tests/unknown_request.rs b/tests/unknown_request.rs
+index 9ee04c2..3efce46 100644
+--- a/tests/unknown_request.rs
++++ b/tests/unknown_request.rs
+@@ -2,9 +2,10 @@
+ //! unknown type and keep the connection open, instead of dropping it.
+ //!
+ //! This mirrors the behaviour of OpenSSH's `ssh-agent` and is required by
+-//! [draft-miller-ssh-agent-14 § 4.1](https://www.ietf.org/archive/id/draft-miller-ssh-agent-14.html#section-4.1):
++//! [RFC9987 § 5.1](https://www.rfc-editor.org/rfc/rfc9987.html#section-5.1):
+ //!
+-//! > SSH_AGENT_FAILURE messages are also sent in reply to requests with unknown types.
++//! > SSH_AGENT_FAILURE messages MUST also be sent in reply to requests with
++//! > unknown or unsupported types.
+ //!
+ //! Some clients (for example Ruby's `net-ssh`) probe the agent with a legacy
+ //! `SSH2_AGENT_REQUEST_VERSION` (type 1) message that most agents do not
+-- 
+2.43.0
+
