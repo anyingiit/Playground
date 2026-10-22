@@ -104,3 +104,4 @@
 | 342 | [stevearc/conform.nvim#877](https://github.com/stevearc/conform.nvim/issues/877) | **已提交** [#905](https://github.com/stevearc/conform.nvim/pull/905) |
 | 433 | [tuProlog/2p-kt#1005](https://github.com/tuProlog/2p-kt/issues/1005) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Kotlin；同仓库第 2 个（421 已提交为 #1044）；复核 PASS） |
 | 434 | [bpmn-io/bpmn-to-image#65](https://github.com/bpmn-io/bpmn-to-image/issues/65) | **已提交** [#70](https://github.com/bpmn-io/bpmn-to-image/pull/70) |
+| 475 | [sql-formatter-org/sql-formatter#864](https://github.com/sql-formatter-org/sql-formatter/issues/864) | 可提交（复核 PASS）；与 476 同仓库，先交 475 |
