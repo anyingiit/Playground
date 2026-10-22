@@ -66,3 +66,22 @@
 | 215 | [vcr/vcr#1006](https://github.com/vcr/vcr/issues/1006) | 待提交（base `master`；无需认领；无 DCO/CLA；无 PR 模板；复核 PASS） |
 | 280 | [hanami/hanami#1626](https://github.com/hanami/hanami/issues/1626) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；高星；复核 PASS；开 PR 后可把 CHANGELOG 的 #1626 改成 PR 号） |
 | 393 | [zerobrewhq/zerobrew#414](https://github.com/zerobrewhq/zerobrew/issues/414) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS；同仓库已有我们的 #479，不冲突） |
+| 336 | phpmyadmin/motranslator#59 | master | 无需认领；提交用 --signoff（DCO），无 CLA |
+| 251 | [simonives/redwrench#57](https://github.com/simonives/redwrench/issues/57) | 待提交：base `main`；无需认领；无 DCO/CLA；**加 `--trailer`**（维护者 commit 自带 AI 署名），不加 `--signoff`；只改测试；复核 PASS |
+| 250 | [femboypuppy/Tessera-Notes#38](https://github.com/femboypuppy/Tessera-Notes/issues/38) | 待提交：base `main`；**需先在 issue 评论认领**（CONTRIBUTING 要求，注明 PR 已就绪）；无 DCO/CLA；不加 `--signoff`/`--trailer`；复核 PASS |
+| 214 | [mitmproxy/pdoc#775](https://github.com/mitmproxy/pdoc/issues/775) | 待提交（base `main`；无需认领；无 DCO/CLA；PR 模板为 checklist；复核 PASS，已按复核改线性扫描；维护者合并较慢） |
+| 391 | [Gaurav-Gosain/tuios#980](https://github.com/Gaurav-Gosain/tuios/issues/980) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；新锐；复核 PASS；用仓库自己的 PR 模板） |
+| 392 | [Gaurav-Gosain/tuios#585](https://github.com/Gaurav-Gosain/tuios/issues/585) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；新锐；复核 PASS；与 391 同仓库，391 合并后用 alt-0001-on-top-of-391.patch） |
+| 278 | [ruby/rdoc#1782](https://github.com/ruby/rdoc/issues/1782) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Ruby；复核 PASS；**按仓库 AGENTS.md，正文不加 AI 声明段**；与 277 同仓库不冲突） |
+| 420 | [opendatahub-io/ai-gateway-payload-processing#315](https://github.com/opendatahub-io/ai-gateway-payload-processing/issues/315) | 待提交（base `main`；无需认领；DCO：补丁已带 anyingiit 的 Signed-off-by；无 CLA；Go 测试文件合并；复核 PASS） |
+| 333 | [mpdf/mpdf#2232](https://github.com/mpdf/mpdf/issues/2232) | 待提交（base **`development`**；无需认领；无 DCO/CLA；commit 第三行 `Assisted-by: Claude Code` 为仓库要求的 AI 声明须保留；复核 PASS） |
+| 390 | [pydantic/monty#1101](https://github.com/pydantic/monty/issues/1101) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS） |
+| 249 | [KnockOutEZ/wigolo#526](https://github.com/KnockOutEZ/wigolo/issues/526) | 待提交：base `main`；无需认领（维护者 10-21 标 up for grabs）；无 DCO，不加 `--signoff`；CLA 提交即同意（含维护者再许可条款，已在 README 说明）；复核 PASS |
+| 422 | [BSC-ES/autosubmit#3240](https://github.com/BSC-ES/autosubmit/issues/3240) | 待提交（base `master`；无需认领；无 DCO/CLA；Python；复核 PASS） |
+| 301 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（GTP） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS；先交 301 再交 302，两者改不同文件不冲突） |
+| 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（QUIC） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS） |
+| 361 | [helix-editor/helix#11198](https://github.com/helix-editor/helix/issues/11198) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；SQL 默认接 sqls；与 360 同仓库、可任意顺序提交） |
+| 423 | [whtsky/pixelmatch-py#256](https://github.com/whtsky/pixelmatch-py/issues/256) | 待提交（base `master`；无需认领；无 DCO/CLA；Python；本地跑测试前需 `git lfs pull` 取 fixtures；复核 PASS） |
+| 279 | [hanami/hanami-view#264](https://github.com/hanami/hanami-view/issues/264) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；开 PR 后可把 CHANGELOG 的 #264 改成 PR 号） |
+| 362 | [helix-editor/helix#5817](https://github.com/helix-editor/helix/issues/5817) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；Ruby `]a` 调用参数；与 360/361/363 互不冲突） |
+| 363 | [helix-editor/helix#11207](https://github.com/helix-editor/helix/issues/11207) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；新增 Liquid 语言；与 360/361/362 互不冲突） |
