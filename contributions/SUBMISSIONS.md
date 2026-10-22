@@ -207,6 +207,9 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 361 | [helix-editor/helix#11198](https://github.com/helix-editor/helix/issues/11198) | [helix-editor/helix#16405](https://github.com/helix-editor/helix/pull/16405) | 2026-10-22 提交（独立复核 PASS） |
 | 391 | [Gaurav-Gosain/tuios#980](https://github.com/Gaurav-Gosain/tuios/issues/980) | [Gaurav-Gosain/tuios#1038](https://github.com/Gaurav-Gosain/tuios/pull/1038) | 2026-10-22 提交（独立复核 PASS） |
 | 392 | [Gaurav-Gosain/tuios#585](https://github.com/Gaurav-Gosain/tuios/issues/585) | [Gaurav-Gosain/tuios#1039](https://github.com/Gaurav-Gosain/tuios/pull/1039) | 2026-10-22 提交（独立复核 PASS）；与 #1038 在 registry.go 相邻行冲突，后合者用 alt-0001-on-top-of-391.patch |
+| 423 | [whtsky/pixelmatch-py#256](https://github.com/whtsky/pixelmatch-py/issues/256) | [whtsky/pixelmatch-py#268](https://github.com/whtsky/pixelmatch-py/pull/268) | 2026-10-22 提交（独立复核 PASS） |
+| 279 | [hanami/hanami-view#264](https://github.com/hanami/hanami-view/issues/264) | [hanami/hanami-view#291](https://github.com/hanami/hanami-view/pull/291) | 2026-10-22 提交（独立复核 PASS）；CHANGELOG 已填 PR 号 |
+| 424 | [wiktor-k/ssh-agent-lib#116](https://github.com/wiktor-k/ssh-agent-lib/issues/116) | [wiktor-k/ssh-agent-lib#117](https://github.com/wiktor-k/ssh-agent-lib/pull/117) | 2026-10-22 提交（独立复核 PASS）；DCO 已签；正文用 Refs 不关 issue |
 
 备注：088 解冲突后适配上游 `formatSettingValueForEdit` 新签名，`go test ./...` 全过，回退源码则新测试编译失败（红）。099 解冲突并把上游新增的公开 `AnyCol` 用法一并展开，`:core/:dataframe-arrow` compileTestKotlin + apiCheck + ktlint 通过（未跑全量测试）。118 装了 PHP 8.5：红→绿、全量 phpunit 363 通过、phpstan 无错，已在 issue #1070 留言。121 两个改动文件上游无变化，沿用之前 sclang 红→绿结果。123 为纯改名，解冲突后无残留旧名，未本地编译（依赖太多，靠 CI）。128 已在 issue #4292 留言认领，最新 main 上红→绿。208 是协调员撤回提交员任务前已开出的。
 旧会话 9 个 PR 本地重跑：grpc-gateway、ipython（test_system_interrupt 偶发超时，重跑通过，与改动无关）、pyinstaller、OpsiMate、PathMap、xterm.js、compiler-explorer 均通过；NLog（无 dotnet）、phpmyadmin（未跑）只能看 CI。

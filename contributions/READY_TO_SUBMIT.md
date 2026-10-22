@@ -59,7 +59,7 @@
 | 301 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（GTP） | **已提交** [#2334](https://github.com/seladb/PcapPlusPlus/pull/2334) |
 | 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（QUIC） | **已提交** [#2335](https://github.com/seladb/PcapPlusPlus/pull/2335) |
 | 361 | [helix-editor/helix#11198](https://github.com/helix-editor/helix/issues/11198) | **已提交** [#16405](https://github.com/helix-editor/helix/pull/16405) |
-| 423 | [whtsky/pixelmatch-py#256](https://github.com/whtsky/pixelmatch-py/issues/256) | 待提交（base `master`；无需认领；无 DCO/CLA；Python；本地跑测试前需 `git lfs pull` 取 fixtures；复核 PASS） |
-| 279 | [hanami/hanami-view#264](https://github.com/hanami/hanami-view/issues/264) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；开 PR 后可把 CHANGELOG 的 #264 改成 PR 号） |
-| 424 | [wiktor-k/ssh-agent-lib#116](https://github.com/wiktor-k/ssh-agent-lib/issues/116) | 待提交（base `main`；无需认领；DCO：补丁已带 anyingiit 的 Signed-off-by；无 CLA；Rust 文档引用更新，正文报告未知约束断连问题，用 Refs 不关 issue；复核 PASS） |
+| 423 | [whtsky/pixelmatch-py#256](https://github.com/whtsky/pixelmatch-py/issues/256) | **已提交** [#268](https://github.com/whtsky/pixelmatch-py/pull/268) |
+| 279 | [hanami/hanami-view#264](https://github.com/hanami/hanami-view/issues/264) | **已提交** [#291](https://github.com/hanami/hanami-view/pull/291) |
+| 424 | [wiktor-k/ssh-agent-lib#116](https://github.com/wiktor-k/ssh-agent-lib/issues/116) | **已提交** [#117](https://github.com/wiktor-k/ssh-agent-lib/pull/117) |
 | 303 | [melihbirim/csvql#259](https://github.com/melihbirim/csvql/issues/259) | 待提交（base `main`；无需认领；无 DCO/CLA；Zig/shell；复核 PASS；PR 写 "Part of #259"，bash `--root=` 一项故意不做并在正文说明） |
