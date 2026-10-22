@@ -1,8 +1,8 @@
-From 7d7e8bb69616eceb474217988059ac35129f9ebd Mon Sep 17 00:00:00 2001
+From 4d3d4b61022b5786cafde3b12c11d2dbb2b51a7f Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Thu, 22 Oct 2026 19:35:17 +0000
-Subject: [PATCH] fix(cli): exit 2 instead of panicking on a closed stderr,
- non-UTF-8 arguments or a huge --timeout
+Subject: [PATCH] fix(cli): exit 2 instead of panicking on stderr, args or
+ --timeout
 
 The CLI promises exit codes 0, 1 and 2, but several inputs ended in a
 panic, exit 101 (#594):

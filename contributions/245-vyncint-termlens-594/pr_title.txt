@@ -1,1 +1,1 @@
-fix(cli): exit 2 instead of panicking on a closed stderr, non-UTF-8 arguments or a huge --timeout
+fix(cli): exit 2 instead of panicking on stderr, args or --timeout
