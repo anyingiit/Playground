@@ -34,7 +34,7 @@ tools/submit_pr.sh contributions/245-vyncint-termlens-594 vyncint/termlens main 
 ```
 （不要加 `--trailer`；patch 已签 DCO，`--reset-author` 后签名邮箱与作者一致。手动：fork → `git checkout -b fix-cli-no-panics origin/main` → `git am 0001-*.patch` → push → 用 pr_title.txt / pr_body.md 开 PR）
 
-## 独立复核（2026-10-22 20:15 UTC）
+## 独立复核（2026-10-22 19:55 UTC）
 - 新克隆 main@06cd15d，`git am` 干净；红（回退 main.rs/inspect.rs → 5 个新测试失败）→ 绿（49 passed）。
 - fmt / clippy `-D warnings` / `cargo test --workspace`（含 `--all-features`）/ check-dco / check-no-ai-attribution / check-cli-contract 全过。
 - 手工验证：非 UTF-8 程序参数透传 exit 0；`--out ""` 与 `--out=` 同文案；超大 `--timeout` 点名拒绝 exit 2；`--help >/dev/full`、`diff 2>/dev/full`、`inspect 2>/dev/full` 均 exit 2。
