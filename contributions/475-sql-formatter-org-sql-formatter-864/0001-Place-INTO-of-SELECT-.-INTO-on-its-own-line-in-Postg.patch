@@ -1,0 +1,79 @@
+From 40e2c2d7f88ad53f9e8ed03bac90eba7fdb4c64b Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:08:24 +0000
+Subject: [PATCH] Place INTO of SELECT ... INTO on its own line in PostgreSQL
+
+Treat INTO as a clause in the PostgreSQL dialect, the same way the
+Transact-SQL and DB2 dialects already do, so that SELECT ... INTO no
+longer appends the target table to the last SELECT column.
+
+MERGE INTO is added as a clause too, so that MERGE is not split from
+its INTO keyword.
+
+Fixes #864
+
+Assisted-by: Claude Code
+---
+ .../postgresql/postgresql.formatter.ts        |  3 +++
+ test/postgresql.test.ts                       | 24 +++++++++++++++++++
+ 2 files changed, 27 insertions(+)
+
+diff --git a/src/languages/postgresql/postgresql.formatter.ts b/src/languages/postgresql/postgresql.formatter.ts
+index d3d8a51..50b66c9 100644
+--- a/src/languages/postgresql/postgresql.formatter.ts
++++ b/src/languages/postgresql/postgresql.formatter.ts
+@@ -8,6 +8,7 @@ const reservedSelect = expandPhrases(['SELECT [ALL | DISTINCT]']);
+ const reservedClauses = expandPhrases([
+   // queries
+   'WITH [RECURSIVE]',
++  'INTO',
+   'FROM',
+   'WHERE',
+   'GROUP BY [ALL | DISTINCT]',
+@@ -26,6 +27,8 @@ const reservedClauses = expandPhrases([
+   'DEFAULT VALUES',
+   // - update:
+   'SET',
++  // - merge:
++  'MERGE INTO',
+   // other
+   'RETURNING',
+ ]);
+diff --git a/test/postgresql.test.ts b/test/postgresql.test.ts
+index e8e99ad..6f0b907 100644
+--- a/test/postgresql.test.ts
++++ b/test/postgresql.test.ts
+@@ -163,6 +163,30 @@ describe('PostgreSqlFormatter', () => {
+     expect(format(result)).toBe(result);
+   });
+ 
++  // Issue #864
++  it('formats SELECT ... INTO clause', () => {
++    expect(format('SELECT col1, col2 INTO TEMP TABLE new_tbl FROM tbl WHERE x > 0;')).toBe(dedent`
++      SELECT
++        col1,
++        col2
++      INTO
++        TEMP TABLE new_tbl
++      FROM
++        tbl
++      WHERE
++        x > 0;
++    `);
++  });
++
++  it('formats MERGE INTO without splitting MERGE from INTO', () => {
++    expect(format('MERGE INTO tbl USING src ON tbl.id = src.id WHEN MATCHED THEN DELETE;')).toBe(
++      dedent`
++        MERGE INTO
++          tbl USING src ON tbl.id = src.id WHEN MATCHED THEN DELETE;
++      `
++    );
++  });
++
+   // Regression test for issue #624
+   it('supports array slice operator', () => {
+     expect(format('SELECT foo[:5], bar[1:], baz[1:5], zap[:];')).toBe(dedent`
+-- 
+2.43.0
+
