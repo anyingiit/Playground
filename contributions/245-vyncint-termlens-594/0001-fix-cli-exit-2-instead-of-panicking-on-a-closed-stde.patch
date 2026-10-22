@@ -1,0 +1,562 @@
+From 7d7e8bb69616eceb474217988059ac35129f9ebd Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:35:17 +0000
+Subject: [PATCH] fix(cli): exit 2 instead of panicking on a closed stderr,
+ non-UTF-8 arguments or a huge --timeout
+
+The CLI promises exit codes 0, 1 and 2, but several inputs ended in a
+panic, exit 101 (#594):
+
+- every diagnostic and the inspect trailer used eprintln!, which panics
+  when stderr is closed or full. Writes now go through a checked helper;
+  a lost diagnostic keeps its exit 2, and a trailer that cannot be written
+  is exit 2.
+- std::env::args panics on an argument that is not UTF-8. Arguments are
+  read with args_os: termlens's own options and operands must be UTF-8 and
+  are refused with exit 2, while the program inspect runs and its
+  arguments pass through untouched.
+- Instant::now() + --timeout overflowed for a huge value after the program
+  was spawned. A timeout the clock cannot add is refused by name.
+- render --out "" printed the filesystem's complaint; it now says --out
+  needs a PATH argument, as --out= already did (#451).
+
+The inspect example gets the same fixes, including its println! of --help
+under | true.
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ CHANGELOG.md                        |  10 +++
+ crates/termlens-cli/src/main.rs     | 106 +++++++++++++++++++-----
+ crates/termlens-cli/tests/cli.rs    | 124 ++++++++++++++++++++++++++++
+ crates/termlens/examples/inspect.rs |  76 +++++++++++++----
+ 4 files changed, 277 insertions(+), 39 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 6c224de..3c6373a 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -19,6 +19,16 @@ reads that marker.
+ 
+ ### Fixed
+ 
++- `termlens` no longer panics with exit code 101 (#594). A closed or full
++  stderr (`2>&1 | true`, `2>/dev/full`) made every diagnostic and the
++  `inspect` trailer panic; the write is now checked, and a trailer that cannot
++  be written is exit 2. Arguments are read with `args_os`, so one that is not
++  UTF-8 no longer panics: termlens's own options and operands are refused with
++  exit 2, and the program `inspect` runs gets its arguments untouched. A
++  `--timeout` too large to add to the clock is refused by name instead of
++  panicking after the spawn, and `render --out ""` says `--out needs a PATH
++  argument` as `--out=` already did (#451). The `inspect` example mirrors all
++  of it, `--help` under `| true` included.
+ - `Screen::parse` and the JSON reader refuse a saved screen whose declared
+   size is past the 1000-per-axis limit a terminal has (#583), with an
+   `Error::Parse` that names it. The grid was allocated from the header before
+diff --git a/crates/termlens-cli/src/main.rs b/crates/termlens-cli/src/main.rs
+index 6e96917..f805441 100644
+--- a/crates/termlens-cli/src/main.rs
++++ b/crates/termlens-cli/src/main.rs
+@@ -18,6 +18,7 @@
+ //! file` is a saved screen `diff` and `render` read back (#340).
+ 
+ use std::collections::HashSet;
++use std::ffi::{OsStr, OsString};
+ use std::io::{self, IsTerminal, Read, Write};
+ use std::path::Path;
+ use std::process::ExitCode;
+@@ -132,26 +133,64 @@ fn print(out: &str) -> ExitCode {
+ 
+ /// One diagnostic shape for every failure of the tool itself.
+ fn fail(message: &str) -> ExitCode {
+-    eprintln!("termlens: {message}");
++    // Best effort: a closed or full stderr loses the message, not the
++    // exit code (#594).
++    let _ = report(&format!("termlens: {message}"));
+     ExitCode::from(2)
+ }
+ 
++/// Write one line to stderr. `eprintln!` panics when the write fails — a
++/// stderr piped into `true` or redirected to `/dev/full` — and a panic is
++/// exit 101, a code this CLI does not promise (#594). The caller decides
++/// whether a lost line matters.
++fn report(line: &str) -> io::Result<()> {
++    let mut stderr = io::stderr().lock();
++    writeln!(stderr, "{line}").and_then(|()| stderr.flush())
++}
++
++/// The usage text on stderr and exit code 2, for a command line that is
++/// missing what it needs.
++fn usage_error(usage: &str) -> ExitCode {
++    let _ = report(usage);
++    ExitCode::from(2)
++}
++
++/// termlens's own options and operands, which must be UTF-8. Only the
++/// program `inspect` runs and its arguments may be anything the OS allows,
++/// and those never pass through here (#594).
++fn utf8(arg: OsString) -> Result<String, String> {
++    arg.into_string()
++        .map_err(|arg| format!("{arg:?} is not valid UTF-8; termlens's own arguments must be"))
++}
++
+ /// The one-line string every `--version` flag prints.
+ fn version() -> String {
+     format!("termlens {}\n", env!("CARGO_PKG_VERSION"))
+ }
+ 
+ fn main() -> ExitCode {
+-    let mut args = std::env::args().skip(1);
++    // `args_os`, not `args`, which panics on an argument that is not UTF-8
++    // (#594): `inspect` passes the program's arguments through untouched,
++    // and everything else is checked and refused with exit code 2.
++    let mut args = std::env::args_os().skip(1);
+     let Some(command) = args.next() else {
+-        eprintln!("{USAGE}");
+-        return ExitCode::from(2);
++        return usage_error(USAGE);
++    };
++    let command = match utf8(command) {
++        Ok(command) => command,
++        Err(e) => return fail(&e),
++    };
++    let rest: Vec<OsString> = args.collect();
++    if command == "inspect" {
++        return inspect(rest);
++    }
++    let rest = match rest.into_iter().map(utf8).collect::<Result<Vec<_>, _>>() {
++        Ok(rest) => rest,
++        Err(e) => return fail(&e),
+     };
+-    let rest: Vec<String> = args.collect();
+     match command.as_str() {
+         "-h" | "--help" => print(&format!("{USAGE}\n")),
+         "--version" => print(&version()),
+-        "inspect" => inspect(rest),
+         "diff" => diff(&rest),
+         "render" => render(&rest),
+         // A leading `-` is a flag, not a command name. Calling `--verbose`
+@@ -347,8 +386,7 @@ fn diff(args: &[String]) -> ExitCode {
+         }
+     }
+     let [a, b] = files.as_slice() else {
+-        eprintln!("{DIFF_USAGE}");
+-        return ExitCode::from(2);
++        return usage_error(DIFF_USAGE);
+     };
+     // Standard input can be consumed once, so it can be one operand and not
+     // both — said plainly here rather than left to look like an empty second
+@@ -476,7 +514,7 @@ fn colored(before: &Screen, after: &Screen, diff: &ScreenDiff) -> String {
+ /// so the reader does not have to find it in their own command line.
+ /// Returned before anything is opened, so `--out` creates no file.
+ fn render_usage_error(reason: &str) -> ExitCode {
+-    eprintln!("termlens: {reason}\n\n{RENDER_USAGE}");
++    let _ = report(&format!("termlens: {reason}\n\n{RENDER_USAGE}"));
+     ExitCode::from(2)
+ }
+ 
+@@ -506,6 +544,9 @@ fn render(args: &[String]) -> ExitCode {
+                 format = Some(arg.as_str());
+             }
+             "--out" => match args.next() {
++                // The same refusal as the `--out=` spelling below (#451):
++                // an empty PATH is a missing one, not a file named "" (#594).
++                Some(path) if path.is_empty() => return fail("--out needs a PATH argument"),
+                 Some(path) => {
+                     if out_path.is_some() {
+                         return render_usage_error("--out is given twice; render writes one file");
+@@ -535,8 +576,7 @@ fn render(args: &[String]) -> ExitCode {
+     // The operand is the whole input: two of them are ambiguous, and letting
+     // the last win is how a stale path renders a screen nobody named (#364).
+     let (Some(format), [file]) = (format, files.as_slice()) else {
+-        eprintln!("{RENDER_USAGE}");
+-        return ExitCode::from(2);
++        return usage_error(RENDER_USAGE);
+     };
+     let screen = match load(file) {
+         Ok(screen) => screen,
+@@ -573,7 +613,7 @@ fn render(args: &[String]) -> ExitCode {
+ 
+ /// The value after `flag`, or the one-line diagnostic every flag shares.
+ fn take<T>(
+-    args: &mut impl Iterator<Item = String>,
++    args: &mut impl Iterator<Item = OsString>,
+     flag: &str,
+     kind: &str,
+     example: &str,
+@@ -582,9 +622,26 @@ fn take<T>(
+     let Some(raw) = args.next() else {
+         return Err(format!("{flag} needs a {kind} argument"));
+     };
++    let raw = utf8(raw)?;
+     parse(&raw).ok_or_else(|| format!("bad {flag} {raw:?}, expected e.g. {example}"))
+ }
+ 
++/// The `--timeout` a deadline can be built from. `Instant + Duration`
++/// panics on overflow, so a value the clock cannot add — `u64::MAX` seconds
++/// — is refused here, naming the flag, rather than panicking after the
++/// program was spawned (#594). The hour of headroom covers the grace
++/// periods added on top of it later.
++fn timeout_secs(spec: &str) -> Option<Duration> {
++    let timeout = Duration::from_secs(spec.parse().ok()?);
++    Instant::now().checked_add(timeout.checked_add(Duration::from_secs(3600))?)?;
++    Some(timeout)
++}
++
++/// Whether an argument is an option: it begins with `-` and is not `-`.
++fn is_option(arg: &OsStr) -> bool {
++    arg.as_encoded_bytes().starts_with(b"-") && arg != STDIN
++}
++
+ /// What `inspect` writes to stdout, which is two different jobs.
+ ///
+ /// A terminal is a person looking: the plain text they already read, or
+@@ -623,7 +680,7 @@ fn shows_something(screen: &termlens::Screen) -> bool {
+     (row, col) != (0, 0) || !screen.text().trim().is_empty()
+ }
+ 
+-fn inspect(args: Vec<String>) -> ExitCode {
++fn inspect(args: Vec<OsString>) -> ExitCode {
+     let mut args = args.into_iter().peekable();
+     let mut size = (80u16, 24u16);
+     let mut timeout = Duration::from_secs(5);
+@@ -635,8 +692,11 @@ fn inspect(args: Vec<String>) -> ExitCode {
+ 
+     // Options come before the program; everything after it is the
+     // program's own, however flag-like it looks.
+-    while args.peek().is_some_and(|a| a.starts_with('-') && a != "-") {
+-        let flag = args.next().unwrap_or_default();
++    while args.peek().is_some_and(|a| is_option(a)) {
++        let flag = match utf8(args.next().unwrap_or_default()) {
++            Ok(flag) => flag,
++            Err(e) => return fail(&e),
++        };
+         // `--flag=value` is split only for the flags that take a value, so
+         // each keeps its own diagnostic for the spelling and the whole token
+         // stays in `flag` for the unknown-option message. A value attached
+@@ -653,7 +713,7 @@ fn inspect(args: Vec<String>) -> ExitCode {
+         };
+         // The inline value first, then the next argument: `take` reads one
+         // stream, so both spellings parse and diagnose identically.
+-        let mut args = inline.map(str::to_owned).into_iter().chain(args.by_ref());
++        let mut args = inline.map(OsString::from).into_iter().chain(args.by_ref());
+         let parsed = match name {
+             "-h" | "--help" => return print(&format!("{INSPECT_USAGE}\n")),
+             "--version" => return print(&version()),
+@@ -663,8 +723,9 @@ fn inspect(args: Vec<String>) -> ExitCode {
+                 Some((c.parse().ok()?, r.parse().ok()?))
+             })
+             .map(|s| size = s),
+-            "--timeout" => take(&mut args, "--timeout", "SECONDS", "30", |s| s.parse().ok())
+-                .map(|secs| timeout = Duration::from_secs(secs)),
++            "--timeout" => {
++                take(&mut args, "--timeout", "SECONDS", "30", timeout_secs).map(|t| timeout = t)
++            }
+             "--idle" => take(&mut args, "--idle", "MILLIS", "1000", |s| s.parse().ok())
+                 .map(|millis| idle = Duration::from_millis(millis)),
+             "--inherit-env" => {
+@@ -703,8 +764,7 @@ fn inspect(args: Vec<String>) -> ExitCode {
+     }
+ 
+     let Some(program) = args.next() else {
+-        eprintln!("{INSPECT_USAGE}");
+-        return ExitCode::from(2);
++        return usage_error(INSPECT_USAGE);
+     };
+ 
+     let mut builder = Terminal::builder()
+@@ -784,6 +844,10 @@ fn inspect(args: Vec<String>) -> ExitCode {
+         Err(e) => format!("--- waiting for the program failed: {e} ---"),
+     };
+     let code = print(&format!("{}\n", inspect_render(&t.screen(), ansi)));
+-    eprintln!("{trailer}");
++    // The trailer is what inspect reports about the program; if stderr
++    // cannot take it, say so with the exit code rather than a panic (#594).
++    if report(&trailer).is_err() {
++        return ExitCode::from(2);
++    }
+     code
+ }
+diff --git a/crates/termlens-cli/tests/cli.rs b/crates/termlens-cli/tests/cli.rs
+index a331fd3..221ff53 100644
+--- a/crates/termlens-cli/tests/cli.rs
++++ b/crates/termlens-cli/tests/cli.rs
+@@ -2003,3 +2003,127 @@ fn inspect_reports_still_running_when_the_child_closes_its_terminal() -> termlen
+     }
+     Ok(())
+ }
++
++/// A stderr nobody reads any more — `termlens … 2>&1 | true` — made
++/// `eprintln!` panic, exit 101, outside the 0/1/2 the CLI promises (#594).
++/// The trailer cannot be delivered, so inspect says so with exit 2; a
++/// diagnostic that cannot be delivered keeps its exit 2.
++#[cfg(unix)]
++#[test]
++fn a_closed_stderr_is_exit_two_not_a_panic() -> termlens::Result<()> {
++    use std::process::{Command, Stdio};
++    let bin = env!("CARGO_BIN_EXE_termlens");
++    for args in [
++        &["inspect", "sh", "-c", "echo hi"][..],
++        &["--bogus"][..],
++        &["render", "--text", "missing.snap"][..],
++    ] {
++        let mut child = Command::new(bin)
++            .args(args)
++            .stdout(Stdio::null())
++            .stderr(Stdio::piped())
++            .spawn()?;
++        // Close the read end before termlens writes anything to it.
++        drop(child.stderr.take());
++        let status = child.wait()?;
++        assert_eq!(status.code(), Some(2), "termlens {args:?}");
++    }
++    Ok(())
++}
++
++/// The same with a stderr that refuses every write: `2>/dev/full` (#594).
++#[cfg(target_os = "linux")]
++#[test]
++fn a_full_stderr_is_exit_two_not_a_panic() -> termlens::Result<()> {
++    use std::process::{Command, Stdio};
++    let bin = env!("CARGO_BIN_EXE_termlens");
++    for args in [&["inspect", "sh", "-c", "echo hi"][..], &["--bogus"][..]] {
++        let full = std::fs::OpenOptions::new().write(true).open("/dev/full")?;
++        let out = Command::new(bin)
++            .args(args)
++            .stdout(Stdio::null())
++            .stderr(full)
++            .output()?;
++        assert_eq!(out.status.code(), Some(2), "termlens {args:?}: {out:?}");
++    }
++    Ok(())
++}
++
++/// `std::env::args` panics on an argument that is not UTF-8 (#594).
++/// termlens's own arguments must be UTF-8 and are refused with exit 2;
++/// the program inspect runs gets its arguments untouched.
++#[cfg(unix)]
++#[test]
++fn a_non_utf8_argument_is_refused_or_passed_through_not_a_panic() -> termlens::Result<()> {
++    use std::ffi::OsStr;
++    use std::os::unix::ffi::OsStrExt;
++    use std::process::Command;
++    let bin = env!("CARGO_BIN_EXE_termlens");
++    let cafe = OsStr::from_bytes(b"caf\xe9");
++
++    for args in [
++        vec![OsStr::new("diff"), cafe, OsStr::new("b.snap")],
++        vec![OsStr::new("render"), OsStr::new("--text"), cafe],
++        vec![
++            OsStr::new("inspect"),
++            OsStr::new("--size"),
++            cafe,
++            OsStr::new("true"),
++        ],
++        vec![cafe],
++    ] {
++        let out = Command::new(bin).args(&args).output()?;
++        assert_eq!(out.status.code(), Some(2), "termlens {args:?}: {out:?}");
++        let stderr = String::from_utf8_lossy(&out.stderr);
++        assert!(
++            stderr.contains("is not valid UTF-8"),
++            "termlens {args:?}: {stderr}"
++        );
++    }
++
++    // The program's own argument is not termlens's business.
++    let out = Command::new(bin)
++        .args([
++            OsStr::new("inspect"),
++            OsStr::new("--size"),
++            OsStr::new("20x3"),
++        ])
++        .args([OsStr::new("true"), cafe])
++        .output()?;
++    assert_eq!(out.status.code(), Some(0), "{out:?}");
++    let stderr = String::from_utf8_lossy(&out.stderr);
++    assert!(stderr.contains("--- exited: "), "{stderr}");
++    Ok(())
++}
++
++/// `Instant::now() + timeout` overflowed for a huge --timeout and panicked
++/// after the program had been spawned (#594). It is refused up front, by name.
++#[test]
++fn an_unrepresentable_timeout_is_refused_by_name() -> termlens::Result<()> {
++    use std::process::Command;
++    let out = Command::new(env!("CARGO_BIN_EXE_termlens"))
++        .args(["inspect", "--timeout", "18446744073709551615", "true"])
++        .output()?;
++    assert_eq!(out.status.code(), Some(2), "{out:?}");
++    let stderr = String::from_utf8_lossy(&out.stderr);
++    assert!(
++        stderr.starts_with("termlens: bad --timeout \"18446744073709551615\""),
++        "{stderr}"
++    );
++    Ok(())
++}
++
++/// `--out ""` is the separate-argument spelling of `--out=` (#451): an unset
++/// variable in `--out "$DEST"`. It names the flag too, rather than printing
++/// the filesystem's complaint about an empty path (#594).
++#[test]
++fn render_empty_separate_out_value_names_the_flag() -> termlens::Result<()> {
++    use std::process::Command;
++    let out = Command::new(env!("CARGO_BIN_EXE_termlens"))
++        .args(["render", "--text", "--out", "", &data("before.snap")])
++        .output()?;
++    assert_eq!(out.status.code(), Some(2), "{out:?}");
++    let stderr = String::from_utf8_lossy(&out.stderr);
++    assert_eq!(stderr, "termlens: --out needs a PATH argument\n");
++    Ok(())
++}
+diff --git a/crates/termlens/examples/inspect.rs b/crates/termlens/examples/inspect.rs
+index 5c9e4d0..11dbeb1 100644
+--- a/crates/termlens/examples/inspect.rs
++++ b/crates/termlens/examples/inspect.rs
+@@ -27,6 +27,7 @@
+ //! not be spawned. A viewer, not a gate: the program's own status is
+ //! reported, not propagated.
+ 
++use std::ffi::OsString;
+ use std::io::{self, IsTerminal, Write};
+ use std::path::Path;
+ use std::process::ExitCode;
+@@ -84,7 +85,7 @@ run — bad arguments, or a program that could not be spawned.
+ /// example — the shape `--size` set, so `--timeout` and `--idle` read the
+ /// same way (#236).
+ fn take<T>(
+-    args: &mut impl Iterator<Item = String>,
++    args: &mut impl Iterator<Item = OsString>,
+     flag: &str,
+     kind: &str,
+     example: &str,
+@@ -93,9 +94,44 @@ fn take<T>(
+     let Some(raw) = args.next() else {
+         return Err(format!("{flag} needs a {kind} argument"));
+     };
++    let raw = utf8(raw)?;
+     parse(&raw).ok_or_else(|| format!("bad {flag} {raw:?}, expected e.g. {example}"))
+ }
+ 
++/// The example's own options must be UTF-8; the program and its arguments
++/// are passed through untouched (#594).
++fn utf8(arg: OsString) -> Result<String, String> {
++    arg.into_string()
++        .map_err(|arg| format!("{arg:?} is not valid UTF-8; inspect's own arguments must be"))
++}
++
++/// A `--timeout` the clock can add to `Instant::now()`, with an hour of
++/// headroom for the grace periods added later; `u64::MAX` seconds is
++/// refused rather than panicking after the spawn (#594).
++fn timeout_secs(spec: &str) -> Option<Duration> {
++    let timeout = Duration::from_secs(spec.parse().ok()?);
++    Instant::now().checked_add(timeout.checked_add(Duration::from_secs(3600))?)?;
++    Some(timeout)
++}
++
++/// One line to stderr without `eprintln!`, which panics when stderr is
++/// closed or full (#594).
++fn report(line: &str) -> io::Result<()> {
++    let mut stderr = io::stderr().lock();
++    writeln!(stderr, "{line}").and_then(|()| stderr.flush())
++}
++
++/// Help and version text to stdout; a reader that closed early is a clean
++/// exit, as for the screen (#223), rather than a `println!` panic (#594).
++fn print(text: &str) -> ExitCode {
++    let mut stdout = io::stdout().lock();
++    match writeln!(stdout, "{text}").and_then(|()| stdout.flush()) {
++        Ok(()) => ExitCode::SUCCESS,
++        Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
++        Err(e) => fail(&format!("writing the output failed: {e}")),
++    }
++}
++
+ /// Whether the program has put anything on the grid yet: a visible
+ /// character, or a cursor that has moved. A blank screen with the cursor at
+ /// the origin is what a PTY looks like before its program writes a byte —
+@@ -126,12 +162,13 @@ fn render(screen: &termlens::Screen, ansi: bool) -> String {
+ /// One diagnostic shape for every failure of the tool itself, and the exit
+ /// code 2 the CLI promises for the same failures.
+ fn fail(message: &str) -> ExitCode {
+-    eprintln!("inspect: {message}");
++    let _ = report(&format!("inspect: {message}"));
+     ExitCode::from(2)
+ }
+ 
+ fn main() -> ExitCode {
+-    let mut args = std::env::args().skip(1).peekable();
++    // `args_os`: `args` panics on an argument that is not UTF-8 (#594).
++    let mut args = std::env::args_os().skip(1).peekable();
+ 
+     let mut size = (80u16, 24u16);
+     let mut timeout = Duration::from_secs(5);
+@@ -143,8 +180,14 @@ fn main() -> ExitCode {
+ 
+     // Options come before the program; everything after it is the
+     // program's own, however flag-like it looks.
+-    while args.peek().is_some_and(|a| a.starts_with('-') && a != "-") {
+-        let flag = args.next().unwrap_or_default();
++    while args
++        .peek()
++        .is_some_and(|a| a.as_encoded_bytes().starts_with(b"-") && a != "-")
++    {
++        let flag = match utf8(args.next().unwrap_or_default()) {
++            Ok(flag) => flag,
++            Err(e) => return fail(&e),
++        };
+         // `--flag=value` for the flags that take a value, mirroring the
+         // command this example follows: a value attached to a flag that
+         // takes none (`--inherit-env=nonsense`) falls through to the
+@@ -157,24 +200,19 @@ fn main() -> ExitCode {
+             }
+             _ => (flag.as_str(), None),
+         };
+-        let mut args = inline.map(str::to_owned).into_iter().chain(args.by_ref());
++        let mut args = inline.map(OsString::from).into_iter().chain(args.by_ref());
+         let parsed = match name {
+-            "-h" | "--help" => {
+-                println!("{USAGE}");
+-                return ExitCode::SUCCESS;
+-            }
+-            "--version" => {
+-                println!("termlens {}", env!("CARGO_PKG_VERSION"));
+-                return ExitCode::SUCCESS;
+-            }
++            "-h" | "--help" => return print(USAGE),
++            "--version" => return print(&format!("termlens {}", env!("CARGO_PKG_VERSION"))),
+             "--" => break,
+             "--size" => take(&mut args, "--size", "COLSxROWS", "120x40", |spec| {
+                 let (c, r) = spec.split_once('x')?;
+                 Some((c.parse().ok()?, r.parse().ok()?))
+             })
+             .map(|s| size = s),
+-            "--timeout" => take(&mut args, "--timeout", "SECONDS", "30", |s| s.parse().ok())
+-                .map(|secs| timeout = Duration::from_secs(secs)),
++            "--timeout" => {
++                take(&mut args, "--timeout", "SECONDS", "30", timeout_secs).map(|t| timeout = t)
++            }
+             "--idle" => take(&mut args, "--idle", "MILLIS", "1000", |s| s.parse().ok())
+                 .map(|millis| idle = Duration::from_millis(millis)),
+             "--inherit-env" => {
+@@ -214,7 +252,7 @@ fn main() -> ExitCode {
+     }
+ 
+     let Some(program) = args.next() else {
+-        eprintln!("{USAGE}");
++        let _ = report(USAGE);
+         return ExitCode::from(2);
+     };
+ 
+@@ -295,6 +333,8 @@ fn main() -> ExitCode {
+         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+         Err(e) => fail(&format!("writing the screen failed: {e}")),
+     };
+-    eprintln!("{trailer}");
++    if report(&trailer).is_err() {
++        return ExitCode::from(2);
++    }
+     code
+ }
+-- 
+2.43.0
+

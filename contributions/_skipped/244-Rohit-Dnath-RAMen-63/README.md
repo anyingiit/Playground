@@ -5,7 +5,7 @@
 | Issue | https://github.com/Rohit-Dnath/RAMen/issues/63 |
 | Tier | 自由（Go，Redis 兼容内存库） |
 | Labels | good first issue, performance |
-| Status | ✅ ready（patch + PR 文本就绪，未提交） |
+| Status | ⏭️ skipped — 维护者本人已于 2026-10-22 19:23 UTC 修复并合并（932787e "Pick SPOP and SRANDMEMBER members in O(1)", fixes #63），不再提交 |
 | 重复 PR 检查 | 2026-10-22 20:10 UTC：`repo:Rohit-Dnath/RAMen SPOP` → 只有已合并的 #50（引入命令）和无关 #42；issue 无评论、无 assignee、无关联 PR |
 | AI 政策 | CONTRIBUTING 无 AI 限制（提到 AI 的只是产品的 MCP 模块） |
 | Base | `main` @ dab982a |
