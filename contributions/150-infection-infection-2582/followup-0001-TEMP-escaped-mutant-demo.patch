@@ -1,0 +1,42 @@
+From 9375837f3418916e26a82364f1dfbce6cb7e3baa Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:17:54 +0000
+Subject: [PATCH] DO NOT MERGE: add an escaped mutant to show the colored diff
+ in CI
+
+Temporary: logs the text report to stdout and wraps explode() in a no-op
+array_values(), whose UnwrapArrayValues mutant survives, so the Mutation
+Testing (annotations) job prints a colored diff. To be reverted.
+---
+ infection.json5                                   | 1 +
+ src/Reporter/GitHubActionsLogTextFileReporter.php | 2 +-
+ 2 files changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/infection.json5 b/infection.json5
+index 2afc4d2..6c3443d 100644
+--- a/infection.json5
++++ b/infection.json5
+@@ -15,6 +15,7 @@
+         ]
+     },
+     "logs": {
++        "text": "php://stdout",
+         "stryker": {
+             "report": "master"
+         }
+diff --git a/src/Reporter/GitHubActionsLogTextFileReporter.php b/src/Reporter/GitHubActionsLogTextFileReporter.php
+index 5118958..3e87b80 100644
+--- a/src/Reporter/GitHubActionsLogTextFileReporter.php
++++ b/src/Reporter/GitHubActionsLogTextFileReporter.php
+@@ -102,7 +102,7 @@ final readonly class GitHubActionsLogTextFileReporter extends BaseTextFileReport
+ 
+                     return $line;
+                 },
+-                explode("\n", $diff),
++                array_values(explode("\n", $diff)),
+             ),
+         );
+     }
+-- 
+2.43.0
+

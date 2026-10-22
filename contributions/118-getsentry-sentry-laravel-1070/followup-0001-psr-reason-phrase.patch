@@ -1,0 +1,29 @@
+From 98f6debce96c22c2bbb19224c9020fd852a3bc3b Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:28:01 +0000
+Subject: [PATCH] fix: Read the reason phrase from the PSR response
+
+Response::reason() was only added in Laravel 8.76, but the serializer is
+registered on every supported version, including Laravel 7 where the HTTP
+client exists without it.
+---
+ src/Sentry/Laravel/Serializer/HttpClientResponseSerializer.php | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/Sentry/Laravel/Serializer/HttpClientResponseSerializer.php b/src/Sentry/Laravel/Serializer/HttpClientResponseSerializer.php
+index d61e1f4..a7862f2 100644
+--- a/src/Sentry/Laravel/Serializer/HttpClientResponseSerializer.php
++++ b/src/Sentry/Laravel/Serializer/HttpClientResponseSerializer.php
+@@ -40,7 +40,8 @@ class HttpClientResponseSerializer
+ 
+         $data = [
+             'status' => $response->status(),
+-            'reason' => $response->reason(),
++            // `Response::reason()` only exists since Laravel 8.76, the PSR response works on all supported versions
++            'reason' => $response->toPsrResponse()->getReasonPhrase(),
+         ];
+ 
+         $uri = $this->getEffectiveUri($response);
+-- 
+2.43.0
+

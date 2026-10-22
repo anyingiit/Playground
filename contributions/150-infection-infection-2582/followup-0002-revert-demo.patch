@@ -1,0 +1,40 @@
+From 35b1f3815c257c1154b5964678df6e778af75f4b Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:18:14 +0000
+Subject: [PATCH] Revert "DO NOT MERGE: add an escaped mutant to show the
+ colored diff in CI"
+
+This reverts commit f302ff34b0749762091cb106780b5b60e4483cde.
+---
+ infection.json5                                   | 1 -
+ src/Reporter/GitHubActionsLogTextFileReporter.php | 2 +-
+ 2 files changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/infection.json5 b/infection.json5
+index 6c3443d..2afc4d2 100644
+--- a/infection.json5
++++ b/infection.json5
+@@ -15,7 +15,6 @@
+         ]
+     },
+     "logs": {
+-        "text": "php://stdout",
+         "stryker": {
+             "report": "master"
+         }
+diff --git a/src/Reporter/GitHubActionsLogTextFileReporter.php b/src/Reporter/GitHubActionsLogTextFileReporter.php
+index 3e87b80..5118958 100644
+--- a/src/Reporter/GitHubActionsLogTextFileReporter.php
++++ b/src/Reporter/GitHubActionsLogTextFileReporter.php
+@@ -102,7 +102,7 @@ final readonly class GitHubActionsLogTextFileReporter extends BaseTextFileReport
+ 
+                     return $line;
+                 },
+-                array_values(explode("\n", $diff)),
++                explode("\n", $diff),
+             ),
+         );
+     }
+-- 
+2.43.0
+

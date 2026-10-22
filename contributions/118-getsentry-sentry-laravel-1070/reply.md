@@ -1,0 +1,1 @@
+Bugbot is right: `Response::reason()` isn't on the Laravel 7 HTTP client (checked the 7.x `Response` class). The new commit reads the reason phrase from `toPsrResponse()->getReasonPhrase()` instead, which works on every Laravel version this package supports.

@@ -1,0 +1,67 @@
+From e72f0a087fa781efcb4a6e9e30d993fa99a520ef Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:27:46 +0000
+Subject: [PATCH] fix(#2232): check the menu fit at the column shifted by
+ col_offset
+
+window.completion.col_offset was added after the fit check, so a negative
+offset that already brought the menu on screen still triggered the clamp and
+then moved it further left. Apply the offset first and check the fit at the
+column the menu actually opens at.
+---
+ lua/cmp/view/custom_entries_view.lua      |  4 +++-
+ lua/cmp/view/custom_entries_view_spec.lua | 11 +++++++++++
+ 2 files changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/lua/cmp/view/custom_entries_view.lua b/lua/cmp/view/custom_entries_view.lua
+index 584d18a..b2144c3 100644
+--- a/lua/cmp/view/custom_entries_view.lua
++++ b/lua/cmp/view/custom_entries_view.lua
+@@ -208,6 +208,8 @@ custom_entries_view.open = function(self, offset, entries)
+   else
+     self.bottom_up = false
+   end
++  -- Check the fit at the column the menu is opened at, col_offset included.
++  col = col + completion.col_offset
+   if vim.o.columns - col - border_offset_col <= width then
+     width = math.min(width, vim.o.columns - 1)
+     col = vim.o.columns - width - border_offset_col - 1
+@@ -234,7 +236,7 @@ custom_entries_view.open = function(self, offset, entries)
+     relative = 'editor',
+     style = 'minimal',
+     row = math.max(0, row),
+-    col = math.max(0, col + completion.col_offset),
++    col = math.max(0, col),
+     width = width,
+     height = height,
+     border = completion.border,
+diff --git a/lua/cmp/view/custom_entries_view_spec.lua b/lua/cmp/view/custom_entries_view_spec.lua
+index 9c5328c..e7cd962 100644
+--- a/lua/cmp/view/custom_entries_view_spec.lua
++++ b/lua/cmp/view/custom_entries_view_spec.lua
+@@ -1,4 +1,5 @@
+ local spec = require('cmp.utils.spec')
++local config = require('cmp.config')
+ local entry = require('cmp.entry')
+ local custom_entries_view = require('cmp.view.custom_entries_view')
+ 
+@@ -43,6 +44,16 @@ describe('custom_entries_view', function()
+     view:close()
+   end)
+ 
++  it('checks the fit at the column shifted by col_offset', function()
++    vim.o.columns = 80
++    config.set_global({ window = { completion = { col_offset = -10 } } })
++    local view = open(string.rep('a', 65), 20)
++    local info = view:info()
++    -- Only moved as far left as needed to fit, not col_offset further.
++    assert.are.equal(vim.o.columns - 1, info.col + info.width)
++    view:close()
++  end)
++
+   it('does not move the menu when it fits', function()
+     vim.o.columns = 80
+     local view = open('abc')
+-- 
+2.43.0
+

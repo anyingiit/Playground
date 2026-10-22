@@ -1,0 +1,1 @@
+Addressed the Copilot note: when the imported namespace is bound to more than one prefix on `<definitions>`, every one of those prefixes now maps to the import name, so `t:Applicant` and `types:Applicant` both become `types.Applicant`. The import is named after the first prefix that is a valid FEEL name. Added a fixture and a test for this case.
