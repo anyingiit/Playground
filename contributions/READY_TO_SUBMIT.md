@@ -16,4 +16,4 @@
 | 210 | [hgrecco/pint#2502](https://github.com/hgrecco/pint/issues/2502) | **已提交** [#2517](https://github.com/hgrecco/pint/pull/2517) |
 | 244 | [Rohit-Dnath/RAMen#63](https://github.com/Rohit-Dnath/RAMen/issues/63) | 不提交：issue 已被维护者自行修复关闭（932787e，10-22 19:34 UTC） |
 | 204 | [git-ai-project/git-ai#1036](https://github.com/git-ai-project/git-ai/issues/1036) | **已提交** [#2436](https://github.com/git-ai-project/git-ai/pull/2436) |
-| 271 | [dry-rb/dry-schema#504](https://github.com/dry-rb/dry-schema/issues/504) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；与 272 同改 CHANGELOG，第二个提交时冲突两行都保留） |
+| 271 | [dry-rb/dry-schema#504](https://github.com/dry-rb/dry-schema/issues/504) | **已提交** [#521](https://github.com/dry-rb/dry-schema/pull/521) |
