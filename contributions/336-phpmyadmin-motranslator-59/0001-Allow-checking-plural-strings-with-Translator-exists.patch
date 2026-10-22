@@ -1,0 +1,66 @@
+From e650344637dfa64ba3cafb815c152fb8447cb87e Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:33:02 +0000
+Subject: [PATCH] Allow checking plural strings with Translator::exists()
+
+A string with plural forms is stored under its singular and plural
+msgids joined by a NUL byte, so exists() could never find it by the
+singular msgid alone. Add an optional plural msgid parameter that builds
+the same key as ngettext().
+
+Fixes #59
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
+---
+ src/Translator.php    | 12 ++++++++++--
+ tests/MoFilesTest.php |  9 +++++++++
+ 2 files changed, 19 insertions(+), 2 deletions(-)
+
+diff --git a/src/Translator.php b/src/Translator.php
+index 9e0879a..ebdf30d 100644
+--- a/src/Translator.php
++++ b/src/Translator.php
+@@ -133,10 +133,18 @@ class Translator
+     /**
+      * Check if a string is translated.
+      *
+-     * @param string $msgid String to be checked
++     * A string with plural forms is stored under its singular and plural msgids
++     * together, so pass the plural msgid as well to check it, as for ngettext().
++     *
++     * @param string      $msgid       String to be checked
++     * @param string|null $msgidPlural Plural form of the string, if it has one
+      */
+-    public function exists(string $msgid): bool
++    public function exists(string $msgid, string|null $msgidPlural = null): bool
+     {
++        if ($msgidPlural !== null) {
++            $msgid .= "\u{0}" . $msgidPlural;
++        }
++
+         return $this->cache->has($msgid);
+     }
+ 
+diff --git a/tests/MoFilesTest.php b/tests/MoFilesTest.php
+index 0795645..c06637c 100644
+--- a/tests/MoFilesTest.php
++++ b/tests/MoFilesTest.php
+@@ -112,6 +112,15 @@ class MoFilesTest extends TestCase
+         self::assertFalse($parser->exists('Column parser'));
+     }
+ 
++    #[DataProvider('provideMoFiles')]
++    public function testExistsWithPlural(string $file): void
++    {
++        $parser = $this->getTranslator($file);
++        self::assertTrue($parser->exists('%d second', '%d seconds'));
++        self::assertFalse($parser->exists('%d second', '%d minutes'));
++        self::assertFalse($parser->exists('%d second'));
++    }
++
+     /**
+      * @param string $pattern path names pattern to match
+      *
+-- 
+2.43.0
+

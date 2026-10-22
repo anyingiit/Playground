@@ -1,0 +1,1 @@
+fix(ui): pick the first emoji when Enter is pressed while the picker loads

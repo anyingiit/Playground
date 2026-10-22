@@ -1,0 +1,79 @@
+From 842219ff78b0ffc932de8d0e9130b088579ba52e Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:29:24 +0000
+Subject: [PATCH] fix(dsl-theory): preserve the receiver unificator in
+ withTheories()
+
+UnifyLogicProgrammingScope.withTheories() defaulted its unificator to
+LogicProgrammingScope.defaultUnificator, so upgrading a :dsl-unify scope
+created with a custom unificator silently switched back to the default
+one (and built the IndexedTheoryFactory on it). Default to the
+receiver's own unificator instead and update the KDoc accordingly.
+
+Closes #946
+---
+ .../it/unibo/tuprolog/dsl/theory/DSL.kt       | 10 +++----
+ .../tuprolog/dsl/theory/TestWithTheories.kt   | 29 +++++++++++++++++++
+ 2 files changed, 34 insertions(+), 5 deletions(-)
+ create mode 100644 dsl-theory/src/commonTest/kotlin/it/unibo/tuprolog/dsl/theory/TestWithTheories.kt
+
+diff --git a/dsl-theory/src/commonMain/kotlin/it/unibo/tuprolog/dsl/theory/DSL.kt b/dsl-theory/src/commonMain/kotlin/it/unibo/tuprolog/dsl/theory/DSL.kt
+index e74427d..a00dde9 100644
+--- a/dsl-theory/src/commonMain/kotlin/it/unibo/tuprolog/dsl/theory/DSL.kt
++++ b/dsl-theory/src/commonMain/kotlin/it/unibo/tuprolog/dsl/theory/DSL.kt
+@@ -59,12 +59,12 @@ fun CoreLogicProgrammingScope.withTheories(unificator: Unificator = LogicProgram
+ /**
+  * Upgrades this `:dsl-unify` scope into a `:dsl-theory` [LogicProgrammingScope] adding theory-building support to
+  * it, reusing its underlying [it.unibo.tuprolog.core.Scope], [it.unibo.tuprolog.dsl.Termificator] and
+- * [it.unibo.tuprolog.core.VariablesProvider], and equipping it with [unificator] ([LogicProgrammingScope.defaultUnificator]
+- * unless stated otherwise — *not* necessarily this scope's own [it.unibo.tuprolog.unify.UnificationAware.unificator],
+- * so pass it explicitly to preserve it) and [theoryFactory] (an [IndexedTheoryFactory] over [unificator] by
+- * default). Useful when a `:dsl-unify` scope is already at hand and theory-building is only needed from that point on.
++ * [it.unibo.tuprolog.core.VariablesProvider], and equipping it with [unificator] (this scope's own
++ * [it.unibo.tuprolog.unify.UnificationAware.unificator] unless stated otherwise, so the unification strategy is
++ * preserved across the upgrade) and [theoryFactory] (an [IndexedTheoryFactory] over [unificator] by default). Useful
++ * when a `:dsl-unify` scope is already at hand and theory-building is only needed from that point on.
+  */
+ fun UnifyLogicProgrammingScope.withTheories(
+-    unificator: Unificator = LogicProgrammingScope.defaultUnificator,
++    unificator: Unificator = this.unificator,
+     theoryFactory: TheoryFactory = IndexedTheoryFactory(unificator),
+ ) = LogicProgrammingScope.of(unificator, theoryFactory, scope, termificator, variablesProvider)
+diff --git a/dsl-theory/src/commonTest/kotlin/it/unibo/tuprolog/dsl/theory/TestWithTheories.kt b/dsl-theory/src/commonTest/kotlin/it/unibo/tuprolog/dsl/theory/TestWithTheories.kt
+new file mode 100644
+index 0000000..645aa7b
+--- /dev/null
++++ b/dsl-theory/src/commonTest/kotlin/it/unibo/tuprolog/dsl/theory/TestWithTheories.kt
+@@ -0,0 +1,29 @@
++package it.unibo.tuprolog.dsl.theory
++
++import it.unibo.tuprolog.unify.Unificator
++import kotlin.test.Test
++import kotlin.test.assertSame
++import it.unibo.tuprolog.dsl.unify.lp as unifyLp
++
++class TestWithTheories {
++    private val customUnificator = Unificator.naive()
++
++    @Test
++    fun withTheoriesPreservesTheReceiverUnificator() {
++        val upgraded = unifyLp(customUnificator) { withTheories() }
++        assertSame(customUnificator, upgraded.unificator)
++    }
++
++    @Test
++    fun withTheoriesBuildsTheoriesOnTheReceiverUnificator() {
++        val theory = unifyLp(customUnificator) { withTheories() }.theoryOf()
++        assertSame(customUnificator, theory.unificator)
++    }
++
++    @Test
++    fun withTheoriesStillAcceptsAnExplicitUnificator() {
++        val other = Unificator.naive()
++        val upgraded = unifyLp(customUnificator) { withTheories(other) }
++        assertSame(other, upgraded.unificator)
++    }
++}
+-- 
+2.43.0
+

@@ -1,0 +1,1 @@
+Allow checking plural strings with Translator::exists()
