@@ -88,6 +88,9 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 170 | [ruby-grape/grape#2487](https://github.com/ruby-grape/grape/issues/2487) | [ruby-grape/grape#3041](https://github.com/ruby-grape/grape/pull/3041) | 2026-10-22 提交；CHANGELOG 已填 PR 号 |
 | 202 | [vega/altair#3502](https://github.com/vega/altair/issues/3502) | [vega/altair#4193](https://github.com/vega/altair/pull/4193) | 2026-10-22 提交（独立复核 PASS） |
 | 208 | [image-rs/image-png#584](https://github.com/image-rs/image-png/issues/584) | [image-rs/image-png#722](https://github.com/image-rs/image-png/pull/722) | 2026-10-22 提交（独立复核 PASS） |
+| 207 | [arxanas/git-branchless#1308](https://github.com/arxanas/git-branchless/issues/1308) | [arxanas/git-branchless#1703](https://github.com/arxanas/git-branchless/pull/1703) | 2026-10-22 提交（独立复核通过） |
+| 206 | [stackrox/kube-linter#1194](https://github.com/stackrox/kube-linter/issues/1194) | [stackrox/kube-linter#1280](https://github.com/stackrox/kube-linter/pull/1280) | 2026-10-22 提交（独立复核通过） |
+| 200 | [plotly/plotly.py#2059](https://github.com/plotly/plotly.py/issues/2059) | [plotly/plotly.py#5839](https://github.com/plotly/plotly.py/pull/5839) | 2026-10-22 提交（独立复核通过）；CHANGELOG 已填 PR 号 |
 
 ## 接续说明（2026-09-25 快照）
 
