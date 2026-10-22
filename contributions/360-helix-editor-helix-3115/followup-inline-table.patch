@@ -1,0 +1,36 @@
+From acaac6d0116c0c28630186caa83f2fc647463a6b Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:42:21 +0000
+Subject: [PATCH] Move cucumber-language-server into the [language-server]
+ table
+
+---
+ languages.toml | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/languages.toml b/languages.toml
+index 3bd204d..bf42e77 100644
+--- a/languages.toml
++++ b/languages.toml
+@@ -33,6 +33,7 @@ commit-lsp = { command = "commit-lsp", args = ["run"] }
+ crystalline = { command = "crystalline", args = ["--stdio"] }
+ cs = { command = "cs", args = ["launch", "--contrib", "smithy-language-server", "--", "0"] }
+ csharp-ls = { command = "csharp-ls" }
++cucumber-language-server = { command = "cucumber-language-server", args = ["--stdio"] }
+ cuelsp = { command = "cue", args = ["lsp", "serve"] }
+ dart = { command = "dart", args = ["language-server", "--client-id=helix"] }
+ debian-lsp = { command = "debian-lsp" }
+@@ -321,10 +322,6 @@ mode = "location"
+ command = "clarinet"
+ args = ["lsp"]
+ 
+-[language-server.cucumber-language-server]
+-command = "cucumber-language-server"
+-args = ["--stdio"]
+-
+ [language-server.docker-language-server]
+ command = "docker-language-server"
+ args = ["start", "--stdio"]
+-- 
+2.43.0
+

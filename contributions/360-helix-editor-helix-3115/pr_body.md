@@ -1,11 +1,9 @@
 ## Description
 
-Gherkin highlighting landed in #11083, but `.feature` files still have no language server, which is the remaining half of #3115. This adds the official Cucumber language server ([`@cucumber/language-server`](https://github.com/cucumber/language-server), the one behind the Cucumber VS Code extension) as the default server for `gherkin`:
+Gherkin highlighting landed in #11083, but `.feature` files still have no language server, which is the remaining half of #3115. This adds the official Cucumber language server ([`@cucumber/language-server`](https://github.com/cucumber/language-server), the one behind the Cucumber VS Code extension) as the default server for `gherkin`, in the `[language-server]` table:
 
 ```toml
-[language-server.cucumber-language-server]
-command = "cucumber-language-server"
-args = ["--stdio"]
+cucumber-language-server = { command = "cucumber-language-server", args = ["--stdio"] }
 ```
 
 plus `language-servers = [ "cucumber-language-server" ]` on the `gherkin` language, and the regenerated `book/src/generated/lang-support.md` row (`cargo xtask docgen`). The command and `--stdio` argument match the package's `bin` entry and nvim-lspconfig's `cucumber_language_server`.

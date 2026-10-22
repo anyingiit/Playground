@@ -1,0 +1,1 @@
+Raise UndefinedConfigError for named scopes without scope_namespace

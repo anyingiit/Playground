@@ -1,0 +1,70 @@
+From 16e4d3c0e3b0f9b8359e7072458b5ea1962ad2ed Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:42:54 +0000
+Subject: [PATCH] Add Ruby argument_list parameter textobjects
+
+---
+ helix-term/tests/test/movement.rs    | 35 ++++++++++++++++++++++++++++
+ runtime/queries/ruby/textobjects.scm |  3 +++
+ 2 files changed, 38 insertions(+)
+
+diff --git a/helix-term/tests/test/movement.rs b/helix-term/tests/test/movement.rs
+index 0a17c92..6592a2c 100644
+--- a/helix-term/tests/test/movement.rs
++++ b/helix-term/tests/test/movement.rs
+@@ -842,3 +842,38 @@ async fn tree_sitter_motions_work_across_injections() -> anyhow::Result<()> {
+ 
+     Ok(())
+ }
++
++#[tokio::test(flavor = "multi_thread")]
++async fn tree_sitter_motions_work_across_ruby_call_arguments() -> anyhow::Result<()> {
++    test_with_config(
++        AppBuilder::new().with_file("foo.rb", None),
++        (
++            "#[|f]#oo(bar, baz)\n",
++            "]a",
++            "foo(#[bar,|]# baz)\n",
++        ),
++    )
++    .await?;
++
++    test_with_config(
++        AppBuilder::new().with_file("foo.rb", None),
++        (
++            "foo(#[bar,|]# baz)\n",
++            "]a",
++            "foo(bar, #[baz|]#)\n",
++        ),
++    )
++    .await?;
++
++    test_with_config(
++        AppBuilder::new().with_file("foo.rb", None),
++        (
++            "#[|p]#uts bar, baz\n",
++            "]a",
++            "puts #[bar,|]# baz\n",
++        ),
++    )
++    .await?;
++
++    Ok(())
++}
+diff --git a/runtime/queries/ruby/textobjects.scm b/runtime/queries/ruby/textobjects.scm
+index 123c556..c0ac212 100644
+--- a/runtime/queries/ruby/textobjects.scm
++++ b/runtime/queries/ruby/textobjects.scm
+@@ -39,6 +39,9 @@
+ (lambda_parameters 
+   (_) @parameter.inside) @parameter.around
+ 
++(argument_list
++  ((_) @parameter.inside . ","? @parameter.around) @parameter.around)
++
+ ; Comments
+ (comment) @comment.inside 
+ (comment)+ @comment.around
+-- 
+2.43.0
+

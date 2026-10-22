@@ -1,0 +1,71 @@
+From 72d091bcc051fbae0693b08748a3101ee9e21fc4 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:44:16 +0000
+Subject: [PATCH] Raise UndefinedConfigError for named scopes without
+ scope_namespace
+
+Building a named scope, e.g. `scope("my_scope")`, without a configured
+`scope_namespace` failed with an unclear
+"undefined method 'const_defined?' for nil" NoMethodError from inside
+ScopeBuilder.
+
+Check for the namespace before resolving the scope class, and raise
+Hanami::View::UndefinedConfigError ("no +scope_namespace+ configured"),
+as is already done for the required +paths+ and +template+ settings.
+
+Fixes #264
+---
+ CHANGELOG.md                           |  2 ++
+ lib/hanami/view/scope_builder.rb       |  1 +
+ spec/integration/scope_builder_spec.rb | 10 ++++++++++
+ 3 files changed, 13 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 0c2b1cd..5ff30ac 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -27,6 +27,8 @@ and this project adheres to [Break Versioning](https://www.taoensso.com/break-ve
+ 
+ ### Fixed
+ 
++- Raise `Hanami::View::UndefinedConfigError` when building a named scope (e.g. `scope("my_scope")`) without a configured `scope_namespace`, instead of an unclear `NoMethodError`. (@anyingiit in #264)
++
+ ### Security
+ 
+ [Unreleased]: https://github.com/hanami/view/compare/v3.0.2...HEAD
+diff --git a/lib/hanami/view/scope_builder.rb b/lib/hanami/view/scope_builder.rb
+index 79ec9d9..8ee1c3a 100644
+--- a/lib/hanami/view/scope_builder.rb
++++ b/lib/hanami/view/scope_builder.rb
+@@ -41,6 +41,7 @@ module Hanami
+           name = rendering.inflector.camelize(name.to_s)
+ 
+           namespace = rendering.scope_namespace
++          raise UndefinedConfigError, :scope_namespace unless namespace
+ 
+           # Give autoloaders a chance to act
+           begin
+diff --git a/spec/integration/scope_builder_spec.rb b/spec/integration/scope_builder_spec.rb
+index 5d58939..539c5b6 100644
+--- a/spec/integration/scope_builder_spec.rb
++++ b/spec/integration/scope_builder_spec.rb
+@@ -53,6 +53,16 @@ RSpec.describe "scope builder" do
+         scope = view.rendering.scope("scope_two", {})
+         expect(scope).to be_an_instance_of TestScopes::ScopeTwo
+       end
++
++      it "raises an error when no scope_namespace is configured" do
++        view = Class.new(Hanami::View) {
++          config.paths = SPEC_ROOT.join("__ignore__")
++          config.template = "__ignore__"
++        }.new
++
++        expect { view.rendering.scope("scope_one", {}) }
++          .to raise_error(Hanami::View::UndefinedConfigError, "no +scope_namespace+ configured")
++      end
+     end
+   end
+ end
+-- 
+2.43.0
+

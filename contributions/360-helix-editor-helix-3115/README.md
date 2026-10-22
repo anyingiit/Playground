@@ -19,7 +19,7 @@ issue 要两件事：gherkin 高亮 + LSP。高亮已由 #11083 合并（languag
 维护者 the-mikedavis 在 issue 里指引按"添加语言"流程做；helix 一直在 languages.toml 里收录各语言的默认 LSP，属于常规改动。
 
 ## 改动
-- `languages.toml`：新增 `[language-server.cucumber-language-server]`（`command = "cucumber-language-server"`, `args = ["--stdio"]`，与 npm 包 bin 名和 nvim-lspconfig 一致），gherkin 加 `language-servers = [ "cucumber-language-server" ]`（用仓库多数的带空格写法）。
+- `languages.toml`：在顶部按字母排序的 `[language-server]` 内联表里加 `cucumber-language-server = { command = "cucumber-language-server", args = ["--stdio"] }`（csharp-ls 与 cuelsp 之间；与 npm 包 bin 名和 nvim-lspconfig 一致），gherkin 加 `language-servers = [ "cucumber-language-server" ]`（用仓库多数的带空格写法）。
 - `book/src/generated/lang-support.md`：`cargo xtask docgen` 重新生成，只变 gherkin 一行。
 
 ## 验证
@@ -46,3 +46,10 @@ tools/submit_pr.sh $D helix-editor/helix master gherkin-cucumber-lsp $D/pr_title
 - `hx --health gherkin` → ✓；确认 helix 无 config 时回 `[null]`，服务器走默认 glob，探测中找到 2 个步骤定义，最终只报未写完的那步。
 - 意见：①"published diagnostics only…"略夸大（索引前约 3 秒会先报两步未定义）→ 已改为 "once indexing finished, reported…"；② TOML 改动无需列 cargo test → 已删除。
 - 结论：PASS
+
+## 追加修改（21:20 UTC）
+361 的复核指出：helix 的 languages.toml 里约 215 个简单 LSP 都写在文件顶部按字母排序的 `[language-server]` 内联表，只有少数带复杂配置的才单独开 `[language-server.X]` 段。360 原先单独开段，已改为内联表一行（csharp-ls 与 cuelsp 之间）。重验：docgen 无差异、`hx --health gherkin` ✓、与 361 一起 `git am` 无冲突。
+
+## 已提交 PR 的跟进（#16404，分支 anyingiit:gherkin-cucumber-language-server）
+#16404 是用旧补丁（单独 `[language-server.cucumber-language-server]` 段）提交的。跟进补丁 `followup-inline-table.patch`（1 个提交）把它移进顶部字母序内联表，最终树与本文件夹现在的 `0001-*.patch` 完全一致。
+本地提交员：在该 PR 分支上 `git am followup-inline-table.patch` 后推送；PR 正文里的 toml 代码块同步换成本文件夹 `pr_body.md` 的新版本（一行 `cucumber-language-server = { command = "cucumber-language-server", args = ["--stdio"] }`）。

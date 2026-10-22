@@ -1,0 +1,46 @@
+From 99ef17467972064516552ac37dda5ae6ed3ee28c Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:33:30 +0000
+Subject: [PATCH] Add sqls language server for SQL
+
+---
+ book/src/generated/lang-support.md | 2 +-
+ languages.toml                     | 2 ++
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/book/src/generated/lang-support.md b/book/src/generated/lang-support.md
+index eac6942..288a7bf 100644
+--- a/book/src/generated/lang-support.md
++++ b/book/src/generated/lang-support.md
+@@ -277,7 +277,7 @@
+ | sourcepawn | ✓ | ✓ |  |  |  | `sourcepawn-studio` |
+ | spade | ✓ |  | ✓ |  | ✓ | `swim` |
+ | spicedb | ✓ |  |  | ✓ |  |  |
+-| sql | ✓ | ✓ |  |  | ✓ |  |
++| sql | ✓ | ✓ |  |  | ✓ | `sqls` |
+ | ssh_client_config | ✓ |  |  |  |  |  |
+ | starlark | ✓ | ✓ | ✓ |  | ✓ | `starpls`, `buck2` |
+ | strace | ✓ |  |  |  |  |  |
+diff --git a/languages.toml b/languages.toml
+index a5403e6..b3bbb7c 100644
+--- a/languages.toml
++++ b/languages.toml
+@@ -148,6 +148,7 @@ solargraph = { command = "solargraph", args = ["stdio"] }
+ solc = { command = "solc", args = ["--lsp"] }
+ sourcekit-lsp = { command = "sourcekit-lsp" }
+ spade-language-server = {command = "swim", args = ["lsp"]}
++sqls = { command = "sqls" }
+ starpls = {command = "starpls"}
+ styx = { command = "styx", args = ["lsp"] }
+ svlangserver = { command = "svlangserver", args = [], config.systemverilog.includeIndexing = ["*.{v,vh,sv,svh}", "**/*.{v,vh,sv,svh}"] }
+@@ -2627,6 +2628,7 @@ comment-token = "--"
+ block-comment-tokens = { start = "/*", end = "*/" }
+ indent = { tab-width = 4, unit = "    " }
+ injection-regex = "sql"
++language-servers = [ "sqls" ]
+ 
+ [[grammar]]
+ name = "sql"
+-- 
+2.43.0
+
