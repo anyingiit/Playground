@@ -1,0 +1,125 @@
+From 0d2fa55f974e38036cfff78480ef629dc09e7d30 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:55:31 +0000
+Subject: [PATCH] Keep link targets out of meta description excerpts
+
+The excerpt used for the description meta tags is taken from the raw
+comment text, so link URLs could end up in it. For example, a Markdown
+comment "Foo." followed by "[Example Link](https://example.com)" got
+the excerpt "Foo. example.", the second sentence being the "example."
+part of the URL.
+
+Before taking the excerpt, replace links with their text (Markdown
+[text](url) for Markdown comments, {text}[url] and text[url] for RDoc
+markup), drop Markdown images, and remove bare URLs.
+
+Fixes #1857
+---
+ lib/rdoc/generator/darkfish.rb       | 22 ++++++++++++++
+ test/rdoc/generator/darkfish_test.rb | 43 ++++++++++++++++++++++++++++
+ 2 files changed, 65 insertions(+)
+
+diff --git a/lib/rdoc/generator/darkfish.rb b/lib/rdoc/generator/darkfish.rb
+index c097bab..9256f66 100644
+--- a/lib/rdoc/generator/darkfish.rb
++++ b/lib/rdoc/generator/darkfish.rb
+@@ -714,6 +714,17 @@ module RDoc
+       ParagraphExcerptRegexpOther = %r[\b\w[^./:]++\.]
+       # use \p/\P{letter} instead of \w/\W in Unicode
+       ParagraphExcerptRegexpUnicode = %r[\b\p{letter}[^./:]++\.]
++
++      # Link markup to replace with its text (or remove) before taking an excerpt
++      ExcerptMarkdownLinks = [
++        [/(?<![\w`])!\[[^\]]*\]\([^)]*\)/, ''],    # ![alt](image)
++        [/(?<![\w`])\[([^\]]*)\]\([^)]*\)/, '\\1'], # [text](url)
++      ]
++      ExcerptRDocLinks = [
++        [/\{([^}]*)\}\[[^\]]*\]/, '\\1'],  # {text}[url]
++        [/(\S+)\[(?:https?|ftp|mailto|irc|www|link|rdoc-[a-z]+):[^\]]*\]/, '\\1'], # text[url]
++      ]
++      ExcerptURL = %r[<?\b(?:https?|ftp)://[^\s>]*[^\s>.,;:!?)]>?]
+       # :startdoc:
+ 
+       # Returns an excerpt of the comment for usage in meta description tags
+@@ -725,6 +736,8 @@ module RDoc
+           comment
+         end
+ 
++        text = strip_links(text, comment.respond_to?(:format) ? comment.format : nil)
++
+         # Match from a capital letter to the first period, discarding any links, so
+         # that we don't end up matching badges in the README
+         pattern = ParagraphExcerptRegexpUnicode
+@@ -745,6 +758,15 @@ module RDoc
+         extracted_text[0...150].tr_s("\n", " ").squeeze(" ")
+       end
+ 
++      # Replaces links in +text+ written in +format+ markup with their text, and
++      # removes images and bare URLs, so that link targets don't end up in excerpts
++      def strip_links(text, format) # :nodoc:
++        links = format == 'markdown' ? ExcerptMarkdownLinks : ExcerptRDocLinks
++
++        text = links.inject(text) { |t, (regexp, replacement)| t.gsub(regexp, replacement) }
++        text.gsub(ExcerptURL, '')
++      end
++
+       def generate_ancestor_list(ancestors, klass)
+         return '' if ancestors.empty?
+ 
+diff --git a/test/rdoc/generator/darkfish_test.rb b/test/rdoc/generator/darkfish_test.rb
+index d853101..60857c5 100644
+--- a/test/rdoc/generator/darkfish_test.rb
++++ b/test/rdoc/generator/darkfish_test.rb
+@@ -581,6 +581,49 @@ class RDocGeneratorDarkfishTest < RDoc::TestCase
+     )
+   end
+ 
++  def test_meta_tags_for_markdown_links
++    top_level = @store.add_file("file.rb")
++    klass = top_level.add_class(RDoc::NormalClass, "Linked")
++    comment = RDoc::Comment.new(<<~MARKDOWN, top_level)
++      Foo.
++
++      [Example Link](https://example.com) and ![Badge](https://example.com/badge.svg)
++    MARKDOWN
++    comment.format = "markdown"
++    klass.add_comment(comment, top_level)
++
++    @g.generate
++
++    content = File.binread("Linked.html")
++    assert_include(content, '<meta name="description" content="class Linked: Foo.">')
++  end
++
++  def test_meta_tags_for_rdoc_links
++    top_level = @store.add_file("file.rb")
++    klass = top_level.add_class(RDoc::NormalClass, "Linked")
++    klass.add_comment(<<~RDOC, top_level)
++      See {the docs}[https://example.com/docs.html] or RDoc[https://ruby.github.io/rdoc/] for more.
++    RDOC
++
++    @g.generate
++
++    content = File.binread("Linked.html")
++    assert_include(content, '<meta name="description" content="class Linked: See the docs or RDoc for more.">')
++  end
++
++  def test_meta_tags_for_bare_urls
++    top_level = @store.add_file("file.rb")
++    klass = top_level.add_class(RDoc::NormalClass, "Linked")
++    klass.add_comment(<<~RDOC, top_level)
++      Details are at https://example.com/docs. Use it.
++    RDOC
++
++    @g.generate
++
++    content = File.binread("Linked.html")
++    assert_include(content, '<meta name="description" content="class Linked: Details are at . Use it.">')
++  end
++
+   def test_meta_tags_for_raw_pages
+     top_level = @store.add_file("MyPage", parser: RDoc::Parser::Simple)
+     comment = RDoc::Comment.new('this is a comment')
+-- 
+2.43.0
+

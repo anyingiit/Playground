@@ -85,3 +85,4 @@
 | 362 | [helix-editor/helix#5817](https://github.com/helix-editor/helix/issues/5817) | **已提交** [#16406](https://github.com/helix-editor/helix/pull/16406) |
 | 363 | [helix-editor/helix#11207](https://github.com/helix-editor/helix/issues/11207) | **已提交** [#16407](https://github.com/helix-editor/helix/pull/16407) |
 | 337 | [synolia/SyliusMaintenancePlugin#54](https://github.com/synolia/SyliusMaintenancePlugin/issues/54) | main | 无需认领；无 DCO、无 CLA |
+| 281 | [ruby/rdoc#1857](https://github.com/ruby/rdoc/issues/1857) | 待提交（base `master`；无需认领；无 DCO/CLA；Ruby；高星；复核 PASS；正文按 AGENTS.md 不加 AI 署名；本轮第 3 个 rdoc PR，最后提交） |
