@@ -1,0 +1,72 @@
+From 3c3e60ce06bfa499689d3db9ae14eef37f0d8e8f Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:11:11 +0000
+Subject: [PATCH] Fix #67: ignore a non-hash optional_front_matter config
+
+Setting `optional_front_matter: true` (or any other non-hash value)
+crashed the build with "undefined method '[]' for true", because
+Generator#option indexed into the config without checking its type.
+Treat a non-hash value as no configuration, like jekyll-default-layout
+does, and cover `true` and an array value with specs.
+---
+ CHANGELOG.md                                       |  4 ++++
+ lib/jekyll-optional-front-matter/generator.rb      |  3 ++-
+ .../jekyll-optional-front-matter/generator_spec.rb | 14 ++++++++++++++
+ 3 files changed, 20 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index eaa381b..d5d199e 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,9 @@
+ # Changelog
+ 
++## Unreleased
++
++* Ignore a non-hash `optional_front_matter` config instead of crashing the build (#67)
++
+ ## 0.3.4
+ 
+ * Add a gemspec description and RubyGems metadata (homepage, source code, bug tracker, and changelog links), and lead the README with the same one-line description (#56)
+diff --git a/lib/jekyll-optional-front-matter/generator.rb b/lib/jekyll-optional-front-matter/generator.rb
+index 6d1d164..fb98216 100644
+--- a/lib/jekyll-optional-front-matter/generator.rb
++++ b/lib/jekyll-optional-front-matter/generator.rb
+@@ -77,7 +77,8 @@ module JekyllOptionalFrontMatter
+     end
+ 
+     def option(key)
+-      site.config[CONFIG_KEY] && site.config[CONFIG_KEY][key]
++      config = site.config[CONFIG_KEY]
++      config[key] if config.is_a?(Hash)
+     end
+ 
+     def disabled?
+diff --git a/spec/jekyll-optional-front-matter/generator_spec.rb b/spec/jekyll-optional-front-matter/generator_spec.rb
+index cd4c43b..377a18f 100644
+--- a/spec/jekyll-optional-front-matter/generator_spec.rb
++++ b/spec/jekyll-optional-front-matter/generator_spec.rb
+@@ -121,6 +121,20 @@ describe JekyllOptionalFrontMatter::Generator do
+     end
+   end
+ 
++  [true, %w(enabled)].each do |value|
++    context "when the config is #{value.inspect} instead of a hash" do
++      let(:site) { fixture_site("site", "optional_front_matter" => value) }
++
++      context "generating" do
++        before { generator.generate(site) }
++
++        it "ignores the config and adds the pages to the site" do
++          expect(site.pages.count).to be(3)
++        end
++      end
++    end
++  end
++
+   context "denylist" do
+     let(:site) { fixture_site("site", "include" => ["foo.md"]) }
+ 
+-- 
+2.43.0
+

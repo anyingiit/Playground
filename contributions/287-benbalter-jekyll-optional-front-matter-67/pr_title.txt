@@ -1,0 +1,1 @@
+Fix #67: ignore a non-hash optional_front_matter config
