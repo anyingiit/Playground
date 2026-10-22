@@ -1,6 +1,6 @@
-From e214f17f9bd40236be5e6a46b054b38dc9990ef4 Mon Sep 17 00:00:00 2001
+From ac043ecb57f87535acce00a6b5e15020f91f061a Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
-Date: Thu, 1 Oct 2026 23:45:00 +0000
+Date: Fri, 23 Oct 2026 03:12:14 +0800
 Subject: [PATCH] feat(reporter): Color mutant diffs in the GitHub Actions log
  reporter
 
@@ -9,14 +9,17 @@ on GitHub Actions now prints removed diff lines in red and added lines in green,
 like the CLI does with --show-mutations.
 
 Closes #2582
+
+Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
 ---
- src/Reporter/BaseTextFileReporter.php         |  7 +-
+ src/Reporter/BaseTextFileReporter.php         |  4 +-
  .../GitHubActionsLogTextFileReporter.php      | 34 ++++++++++
+ src/Reporter/TextFileReporter.php             |  5 ++
  .../GitHubActionsLogTextFileReporterTest.php  | 66 +++++++++----------
- 3 files changed, 73 insertions(+), 34 deletions(-)
+ 4 files changed, 75 insertions(+), 34 deletions(-)
 
 diff --git a/src/Reporter/BaseTextFileReporter.php b/src/Reporter/BaseTextFileReporter.php
-index b57c79b..ce8f7a3 100644
+index b57c79b..1f14439 100644
 --- a/src/Reporter/BaseTextFileReporter.php
 +++ b/src/Reporter/BaseTextFileReporter.php
 @@ -166,7 +166,7 @@ abstract readonly class BaseTextFileReporter implements LineMutationTestingResul
@@ -28,14 +31,11 @@ index b57c79b..ce8f7a3 100644
  
              if ($this->debugMode) {
                  $lines[] = '';
-@@ -189,6 +189,11 @@ abstract readonly class BaseTextFileReporter implements LineMutationTestingResul
+@@ -189,6 +189,8 @@ abstract readonly class BaseTextFileReporter implements LineMutationTestingResul
  
      abstract protected function getHeadlineLines(string $headlinePrefix): string;
  
-+    protected function formatDiff(string $diff): string
-+    {
-+        return $diff;
-+    }
++    abstract protected function formatDiff(string $diff): string;
 +
      private static function getMutatorLine(int $index, MutantExecutionResult $mutantProcess): string
      {
@@ -103,6 +103,20 @@ index 0653014..5118958 100644
 +                explode("\n", $diff),
 +            ),
 +        );
++    }
+ }
+diff --git a/src/Reporter/TextFileReporter.php b/src/Reporter/TextFileReporter.php
+index efd8b66..cef0a2a 100644
+--- a/src/Reporter/TextFileReporter.php
++++ b/src/Reporter/TextFileReporter.php
+@@ -59,4 +59,9 @@ final readonly class TextFileReporter extends BaseTextFileReporter
+             ],
+         );
+     }
++
++    protected function formatDiff(string $diff): string
++    {
++        return $diff;
 +    }
  }
 diff --git a/tests/phpunit/Reporter/GitHubActionsLogTextFileReporterTest.php b/tests/phpunit/Reporter/GitHubActionsLogTextFileReporterTest.php
@@ -236,5 +250,5 @@ index f99000d..3900497 100644
  
  
 -- 
-2.43.0
+2.45.0
 

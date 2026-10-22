@@ -89,7 +89,8 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 140 | [marketcalls/openalgo#1849](https://github.com/marketcalls/openalgo/issues/1849) | [marketcalls/openalgo#2270](https://github.com/marketcalls/openalgo/pull/2270) | 2026-10-22 提交 |
 | 142 | [jgrossi/elephpant.me#347](https://github.com/jgrossi/elephpant.me/issues/347) | [jgrossi/elephpant.me#386](https://github.com/jgrossi/elephpant.me/pull/386) | 2026-10-22 提交 |
 | 146 | [github-linguist/linguist#7949](https://github.com/github-linguist/linguist/issues/7949) | [github-linguist/linguist#8288](https://github.com/github-linguist/linguist/pull/8288) | 2026-10-22 提交 |
-| 150 | [infection/infection#2582](https://github.com/infection/infection/issues/2582) | [infection/infection#3699](https://github.com/infection/infection/pull/3699) | 2026-10-22 提交 |
+| 150 | [infection/infection#2582](https://github.com/infection/infection/issues/2582) | [infection/infection#3699](https://github.com/infection/infection/pull/3699) | 2026-10-22 提交；变异测试门槛（MSI 100%）漏掉 `formatDiff` 的 ProtectedVisibility，已改为抽象方法并 force-push |
+| 148 | [valkey-io/valkey-glide-ruby#309](https://github.com/valkey-io/valkey-glide-ruby/issues/309) | [valkey-io/valkey-glide-ruby#385](https://github.com/valkey-io/valkey-glide-ruby/pull/385) | 2026-10-22 提交；GPG 签名 + DCO；macOS arm64 上红→绿，test:unit 512/0 |
 | 152 | [uutils/acl#21](https://github.com/uutils/acl/issues/21) | [uutils/acl#356](https://github.com/uutils/acl/pull/356) | 2026-10-22 提交 |
 | 155 | [pmxt-dev/pmxt#2353](https://github.com/pmxt-dev/pmxt/issues/2353) | [pmxt-dev/pmxt#2586](https://github.com/pmxt-dev/pmxt/pull/2586) | 2026-10-22 提交 |
 | 169 | [hanami/hanami#1284](https://github.com/hanami/hanami/issues/1284) | [hanami/hanami-cli#464](https://github.com/hanami/hanami-cli/pull/464) | 2026-10-22 提交；CHANGELOG 已填 PR 号 |

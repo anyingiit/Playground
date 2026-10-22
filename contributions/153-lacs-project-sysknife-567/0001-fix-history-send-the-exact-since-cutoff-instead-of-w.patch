@@ -1,4 +1,4 @@
-From 90b8828a86790213bcc9263c708e1666f2126712 Mon Sep 17 00:00:00 2001
+From a3b6a88afacb29efe64754b6596e2bcfa696cfb7 Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Thu, 1 Oct 2026 21:27:29 +0000
 Subject: [PATCH] fix(history): send the exact --since cutoff instead of whole
@@ -25,17 +25,18 @@ Closes #567
  apps/sysknife-cli/src/mcp_server.rs           |   8 +-
  apps/sysknife-cli/src/runner.rs               | 104 ++++++----
  crates/sysknife-daemon/src/dispatcher.rs      | 194 +++++++++++++++++-
+ crates/sysknife-daemon/src/executor.rs        |   8 +-
  crates/sysknife-daemon/src/store.rs           |  16 +-
  crates/sysknife-daemon/src/store/postgres.rs  |  56 +++--
  crates/sysknife-daemon/src/transactions.rs    | 146 ++++++++++++-
  .../sysknife-daemon/tests/postgres_store.rs   |  35 +++-
- 8 files changed, 469 insertions(+), 94 deletions(-)
+ 9 files changed, 476 insertions(+), 95 deletions(-)
 
 diff --git a/apps/sysknife-cli/src/client.rs b/apps/sysknife-cli/src/client.rs
-index c83ccf2..542450f 100644
+index b49f42e..85e18e1 100644
 --- a/apps/sysknife-cli/src/client.rs
 +++ b/apps/sysknife-cli/src/client.rs
-@@ -549,7 +549,7 @@ impl DaemonClient {
+@@ -572,7 +572,7 @@ impl DaemonClient {
          limit: Option<u32>,
          status_filter: Option<&str>,
          action_filter: Option<&str>,
@@ -44,7 +45,7 @@ index c83ccf2..542450f 100644
      ) -> Result<Vec<sysknife_daemon::transactions::JobHistoryEntry>, PlanningError> {
          let mut stream = self.connect_sync()?;
  
-@@ -559,7 +559,7 @@ impl DaemonClient {
+@@ -582,7 +582,7 @@ impl DaemonClient {
              "limit": limit,
              "status_filter": status_filter,
              "action_filter": action_filter,
@@ -54,10 +55,10 @@ index c83ccf2..542450f 100644
          .map_err(|e| PlanningError::StateUnavailable(format!("serialize: {e}")))?;
  
 diff --git a/apps/sysknife-cli/src/mcp_server.rs b/apps/sysknife-cli/src/mcp_server.rs
-index 01c1765..92eb229 100644
+index 4dae9ff..3ea7ade 100644
 --- a/apps/sysknife-cli/src/mcp_server.rs
 +++ b/apps/sysknife-cli/src/mcp_server.rs
-@@ -1124,10 +1124,10 @@ async fn history_with_client(
+@@ -1172,10 +1172,10 @@ async fn history_with_client(
          limit,
      } = input;
  
@@ -71,7 +72,7 @@ index 01c1765..92eb229 100644
              None => {
                  return Err(format!(
                      "since: {s:?} is not a valid past ISO-8601 date or datetime \
-@@ -1143,7 +1143,7 @@ async fn history_with_client(
+@@ -1191,7 +1191,7 @@ async fn history_with_client(
              Some(limit),
              status.as_deref(),
              action.as_deref(),
@@ -81,10 +82,10 @@ index 01c1765..92eb229 100644
      })
      .await
 diff --git a/apps/sysknife-cli/src/runner.rs b/apps/sysknife-cli/src/runner.rs
-index 91353cf..902d459 100644
+index e7d8ed3..f92dfd6 100644
 --- a/apps/sysknife-cli/src/runner.rs
 +++ b/apps/sysknife-cli/src/runner.rs
-@@ -389,27 +389,27 @@ fn unattended_marker_present(warnings: &[String]) -> bool {
+@@ -391,27 +391,27 @@ fn unattended_marker_present(warnings: &[String]) -> bool {
  }
  
  // ---------------------------------------------------------------------------
@@ -124,7 +125,7 @@ index 91353cf..902d459 100644
  }
  
  fn iso8601_to_unix(s: &str) -> Option<i64> {
-@@ -622,7 +622,7 @@ pub(crate) fn build_history_params(
+@@ -904,7 +904,7 @@ pub(crate) fn build_history_params(
      limit: u32,
      status: Option<&str>,
      action: Option<&str>,
@@ -133,7 +134,7 @@ index 91353cf..902d459 100644
  ) -> Value {
      let mut params = json!({ "limit": limit });
      if let Some(s) = status {
-@@ -631,8 +631,8 @@ pub(crate) fn build_history_params(
+@@ -913,8 +913,8 @@ pub(crate) fn build_history_params(
      if let Some(a) = action {
          params["action_filter"] = json!(a);
      }
@@ -144,7 +145,7 @@ index 91353cf..902d459 100644
      }
      params
  }
-@@ -780,7 +780,7 @@ pub async fn run_history(
+@@ -1062,7 +1062,7 @@ pub async fn run_history(
      socket: SocketTarget,
      log: &Logger,
  ) -> Result<(), CliError> {
@@ -153,7 +154,7 @@ index 91353cf..902d459 100644
          None => None,
          Some(s) => {
              // Distinguish the two failure modes so the user knows how to fix each.
-@@ -790,8 +790,8 @@ pub async fn run_history(
+@@ -1072,8 +1072,8 @@ pub async fn run_history(
                       (accepted formats: 2026-01-15, 2026-01-15T10:30:00Z, or 2026-01-15T12:30:00+02:00)"
                  )));
              }
@@ -164,7 +165,7 @@ index 91353cf..902d459 100644
                  None => {
                      return Err(CliError::ConfigOrDaemon(format!(
                          "--since: {s:?} is in the future"
-@@ -805,7 +805,7 @@ pub async fn run_history(
+@@ -1087,7 +1087,7 @@ pub async fn run_history(
          args.limit,
          args.status.as_deref(),
          args.action.as_deref(),
@@ -173,7 +174,7 @@ index 91353cf..902d459 100644
      );
  
      let client = DaemonClient::new(socket);
-@@ -3385,41 +3385,53 @@ mod tests {
+@@ -4374,41 +4374,53 @@ mod tests {
      }
  
      // -----------------------------------------------------------------------
@@ -202,9 +203,11 @@ index 91353cf..902d459 100644
 +            since_to_cutoff("2026-01-15T12:30:00+02:00").as_deref(),
 +            Some("2026-01-15T10:30:00Z")
 +        );
-+    }
-+
-+    #[test]
+     }
+ 
+     #[test]
+-    fn since_to_hours_garbage_returns_none() {
+-        assert!(since_to_hours("not-a-date").is_none());
 +    fn since_to_cutoff_bare_date_is_midnight_utc() {
 +        assert_eq!(
 +            since_to_cutoff("2026-01-15").as_deref(),
@@ -213,20 +216,13 @@ index 91353cf..902d459 100644
      }
  
      #[test]
--    fn since_to_hours_garbage_returns_none() {
--        assert!(since_to_hours("not-a-date").is_none());
-+    fn since_to_cutoff_far_future_returns_none() {
-+        // Year 9999 is in the future.
-+        assert!(since_to_cutoff("9999-12-31T23:59:59Z").is_none());
-     }
- 
-     #[test]
 -    fn since_to_hours_epoch_returns_many_hours() {
 -        // Unix epoch (1970-01-01) is always ≥ 486000 hours ago (as of 2026).
 -        let h = since_to_hours("1970-01-01T00:00:00Z").expect("should parse");
 -        assert!(h > 486_000, "expected >486000, got {h}");
-+    fn since_to_cutoff_garbage_returns_none() {
-+        assert!(since_to_cutoff("not-a-date").is_none());
++    fn since_to_cutoff_far_future_returns_none() {
++        // Year 9999 is in the future.
++        assert!(since_to_cutoff("9999-12-31T23:59:59Z").is_none());
      }
  
      #[test]
@@ -236,6 +232,11 @@ index 91353cf..902d459 100644
 -        let h0 = since_to_hours("1970-01-01T00:00:00Z").unwrap();
 -        let h1 = since_to_hours("1970-01-01T01:00:00Z").unwrap();
 -        assert_eq!(h0, h1 + 1, "timestamps 1 h apart must differ by exactly 1");
++    fn since_to_cutoff_garbage_returns_none() {
++        assert!(since_to_cutoff("not-a-date").is_none());
++    }
++
++    #[test]
 +    fn since_to_cutoff_keeps_sub_hour_precision() {
 +        // Regression for #567: 30 and 90 minutes ago used to become 0 and 1
 +        // whole hours. The cutoff must carry the exact instant instead.
@@ -247,7 +248,7 @@ index 91353cf..902d459 100644
      }
  
      // -----------------------------------------------------------------------
-@@ -3757,16 +3769,22 @@ mod tests {
+@@ -4774,16 +4786,22 @@ mod tests {
          assert_eq!(p["limit"], json!(20));
          assert!(p.get("status_filter").is_none());
          assert!(p.get("action_filter").is_none());
@@ -273,7 +274,7 @@ index 91353cf..902d459 100644
      }
  
      #[test]
-@@ -3775,7 +3793,7 @@ mod tests {
+@@ -4792,7 +4810,7 @@ mod tests {
          assert_eq!(p["limit"], json!(10));
          assert_eq!(p["status_filter"], json!("failed"));
          assert!(p.get("action_filter").is_none());
@@ -283,7 +284,7 @@ index 91353cf..902d459 100644
  
      // -----------------------------------------------------------------------
 diff --git a/crates/sysknife-daemon/src/dispatcher.rs b/crates/sysknife-daemon/src/dispatcher.rs
-index ec60432..97cce3c 100644
+index 3e1b571..b2cf26a 100644
 --- a/crates/sysknife-daemon/src/dispatcher.rs
 +++ b/crates/sysknife-daemon/src/dispatcher.rs
 @@ -187,7 +187,7 @@ use crate::{
@@ -377,7 +378,7 @@ index ec60432..97cce3c 100644
          )
          .await
      {
-@@ -2038,13 +2070,34 @@ async fn handle_query_action(
+@@ -2041,13 +2073,34 @@ async fn handle_query_action(
              },
              None => None,
          };
@@ -413,7 +414,7 @@ index ec60432..97cce3c 100644
              )
              .await
          {
-@@ -2072,6 +2125,9 @@ async fn handle_query_action(
+@@ -2075,6 +2128,9 @@ async fn handle_query_action(
              if let Some(h) = since_hours {
                  filters.push(format!("since_hours={h}"));
              }
@@ -423,7 +424,7 @@ index ec60432..97cce3c 100644
              if !filters.is_empty() {
                  msg.push_str(&format!(" (filters: {})", filters.join(", ")));
              }
-@@ -4654,6 +4710,134 @@ mod tests {
+@@ -4657,6 +4713,134 @@ mod tests {
          );
      }
  
@@ -558,7 +559,7 @@ index ec60432..97cce3c 100644
      #[tokio::test]
      async fn query_history_honours_policy_override_raising_history_above_observer() {
          // Authorization consistency: if an operator raises ListJobHistory above
-@@ -6025,7 +6209,7 @@ mod tests {
+@@ -6028,7 +6212,7 @@ mod tests {
                  limit: u32,
                  status: Option<&str>,
                  action: Option<&str>,
@@ -567,7 +568,7 @@ index ec60432..97cce3c 100644
              ) -> Result<Vec<TransactionRecord>, TransactionStoreError> {
                  self.0.list_transactions(limit, status, action, since).await
              }
-@@ -6034,7 +6218,7 @@ mod tests {
+@@ -6037,7 +6221,7 @@ mod tests {
                  limit: u32,
                  status: Option<&str>,
                  action: Option<&str>,
@@ -576,6 +577,25 @@ index ec60432..97cce3c 100644
              ) -> Result<Vec<crate::transactions::JobHistoryEntry>, TransactionStoreError>
              {
                  self.0.list_history(limit, status, action, since).await
+diff --git a/crates/sysknife-daemon/src/executor.rs b/crates/sysknife-daemon/src/executor.rs
+index adafad0..f613025 100644
+--- a/crates/sysknife-daemon/src/executor.rs
++++ b/crates/sysknife-daemon/src/executor.rs
+@@ -782,7 +782,13 @@ fn allowed_action_params(action_name: &str) -> Option<&'static [&'static str]> {
+         "ConfigureFail2banJail" => &["bantime", "enabled", "findtime", "maxretry", "name"],
+         "AddAuditRule" => &["key", "path", "perms"],
+         "ObtainCertificate" => &["challenge", "domain", "domains", "email"],
+-        "ListJobHistory" => &["limit", "status_filter", "action_filter", "since_hours"],
++        "ListJobHistory" => &[
++            "limit",
++            "status_filter",
++            "action_filter",
++            "since_hours",
++            "since",
++        ],
+         _ => return None,
+     })
+ }
 diff --git a/crates/sysknife-daemon/src/store.rs b/crates/sysknife-daemon/src/store.rs
 index 5affdf0..6aee507 100644
 --- a/crates/sysknife-daemon/src/store.rs
@@ -743,7 +763,7 @@ index 52f0901..ac2a108 100644
          q = q.bind(limit);
  
 diff --git a/crates/sysknife-daemon/src/transactions.rs b/crates/sysknife-daemon/src/transactions.rs
-index dd86acb..2b5f877 100644
+index 9d5e4c4..9911236 100644
 --- a/crates/sysknife-daemon/src/transactions.rs
 +++ b/crates/sysknife-daemon/src/transactions.rs
 @@ -41,6 +41,29 @@ pub struct JobHistoryEntry {
@@ -776,7 +796,7 @@ index dd86acb..2b5f877 100644
  /// Data provided by the caller when recording a new transaction.
  ///
  /// The initial `status` is always `Queued` — it is not caller-controllable.
-@@ -946,17 +969,19 @@ impl TransactionStore {
+@@ -993,17 +1016,19 @@ impl TransactionStore {
      ///   (must be a valid `JobState` variant: `"succeeded"`, `"failed"`,
      ///   `"queued"`, `"running"`, `"canceled"`, `"rolled_back"`, `"needs_reboot"`)
      /// - `action_filter`: if set, only return rows with this exact action name
@@ -799,7 +819,7 @@ index dd86acb..2b5f877 100644
          let sql = format!(
              "SELECT transaction_id, request_id, request_hash, action_name, \
               risk_level, status, approval_id, summary, warnings_json \
-@@ -984,11 +1009,11 @@ impl TransactionStore {
+@@ -1031,11 +1056,11 @@ impl TransactionStore {
          limit: u32,
          status_filter: Option<&str>,
          action_filter: Option<&str>,
@@ -813,7 +833,7 @@ index dd86acb..2b5f877 100644
          let sql = format!(
              "SELECT transaction_id, action_name, risk_level, status, summary, created_at \
               FROM transactions WHERE 1=1{filter_sql}"
-@@ -1025,7 +1050,7 @@ impl TransactionStore {
+@@ -1072,7 +1097,7 @@ impl TransactionStore {
          limit: u32,
          status_filter: Option<&str>,
          action_filter: Option<&str>,
@@ -822,7 +842,7 @@ index dd86acb..2b5f877 100644
      ) -> Result<(String, Vec<Box<dyn rusqlite::types::ToSql>>), TransactionStoreError> {
          let mut sql = String::new();
          let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-@@ -1045,9 +1070,18 @@ impl TransactionStore {
+@@ -1092,9 +1117,18 @@ impl TransactionStore {
              param_values.push(Box::new(action.to_string()));
          }
  
@@ -844,7 +864,7 @@ index dd86acb..2b5f877 100644
          }
  
          sql.push_str(" ORDER BY seq DESC LIMIT ?");
-@@ -3411,14 +3445,104 @@ mod tests {
+@@ -3732,14 +3766,104 @@ mod tests {
          store.record(queued_transaction()).unwrap();
  
          // since_hours=24 should only return the fresh one.
@@ -1015,5 +1035,5 @@ index 92892f8..8833d84 100644
      assert_eq!(structured[0].status, JobState::Running);
      assert!(
 -- 
-2.43.0
+2.45.0
 
