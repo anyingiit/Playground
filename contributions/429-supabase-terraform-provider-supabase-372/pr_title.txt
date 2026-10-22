@@ -1,0 +1,1 @@
+fix(project): read nano instance size when no compute addon is selected
