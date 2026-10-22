@@ -1,0 +1,339 @@
+From d46a992b6dfb01bf8c145cacc3a9c1f56069c7a4 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:56:48 +0000
+Subject: [PATCH] fix(zb_io): provide MacOS in the shim and name the API a
+ formula lacks
+
+Homebrew aliases OS::Mac as MacOS, and formulae such as sketchybar call
+MacOS.version. The shim had no such constant, so the build died with a
+raw Ruby NameError and a backtrace through the shim.
+
+Add the alias, and report a NameError or NoMethodError from loading or
+installing a formula as the name the formula needs and the formula line
+that uses it. The backtrace is still printed when zb runs with -v.
+
+Closes #348
+---
+ CHANGELOG.md                |   4 +
+ zb_io/src/build/executor.rs | 208 ++++++++++++++++++++++++++++++++++++
+ zb_io/src/build/shim.rb     |  40 ++++++-
+ 3 files changed, 250 insertions(+), 2 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 823d138..40173dc 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,6 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ ### Changed
+ - The Homebrew tap is `zerobrewhq/tap`: `brew install zerobrewhq/tap/zerobrew`. The repository was renamed from `homebrew-zerobrew`, so taps of `zerobrewhq/zerobrew` and `cachebag/zerobrew` keep updating through GitHub's redirect
+ 
++### Fixed
++- Source builds provide `MacOS`, Homebrew's alias for `OS::Mac`, so formulae that check `MacOS.version`, such as sketchybar, get past it ([#348](https://github.com/zerobrewhq/zerobrew/issues/348))
++- A formula that uses a part of Homebrew's API the build shim doesn't provide fails with the name it needs and the formula line that uses it, instead of a raw Ruby `NameError` or `NoMethodError` with a backtrace through the shim. `-v` still prints the backtrace ([#348](https://github.com/zerobrewhq/zerobrew/issues/348))
++
+ ## [0.4.2] - 2026-10-21
+ 
+ ### Added
+diff --git a/zb_io/src/build/executor.rs b/zb_io/src/build/executor.rs
+index d1846c1..1455160 100644
+--- a/zb_io/src/build/executor.rs
++++ b/zb_io/src/build/executor.rs
+@@ -58,6 +58,9 @@ impl BuildExecutor {
+ 
+         let deps_json = serde_json::to_string(installed_deps).unwrap_or_else(|_| "{}".into());
+         env.insert("ZEROBREW_INSTALLED_DEPS".into(), deps_json);
++        if tracing::enabled!(tracing::Level::INFO) {
++            env.insert("ZEROBREW_BACKTRACE".into(), "1".into());
++        }
+ 
+         let ruby = find_ruby().await?;
+         run_build(&ruby, &shim_path, &source_root, &env).await?;
+@@ -319,6 +322,16 @@ end
+         source_root: &Path,
+         prefix: &Path,
+         formula_rb: &str,
++    ) -> Result<(), Error> {
++        run_shim_formula_with_env(ruby, source_root, prefix, formula_rb, &[]).await
++    }
++
++    async fn run_shim_formula_with_env(
++        ruby: &Path,
++        source_root: &Path,
++        prefix: &Path,
++        formula_rb: &str,
++        extra_env: &[(&str, &str)],
+     ) -> Result<(), Error> {
+         let tmp = source_root.parent().unwrap();
+         let shim_path = tmp.join("shim.rb");
+@@ -340,10 +353,205 @@ end
+             formula_path.display().to_string(),
+         );
+         env.insert("ZEROBREW_INSTALLED_DEPS".to_string(), "{}".to_string());
++        for (key, value) in extra_env {
++            env.insert((*key).to_string(), (*value).to_string());
++        }
+ 
+         run_build(ruby, &shim_path, source_root, &env).await
+     }
+ 
++    /// Homebrew formulae call `MacOS.version`, Homebrew's alias for `OS::Mac`.
++    /// See https://github.com/zerobrewhq/zerobrew/issues/348
++    #[tokio::test]
++    async fn run_build_provides_the_macos_alias() {
++        let Some(ruby) = find_ruby().await.ok() else {
++            return;
++        };
++
++        let tmp = tempfile::tempdir().unwrap();
++        let source_root = tmp.path().join("source");
++        std::fs::create_dir_all(&source_root).unwrap();
++
++        let formula = r##"
++class Foo < Formula
++  def install
++    target = MacOS.version < 11 ? "x86" : "all"
++    File.write(prefix + "macos", "#{MacOS.equal?(OS::Mac)} #{target}")
++  end
++end
++"##;
++
++        let prefix = tmp.path().join("prefix");
++        run_shim_formula(&ruby, &source_root, &prefix, formula)
++            .await
++            .unwrap();
++
++        let written = std::fs::read_to_string(prefix.join("Cellar/foo/1.0.0/macos")).unwrap();
++        let target = if cfg!(target_os = "macos") {
++            "all"
++        } else {
++            "x86"
++        };
++        assert_eq!(written, format!("true {target}"));
++    }
++
++    const UNSUPPORTED_FORMULA: &str = r#"
++class Foo < Formula
++  def install
++    NotInTheShim.version
++  end
++end
++"#;
++
++    /// A formula that uses an API the shim lacks fails with the missing name
++    /// and the formula line, not a raw Ruby backtrace through the shim.
++    #[tokio::test]
++    async fn run_build_names_the_api_a_formula_needs() {
++        let Some(ruby) = find_ruby().await.ok() else {
++            return;
++        };
++
++        let tmp = tempfile::tempdir().unwrap();
++        let source_root = tmp.path().join("source");
++        std::fs::create_dir_all(&source_root).unwrap();
++
++        let prefix = tmp.path().join("prefix");
++        let message = run_shim_formula(&ruby, &source_root, &prefix, UNSUPPORTED_FORMULA)
++            .await
++            .unwrap_err()
++            .to_string();
++
++        assert!(
++            message.contains(
++                "Error: foo uses `NotInTheShim`, which zerobrew can't build from source yet (formula.rb:4)"
++            ),
++            "{message}"
++        );
++        assert!(message.contains("uninitialized constant"), "{message}");
++        assert!(!message.contains("shim.rb:"), "{message}");
++    }
++
++    #[tokio::test]
++    async fn run_build_prints_the_backtrace_when_verbose() {
++        let Some(ruby) = find_ruby().await.ok() else {
++            return;
++        };
++
++        let tmp = tempfile::tempdir().unwrap();
++        let source_root = tmp.path().join("source");
++        std::fs::create_dir_all(&source_root).unwrap();
++
++        let prefix = tmp.path().join("prefix");
++        let message = run_shim_formula_with_env(
++            &ruby,
++            &source_root,
++            &prefix,
++            UNSUPPORTED_FORMULA,
++            &[("ZEROBREW_BACKTRACE", "1")],
++        )
++        .await
++        .unwrap_err()
++        .to_string();
++
++        assert!(message.contains("uses `NotInTheShim`"), "{message}");
++        assert!(message.contains("shim.rb:"), "{message}");
++    }
++
++    /// A constant missing while the formula's class body loads is reported
++    /// the same way.
++    #[tokio::test]
++    async fn run_build_names_the_api_a_formula_body_needs() {
++        let Some(ruby) = find_ruby().await.ok() else {
++            return;
++        };
++
++        let tmp = tempfile::tempdir().unwrap();
++        let source_root = tmp.path().join("source");
++        std::fs::create_dir_all(&source_root).unwrap();
++
++        let formula = r#"
++class Foo < Formula
++  depends_on NotInTheShim::Requirement
++end
++"#;
++
++        let prefix = tmp.path().join("prefix");
++        let message = run_shim_formula(&ruby, &source_root, &prefix, formula)
++            .await
++            .unwrap_err()
++            .to_string();
++
++        assert!(message.contains("uses `NotInTheShim`"), "{message}");
++        assert!(message.contains("(formula.rb:3)"), "{message}");
++    }
++
++    /// A method missing on an ordinary value is the formula's own error, not
++    /// an API the shim lacks.
++    #[tokio::test]
++    async fn run_build_does_not_blame_the_shim_for_other_errors() {
++        let Some(ruby) = find_ruby().await.ok() else {
++            return;
++        };
++
++        let tmp = tempfile::tempdir().unwrap();
++        let source_root = tmp.path().join("source");
++        std::fs::create_dir_all(&source_root).unwrap();
++
++        let formula = r#"
++class Foo < Formula
++  def install
++    nil.split(",")
++  end
++end
++"#;
++
++        let prefix = tmp.path().join("prefix");
++        let message = run_shim_formula(&ruby, &source_root, &prefix, formula)
++            .await
++            .unwrap_err()
++            .to_string();
++
++        assert!(
++            message.contains("Error: foo's formula failed (formula.rb:4)"),
++            "{message}"
++        );
++        assert!(message.contains("undefined method"), "{message}");
++        assert!(
++            !message.contains("can't build from source yet"),
++            "{message}"
++        );
++    }
++
++    /// A missing method is reported the same way, here Homebrew's `which`
++    /// (https://github.com/zerobrewhq/zerobrew/issues/404).
++    #[tokio::test]
++    async fn run_build_names_a_missing_method() {
++        let Some(ruby) = find_ruby().await.ok() else {
++            return;
++        };
++
++        let tmp = tempfile::tempdir().unwrap();
++        let source_root = tmp.path().join("source");
++        std::fs::create_dir_all(&source_root).unwrap();
++
++        let formula = r#"
++class Foo < Formula
++  def install
++    which("perl")
++  end
++end
++"#;
++
++        let prefix = tmp.path().join("prefix");
++        let message = run_shim_formula(&ruby, &source_root, &prefix, formula)
++            .await
++            .unwrap_err()
++            .to_string();
++
++        assert!(message.contains("uses `which`"), "{message}");
++        assert!(message.contains("(formula.rb:4)"), "{message}");
++    }
++
+     #[tokio::test]
+     async fn run_build_rejects_resource_checksum_mismatch() {
+         let Some(ruby) = find_ruby().await.ok() else {
+diff --git a/zb_io/src/build/shim.rb b/zb_io/src/build/shim.rb
+index 780a29c..b883295 100644
+--- a/zb_io/src/build/shim.rb
++++ b/zb_io/src/build/shim.rb
+@@ -66,6 +66,9 @@ module OS
+   end
+ end
+ 
++# Homebrew's alias for OS::Mac (os/mac.rb), which formulae use as `MacOS.version`.
++MacOS = OS::Mac
++
+ class MacOSVersion
+   include Comparable
+ 
+@@ -691,7 +694,36 @@ FORMULA_DATA_CONTENT = end_marker_idx ? formula_raw[(formula_raw.index("\n", end
+ ENV["HOMEBREW_PREFIX"] = ZEROBREW_PREFIX
+ ENV["HOMEBREW_CELLAR"] = ZEROBREW_CELLAR
+ 
+-load FORMULA_FILE
++# A formula that uses a part of Homebrew's API the shim doesn't provide fails
++# with a NameError, or a NoMethodError on the formula or one of the shim's
++# modules. Say which name is missing and where the formula uses it; other
++# errors just say where. The Ruby backtrace is only printed when zb runs
++# verbosely.
++def zerobrew_build_error!(error)
++  location = error.backtrace_locations&.find { |loc| loc.path == FORMULA_FILE }
++  where = location && " (#{File.basename(FORMULA_FILE)}:#{location.lineno})"
++  receiver = begin
++    error.receiver
++  rescue ArgumentError
++    nil
++  end
++  missing_api = error.name &&
++                (!error.is_a?(NoMethodError) || receiver.is_a?(Formula) || receiver.is_a?(Module))
++  if missing_api
++    $stderr.puts "Error: #{FORMULA_NAME} uses `#{error.name}`, which zerobrew can't build from source yet#{where}"
++  else
++    $stderr.puts "Error: #{FORMULA_NAME}'s formula failed#{where}"
++  end
++  $stderr.puts "  #{error.message}"
++  $stderr.puts error.backtrace.map { |line| "    #{line}" } if ENV["ZEROBREW_BACKTRACE"] && error.backtrace
++  exit 1
++end
++
++begin
++  load FORMULA_FILE
++rescue NameError => e
++  zerobrew_build_error!(e)
++end
+ 
+ formula_class = ObjectSpace.each_object(Class).find { |c| c < Formula && c != Formula }
+ unless formula_class
+@@ -744,5 +776,9 @@ instance = formula_class.new
+ 
+ puts "==> Building #{FORMULA_NAME} #{FORMULA_VERSION}"
+ FileUtils.mkdir_p(instance.prefix.to_s)
+-instance.install
++begin
++  instance.install
++rescue NameError => e
++  zerobrew_build_error!(e)
++end
+ puts "==> Build complete: #{FORMULA_NAME} #{FORMULA_VERSION}"
+-- 
+2.43.0
+
