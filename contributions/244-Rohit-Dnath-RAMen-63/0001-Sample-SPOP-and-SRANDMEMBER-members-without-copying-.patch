@@ -1,0 +1,245 @@
+From d3053c761c497a4fc06da8ef4c334530ed7820a1 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:29:27 +0000
+Subject: [PATCH] Sample SPOP and SRANDMEMBER members without copying the whole
+ set
+
+SPOP and SRANDMEMBER copied every member into a slice to return one, so a
+plain call was O(n) and SPOP held the shard's write lock for the whole copy;
+draining a large set with SPOP was O(n^2).
+
+A count of 1 now takes the first key of a map range (O(1), like RANDOMKEY,
+relying on Go's randomised map iteration, so random but not perfectly uniform).
+A count between 1 and the set size uses reservoir sampling, which is uniform
+and allocates only count slots. A count that covers the whole set, or a
+negative count, still copies the members.
+
+Adds an allocation regression test and benchmarks on a large set.
+
+Fixes #63
+---
+ docs/commands.md             |  4 +-
+ internal/store/set.go        | 61 +++++++++++++++--------
+ internal/store/store_test.go | 96 ++++++++++++++++++++++++++++++++++++
+ 3 files changed, 139 insertions(+), 22 deletions(-)
+
+diff --git a/docs/commands.md b/docs/commands.md
+index f4353ce..9b91680 100644
+--- a/docs/commands.md
++++ b/docs/commands.md
+@@ -101,8 +101,8 @@ LINSERT q BEFORE b Z   # insert Z before the first "b"; returns new length, or -
+ | `SINTER <key> [key ...]` | Members present in every set; a missing key is an empty set. |
+ | `SUNION <key> [key ...]` | Distinct members across all the sets. |
+ | `SDIFF <key> [key ...]` | Members of the first set that are in none of the rest. |
+-| `SPOP <key> [count]` | Remove and return one random member, or an array of up to `count`. |
+-| `SRANDMEMBER <key> [count]` | Return random member(s) without removing; a negative `count` allows repeats, capped at 2^20 per call. |
++| `SPOP <key> [count]` | Remove and return one random member, or an array of up to `count`. A single member is picked in O(1) from Go's randomised map order, so it is random but not perfectly uniform; with a `count` the pick is uniform. |
++| `SRANDMEMBER <key> [count]` | Return random member(s) without removing; a negative `count` allows repeats, capped at 2^20 per call. Like `SPOP`, a single member is picked in O(1) and is not perfectly uniform. |
+ 
+ ## Sorted sets
+ 
+diff --git a/internal/store/set.go b/internal/store/set.go
+index 64ec38f..9b34ea2 100644
+--- a/internal/store/set.go
++++ b/internal/store/set.go
+@@ -238,20 +238,49 @@ func (s *Store) SDiff(keys []string) ([]string, error) {
+ 	return out, nil
+ }
+ 
+-// sampleMembers picks members per Redis SPOP/SRANDMEMBER count rules: count >= 0
+-// yields that many DISTINCT members (at most all of them); count < 0 yields
+-// exactly -count members WITH repetition. members may be reordered in place.
+-func sampleMembers(members []string, count int64) []string {
+-	n := len(members)
++// sampleSet picks members of set per Redis SPOP/SRANDMEMBER count rules:
++// count >= 0 yields that many DISTINCT members (at most all of them); count < 0
++// yields exactly -count members WITH repetition.
++//
++// The common single-member case takes the first key of a map range, which is
++// O(1) and allocates only the result. Like RandomKey, it relies on Go's
++// randomised map iteration, so the pick is random but not perfectly uniform
++// across members. A count above one but below the set size uses reservoir
++// sampling, which is uniform and allocates only count slots. Only a count that
++// covers the whole set, or a negative count (which needs random access for
++// repeats), copies the members.
++func sampleSet(set map[string]struct{}, count int64) []string {
++	n := len(set)
+ 	if n == 0 || count == 0 {
+ 		return []string{}
+ 	}
+-	if count > 0 {
+-		if count >= int64(n) {
+-			return append([]string(nil), members...)
++	if count == 1 {
++		for m := range set {
++			return []string{m}
+ 		}
+-		rand.Shuffle(n, func(i, j int) { members[i], members[j] = members[j], members[i] })
+-		return append([]string(nil), members[:count]...)
++	}
++	if count > 1 && count < int64(n) {
++		k := int(count)
++		out := make([]string, 0, k)
++		seen := 0
++		for m := range set {
++			if seen < k {
++				out = append(out, m)
++			} else if j := rand.Intn(seen + 1); j < k {
++				out[j] = m
++			}
++			seen++
++		}
++		// The reservoir fills in iteration order; shuffle so the order is random too.
++		rand.Shuffle(k, func(i, j int) { out[i], out[j] = out[j], out[i] })
++		return out
++	}
++	members := make([]string, 0, n)
++	for m := range set {
++		members = append(members, m)
++	}
++	if count > 0 {
++		return members
+ 	}
+ 	// count < 0: with repetition. The caller bounds the magnitude, so -count is
+ 	// safe to convert and cannot overflow.
+@@ -277,11 +306,7 @@ func (s *Store) SPop(key string, count int64) ([]string, error) {
+ 	if err != nil {
+ 		return nil, err
+ 	}
+-	members := make([]string, 0, len(set))
+-	for m := range set {
+-		members = append(members, m)
+-	}
+-	picked := sampleMembers(members, count)
++	picked := sampleSet(set, count)
+ 	for _, m := range picked {
+ 		delete(set, m)
+ 	}
+@@ -312,9 +337,5 @@ func (s *Store) SRandMember(key string, count int64) ([]string, error) {
+ 	if count < -maxSampleReps {
+ 		return nil, ErrSampleCount
+ 	}
+-	members := make([]string, 0, len(set))
+-	for m := range set {
+-		members = append(members, m)
+-	}
+-	return sampleMembers(members, count), nil
++	return sampleSet(set, count), nil
+ }
+diff --git a/internal/store/store_test.go b/internal/store/store_test.go
+index 3798fa1..af69e3c 100644
+--- a/internal/store/store_test.go
++++ b/internal/store/store_test.go
+@@ -2,6 +2,7 @@ package store
+ 
+ import (
+ 	"math"
++	"runtime"
+ 	"strconv"
+ 	"strings"
+ 	"sync"
+@@ -1056,6 +1057,101 @@ func TestSetPopRandom(t *testing.T) {
+ 	}
+ }
+ 
++// bigSet fills key with n members m0..m(n-1).
++func bigSet(s *Store, key string, n int) {
++	members := make([]string, n)
++	for i := range members {
++		members[i] = "m" + strconv.Itoa(i)
++	}
++	s.SAdd(key, members...)
++}
++
++// bytesPerCall reports the average heap bytes f allocates per call.
++func bytesPerCall(calls int, f func()) uint64 {
++	var before, after runtime.MemStats
++	runtime.GC()
++	runtime.ReadMemStats(&before)
++	for i := 0; i < calls; i++ {
++		f()
++	}
++	runtime.ReadMemStats(&after)
++	return (after.TotalAlloc - before.TotalAlloc) / uint64(calls)
++}
++
++// A plain SPOP / SRANDMEMBER (count 1) or a small count must not copy the
++// whole set: on 100k members a copy is ~1.6 MB per call.
++func TestSetSampleDoesNotCopyWholeSet(t *testing.T) {
++	s := New()
++	bigSet(s, "big", 100_000)
++	const limit = 4 << 10
++
++	if b := bytesPerCall(100, func() { s.SRandMember("big", 1) }); b > limit {
++		t.Fatalf("SRANDMEMBER count 1 allocates %d bytes per call, want <= %d", b, limit)
++	}
++	if b := bytesPerCall(100, func() { s.SRandMember("big", 5) }); b > limit {
++		t.Fatalf("SRANDMEMBER count 5 allocates %d bytes per call, want <= %d", b, limit)
++	}
++	if b := bytesPerCall(100, func() { s.SPop("big", 1) }); b > limit {
++		t.Fatalf("SPOP count 1 allocates %d bytes per call, want <= %d", b, limit)
++	}
++	if b := bytesPerCall(100, func() { s.SPop("big", 5) }); b > limit {
++		t.Fatalf("SPOP count 5 allocates %d bytes per call, want <= %d", b, limit)
++	}
++	if n, _ := s.SCard("big"); n != 100_000-100-500 {
++		t.Fatalf("SCARD after pops = %d, want %d", n, 100_000-100-500)
++	}
++}
++
++// Reservoir sampling for 1 < count < size must still reach every member and
++// return distinct members of the set.
++func TestSRandMemberCountReachesEveryMember(t *testing.T) {
++	s := New()
++	bigSet(s, "s", 10)
++	hits := make(map[string]int)
++	for i := 0; i < 2000; i++ {
++		r, err := s.SRandMember("s", 3)
++		if err != nil || len(r) != 3 || hasDup(r) {
++			t.Fatalf("SRandMember 3 = %v %v", r, err)
++		}
++		for _, m := range r {
++			hits[m]++
++		}
++	}
++	if len(hits) != 10 {
++		t.Fatalf("SRandMember 3 reached %d of 10 members: %v", len(hits), hits)
++	}
++	// Each member is expected 600 times; a fair sampler stays far from 0 or 2000.
++	for m, c := range hits {
++		if c < 300 || c > 900 {
++			t.Fatalf("member %s picked %d times in 2000 draws of 3, want about 600", m, c)
++		}
++	}
++}
++
++func BenchmarkSRandMember(b *testing.B) {
++	s := New()
++	bigSet(s, "big", 1_000_000)
++	b.ReportAllocs()
++	b.ResetTimer()
++	for i := 0; i < b.N; i++ {
++		s.SRandMember("big", 1)
++	}
++}
++
++func BenchmarkSPop(b *testing.B) {
++	s := New()
++	bigSet(s, "big", 1_000_000)
++	b.ReportAllocs()
++	b.ResetTimer()
++	for i := 0; i < b.N; i++ {
++		if r, _ := s.SPop("big", 1); len(r) == 0 {
++			b.StopTimer()
++			bigSet(s, "big", 1_000_000)
++			b.StartTimer()
++		}
++	}
++}
++
+ func TestRename(t *testing.T) {
+ 	s := New()
+ 
+-- 
+2.43.0
+
