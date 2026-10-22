@@ -1,0 +1,114 @@
+From 26c6a16468e13c9cb6e433afa63feee7ef909982 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:16:45 +0000
+Subject: [PATCH] Require a one-year max-age for HSTS preload readiness
+
+Hsts#preload_ready? still used the old 18-week minimum max-age
+(10,886,400 seconds), but the HSTS preload list now requires at least
+31,536,000 seconds (one year), so domains the list would reject were
+reported as preload ready. Use the one-year minimum, as a named
+constant, and cover values above and below it in the specs.
+
+Also fix the "knows if it's enabled" spec, which stubbed max-age 0
+but asserted preload? instead of enabled?.
+
+Fixes #126
+---
+ CHANGELOG.md                              |  1 +
+ lib/site-inspector/endpoint/hsts.rb       |  9 +++++++--
+ spec/site_inspector/endpoint/hsts_spec.rb | 23 +++++++++++++++++------
+ 3 files changed, 25 insertions(+), 8 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 31c199f..b6a1acc 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -56,6 +56,7 @@ First release since 3.2.0 (November 2020). It's a major version because several
+ - `Cliver::Dependency#version` is memoized as intended. ([#109](https://github.com/benbalter/site-inspector/pull/109))
+ - A `RailsCache` autoload that pointed to a missing file was removed. ([#109](https://github.com/benbalter/site-inspector/pull/109))
+ - `Hsts#valid?` now requires a `max-age` directive with a non-negative integer value, per RFC 6797 §6.1.1. A header such as `Strict-Transport-Security: includeSubDomains` is no longer reported as valid. ([#127](https://github.com/benbalter/site-inspector/issues/127))
++- `Hsts#preload_ready?` now requires a `max-age` of at least 31,536,000 seconds (one year), matching the HSTS preload list's current requirements. It used the old 18-week minimum. ([#126](https://github.com/benbalter/site-inspector/issues/126))
+ 
+ ### Dependencies
+ 
+diff --git a/lib/site-inspector/endpoint/hsts.rb b/lib/site-inspector/endpoint/hsts.rb
+index df8c985..d9d8824 100644
+--- a/lib/site-inspector/endpoint/hsts.rb
++++ b/lib/site-inspector/endpoint/hsts.rb
+@@ -7,6 +7,10 @@ class SiteInspector
+     class Hsts < Check
+       STATUS_ENDPOINT = 'https://hstspreload.org/api/v2/status'
+ 
++      # Minimum max-age (one year) required by the HSTS preload list,
++      # see https://hstspreload.org/#submission-requirements
++      PRELOAD_MIN_MAX_AGE = 31_536_000
++
+       def valid?
+         return false if header.empty?
+         return false unless pairs.none? { |key, value| "#{key}#{value}" =~ /[\s'"]/ }
+@@ -32,9 +36,10 @@ class SiteInspector
+         max_age.positive?
+       end
+ 
+-      # Google's minimum max-age for automatic preloading
++      # Whether the header meets the HSTS preload list's requirements
++      # (includeSubDomains, preload, and a max-age of at least one year)
+       def preload_ready?
+-        include_subdomains? && preload? && max_age >= 10_886_400
++        include_subdomains? && preload? && max_age >= PRELOAD_MIN_MAX_AGE
+       end
+ 
+       def to_h
+diff --git a/spec/site_inspector/endpoint/hsts_spec.rb b/spec/site_inspector/endpoint/hsts_spec.rb
+index fb3dc03..f487374 100644
+--- a/spec/site_inspector/endpoint/hsts_spec.rb
++++ b/spec/site_inspector/endpoint/hsts_spec.rb
+@@ -79,28 +79,39 @@ describe SiteInspector::Endpoint::Hsts do
+     expect(subject.enabled?).to be(true)
+ 
+     allow(subject).to receive(:pairs).and_return('max-age': 0)
+-    expect(subject.preload?).to be(false)
++    expect(subject.enabled?).to be(false)
+ 
+     allow(subject).to receive(:pairs).and_return(foo: 'bar')
+-    expect(subject.preload?).to be(false)
++    expect(subject.enabled?).to be(false)
+   end
+ 
+   it "knows if it's preload ready" do
+     expect(subject.preload_ready?).to be(false)
+ 
+-    pairs = { 'max-age': 10_886_401, preload: nil, includesubdomains: nil }
++    pairs = { 'max-age': 31_536_000, preload: nil, includesubdomains: nil }
+     allow(subject).to receive(:pairs) { pairs }
+     expect(subject.preload_ready?).to be(true)
+ 
+-    pairs = { 'max-age': 10_886_401, includesubdomains: nil }
++    pairs = { 'max-age': 31_536_000, includesubdomains: nil }
+     allow(subject).to receive(:pairs) { pairs }
+     expect(subject.preload_ready?).to be(false)
+ 
+-    pairs = { 'max-age': 10_886_401, preload: nil, includesubdomains: nil }
++    pairs = { 'max-age': 31_536_000, preload: nil }
++    allow(subject).to receive(:pairs) { pairs }
++    expect(subject.preload_ready?).to be(false)
++  end
++
++  it 'requires a max-age of at least one year to be preload ready' do
++    pairs = { 'max-age': 63_072_000, preload: nil, includesubdomains: nil }
+     allow(subject).to receive(:pairs) { pairs }
+     expect(subject.preload_ready?).to be(true)
+ 
+-    pairs = { 'max-age': 5, preload: nil, includesubdomains: nil }
++    pairs = { 'max-age': 31_535_999, preload: nil, includesubdomains: nil }
++    allow(subject).to receive(:pairs) { pairs }
++    expect(subject.preload_ready?).to be(false)
++
++    # The old 18-week minimum no longer qualifies for the preload list
++    pairs = { 'max-age': 10_886_401, preload: nil, includesubdomains: nil }
+     allow(subject).to receive(:pairs) { pairs }
+     expect(subject.preload_ready?).to be(false)
+   end
+-- 
+2.43.0
+

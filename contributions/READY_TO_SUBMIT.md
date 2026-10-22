@@ -109,3 +109,4 @@
 | 287 | [benbalter/jekyll-optional-front-matter#67](https://github.com/benbalter/jekyll-optional-front-matter/issues/67) | **已提交** [#69](https://github.com/benbalter/jekyll-optional-front-matter/pull/69) |
 | 436 | [bpmn-io/properties-panel#553](https://github.com/bpmn-io/properties-panel/issues/553) | **已提交** [#565](https://github.com/bpmn-io/properties-panel/pull/565) |
 | 288 | [benbalter/jekyll-titles-from-headings#109](https://github.com/benbalter/jekyll-titles-from-headings/issues/109) | **已提交** [#111](https://github.com/benbalter/jekyll-titles-from-headings/pull/111) |
+| 289 | [benbalter/site-inspector#126](https://github.com/benbalter/site-inspector/issues/126) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS） |

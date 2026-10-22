@@ -1,0 +1,1 @@
+Require a one-year max-age for HSTS preload readiness
