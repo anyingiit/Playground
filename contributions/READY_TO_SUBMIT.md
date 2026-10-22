@@ -117,6 +117,6 @@
 | 294 | [authorjapps/zerocode#800](https://github.com/authorjapps/zerocode/issues/800) | **已提交** [#801](https://github.com/authorjapps/zerocode/pull/801) |
 | 295 | [oscarbol09/jvm-mcp#177](https://github.com/oscarbol09/jvm-mcp/issues/177) | **已提交** [#182](https://github.com/oscarbol09/jvm-mcp/pull/182) |
 | 296 | [oscarbol09/jvm-mcp#175](https://github.com/oscarbol09/jvm-mcp/issues/175) | **已提交** [#183](https://github.com/oscarbol09/jvm-mcp/pull/183) |
-| 297 | [vitruv-tools/methodologistUI-backend#372](https://github.com/vitruv-tools/methodologistUI-backend/issues/372) | 待提交（**base `develop`**；无需认领；无 DCO/CLA；Java；复核 PASS） |
-| 298 | [sdlc-pro/spring-lens#526](https://github.com/sdlc-pro/spring-lens/issues/526) | 待提交（**base `dev`**；无需认领；无 DCO/CLA；Java；复核 PASS（修正后）） |
-| 299 | [sdlc-pro/spring-lens#524](https://github.com/sdlc-pro/spring-lens/issues/524) | 待提交（**base `dev`**；无需认领；无 DCO/CLA；Java；复核 PASS） |
+| 297 | [vitruv-tools/methodologistUI-backend#372](https://github.com/vitruv-tools/methodologistUI-backend/issues/372) | **已提交** [#378](https://github.com/vitruv-tools/methodologistUI-backend/pull/378) |
+| 298 | [sdlc-pro/spring-lens#526](https://github.com/sdlc-pro/spring-lens/issues/526) | **已提交** [#527](https://github.com/sdlc-pro/spring-lens/pull/527) |
+| 299 | [sdlc-pro/spring-lens#524](https://github.com/sdlc-pro/spring-lens/issues/524) | **已提交** [#528](https://github.com/sdlc-pro/spring-lens/pull/528) |
