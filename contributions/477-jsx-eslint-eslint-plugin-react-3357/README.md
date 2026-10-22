@@ -23,6 +23,7 @@
 - 全量 mocha（tests/lib、tests/util、tests/index.js）18298 passing；`eslint .`、`tsc`、`npm run lint:docs` 通过。
 
 ## 需要提交者注意
+- tools/submit_pr.sh 用 `git am --3way`，会去掉提交标题里的 `[Fix]`；PR 标题取自 pr_title.txt，不受影响。想保留提交标题就手动 `git am --keep-non-patch`。
 - PR 标题格式 `[Fix] \`rule\`: ...`（仓库惯例）。
 - 仓库 89 个开着的 PR，审核可能慢；ljharb 有时要求把 CHANGELOG 条目改成 PR 号，届时按要求改。
 - 提交信息带 `Assisted-by: Claude Code`。

@@ -26,6 +26,7 @@ issue 标题写的是 jsx-closing-bracket-location，但例子 `foo </div>` 实�
 - 全量 mocha 18298 passing；`eslint .`、`tsc`、`npm run lint:docs` 通过。
 
 ## 需要提交者注意
+- tools/submit_pr.sh 用 `git am --3way`，会去掉提交标题里的 `[Fix]`；PR 标题取自 pr_title.txt，不受影响。想保留提交标题就手动 `git am --keep-non-patch`。
 - 和 477 都在 CHANGELOG 的 Unreleased 链接定义末尾加了一行，后合并的那个会有一行小冲突；按维护者要求 rebase 即可。
 - PR 标题格式 `[Fix] \`rule\`: ...`。提交信息带 `Assisted-by: Claude Code`。
 
