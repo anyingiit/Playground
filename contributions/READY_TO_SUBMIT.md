@@ -86,3 +86,4 @@
 | 363 | [helix-editor/helix#11207](https://github.com/helix-editor/helix/issues/11207) | **已提交** [#16407](https://github.com/helix-editor/helix/pull/16407) |
 | 337 | [synolia/SyliusMaintenancePlugin#54](https://github.com/synolia/SyliusMaintenancePlugin/issues/54) | main | 无需认领；无 DCO、无 CLA |
 | 394 | [zerobrewhq/zerobrew#348](https://github.com/zerobrewhq/zerobrew/issues/348) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS；与 393 同仓库、不同文件，可任意顺序提交） |
+| 395 | [sinelaw/fresh#3074](https://github.com/sinelaw/fresh/issues/3074) | 待提交（base `master`；无需认领；无 DCO/CLA，PR 模板的 GPL 许可框已勾；Rust；新锐；复核 PASS；提交信息带 `Assisted-by: Claude Code`） |

@@ -1,0 +1,1 @@
+Keep an exited terminal's auto-derived tab name across a restart

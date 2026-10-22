@@ -1,0 +1,268 @@
+From 1de1c36e12f7621c7f8972dc3d83bc5af9a8e650 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:22:32 +0000
+Subject: [PATCH] Keep an exited terminal's auto-derived tab name across a
+ restart
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+A terminal whose shell had exited before the editor quit came back as
+`*Terminal N* (exited)` instead of `bash — <cwd> (exited)`: only explicit
+titles were saved, and an auto-named tab re-derives its name from the
+live process after restore, which a restored dead terminal doesn't have.
+Two dead shells from different directories then looked the same (#3074).
+
+Keep the name an auto-named tab had derived when its process quit on the
+exited record, save it in the workspace's exited-terminal state, and put
+it back on the restored dead tab. The tab stays auto-named, so a restart
+still re-derives the name from the new process.
+
+Fixes #3074
+
+Assisted-by: Claude Code
+---
+ crates/fresh-editor/src/app/async_dispatch.rs |  18 ++-
+ crates/fresh-editor/src/app/window/mod.rs     |   7 ++
+ crates/fresh-editor/src/app/workspace.rs      |  14 +++
+ crates/fresh-editor/src/workspace.rs          |   6 +
+ .../tests/e2e/restart_exited_terminal.rs      | 108 ++++++++++++++++++
+ 5 files changed, 148 insertions(+), 5 deletions(-)
+
+diff --git a/crates/fresh-editor/src/app/async_dispatch.rs b/crates/fresh-editor/src/app/async_dispatch.rs
+index d8c89da..24c0c01 100644
+--- a/crates/fresh-editor/src/app/async_dispatch.rs
++++ b/crates/fresh-editor/src/app/async_dispatch.rs
+@@ -1538,6 +1538,7 @@ impl Editor {
+             ephemeral: window.ephemeral_terminals.contains(&terminal_id),
+             script_access: window.terminal_has_script_access(terminal_id),
+             title: None,
++            auto_title: None,
+         }
+     }
+ 
+@@ -1736,12 +1737,19 @@ impl Editor {
+                 // no live process left to read a name from, so it gets the
+                 // marker on its current name and stops being auto-updated
+                 // (`sync_terminal_titles` only walks live `terminal_buffers`).
+-                record.title = window
+-                    .terminal_explicit_titles
+-                    .contains(&buffer_id)
+-                    .then(|| window.buffer_metadata.get(&buffer_id))
+-                    .flatten()
++                let name = window
++                    .buffer_metadata
++                    .get(&buffer_id)
+                     .map(|meta| meta.display_name.clone());
++                if window.terminal_explicit_titles.contains(&buffer_id) {
++                    record.title = name;
++                } else {
++                    // Keep the auto-derived name so a saved workspace can
++                    // put it back on the restored dead tab; the generic
++                    // `*Terminal N*` is regenerated on restore anyway.
++                    let fallback = format!("*Terminal {}*", terminal_id.0);
++                    record.auto_title = name.filter(|n| *n != fallback);
++                }
+                 if let Some(meta) = window.buffer_metadata.get_mut(&buffer_id) {
+                     meta.display_name =
+                         t!("terminal.tab_exited", name = meta.display_name).to_string();
+diff --git a/crates/fresh-editor/src/app/window/mod.rs b/crates/fresh-editor/src/app/window/mod.rs
+index 66d7f24..2591535 100644
+--- a/crates/fresh-editor/src/app/window/mod.rs
++++ b/crates/fresh-editor/src/app/window/mod.rs
+@@ -130,6 +130,12 @@ pub struct ExitedTerminal {
+     /// restart can put it back. `None` for an auto-named tab, which re-derives
+     /// its name from the reborn process.
+     pub title: Option<String>,
++    /// The name an auto-named tab had derived when its process quit
++    /// (`bash — ~/proj`), so it can be saved and a restored dead tab still
++    /// reads it: once restored there is no process left to derive it from.
++    /// `None` for an explicitly-titled tab, or one still showing the
++    /// `*Terminal N*` fallback. A restart drops it, like any auto-name.
++    pub auto_title: Option<String>,
+ }
+ 
+ impl ExitedTerminal {
+@@ -5317,6 +5323,7 @@ mod exited_terminal_tests {
+             ephemeral: true,
+             script_access: false,
+             title: None,
++            auto_title: None,
+         }
+     }
+ 
+diff --git a/crates/fresh-editor/src/app/workspace.rs b/crates/fresh-editor/src/app/workspace.rs
+index 38495c9..6ed3d66 100644
+--- a/crates/fresh-editor/src/app/workspace.rs
++++ b/crates/fresh-editor/src/app/workspace.rs
+@@ -1312,6 +1312,18 @@ impl crate::app::window::Window {
+         // the exit path does — the PTY this id names no longer exists.
+         let buffer_id = self.create_terminal_buffer_detached(terminal_id);
+         self.apply_restored_terminal_title(buffer_id, terminal.title.as_deref());
++        // An auto-named tab gets back the name it had derived from its
++        // process — there's no process left to derive it from now. It stays
++        // auto-named, so a restart re-derives it from the reborn process.
++        let auto_title = state.auto_title.clone().filter(|t| !t.is_empty());
++        if terminal.title.as_deref().is_none_or(str::is_empty) {
++            if let (Some(name), Some(meta)) = (
++                auto_title.as_ref(),
++                self.buffer_metadata.get_mut(&buffer_id),
++            ) {
++                meta.display_name = name.clone();
++            }
++        }
+         self.load_terminal_backing_file_as_buffer(buffer_id, &backing_path);
+         // A restored-dead tab shows the same "(exited)" marker a tab that died
+         // in this session does — the state is identical, so it must read
+@@ -1339,6 +1351,7 @@ impl crate::app::window::Window {
+                 // is carried so the restart (which does spawn) mints one.
+                 script_access: terminal.script_access,
+                 title: terminal.title.clone(),
++                auto_title,
+             },
+         );
+         Some(buffer_id)
+@@ -3157,6 +3170,7 @@ impl crate::app::window::Window {
+                     .map(|argv| crate::workspace::AgentResume { argv: argv.clone() }),
+                 exited: Some(crate::workspace::ExitedTerminalState {
+                     exit_code: exited.exit_code,
++                    auto_title: exited.auto_title.clone(),
+                 }),
+                 // The pre-exit tab title, not the "(exited)" form the tab is
+                 // showing now — restore re-applies the marker itself.
+diff --git a/crates/fresh-editor/src/workspace.rs b/crates/fresh-editor/src/workspace.rs
+index 15ddf04..d419d15 100644
+--- a/crates/fresh-editor/src/workspace.rs
++++ b/crates/fresh-editor/src/workspace.rs
+@@ -862,6 +862,12 @@ pub struct ExitedTerminalState {
+     /// `(exit N)` suffix on the restored restart indicator.
+     #[serde(default, skip_serializing_if = "Option::is_none")]
+     pub exit_code: Option<i32>,
++    /// The auto-derived tab name (`bash — ~/proj`) of a tab that had no
++    /// explicit title. A restored dead terminal has no process to derive it
++    /// from again, so without this it would read `*Terminal N*`. Explicit
++    /// titles are saved in [`SerializedTerminalWorkspace::title`].
++    #[serde(default, skip_serializing_if = "Option::is_none")]
++    pub auto_title: Option<String>,
+ }
+ 
+ /// How to rejoin a terminal's agent conversation on restore. A struct (not a
+diff --git a/crates/fresh-editor/tests/e2e/restart_exited_terminal.rs b/crates/fresh-editor/tests/e2e/restart_exited_terminal.rs
+index fd84959..69f77fc 100644
+--- a/crates/fresh-editor/tests/e2e/restart_exited_terminal.rs
++++ b/crates/fresh-editor/tests/e2e/restart_exited_terminal.rs
+@@ -534,3 +534,111 @@ fn test_terminal_tab_title_survives_an_editor_restart() {
+         harness.assert_screen_not_contains("*Terminal");
+     }
+ }
++
++/// An auto-named terminal that had already exited keeps the name it had
++/// derived from its process across an editor restart.
++///
++/// Only explicit titles were persisted, and an auto-named tab re-derives its
++/// name from the live process after restore — but a restored dead terminal
++/// has no process, so it came back as a bare `*Terminal N*`, and two dead
++/// shells from different directories could no longer be told apart.
++///
++/// Linux-only, like the other auto-naming tests: the foreground process is
++/// read via `tcgetpgrp` + `/proc`.
++#[cfg(target_os = "linux")]
++#[test]
++fn test_exited_auto_named_terminal_keeps_its_name_across_an_editor_restart() {
++    if !pty_available() {
++        eprintln!("Skipping terminal-restart test: PTY not available");
++        return;
++    }
++
++    let temp_dir = TempDir::new().unwrap();
++    let project_dir = temp_dir.path().join("project");
++    std::fs::create_dir(&project_dir).unwrap();
++    let dir_context = DirectoryContext::for_testing(temp_dir.path());
++
++    let session = |dir_context: &DirectoryContext| {
++        let mut harness = EditorTestHarness::create(
++            120,
++            30,
++            HarnessOptions::new()
++                .with_config(terminal_config())
++                .with_working_dir(project_dir.clone())
++                .with_shared_dir_context(dir_context.clone())
++                .without_empty_plugins_dir(),
++        )
++        .unwrap();
++        // The harness turns auto-naming off for deterministic tabs elsewhere.
++        let mut config = harness.editor().config().clone();
++        config.editor.terminal_auto_title = true;
++        harness.editor_mut().set_config(config);
++        harness
++    };
++
++    // What the tab auto-names to: the shell the terminal runs (plus, with a
++    // prompt that sets one, the shell's OSC title). Derived from the same
++    // `detect_shell()` the spawn uses, so the test knows it independently.
++    let shell = fresh::services::terminal::detect_shell();
++    let shell = std::path::Path::new(&shell)
++        .file_name()
++        .expect("shell path has a file name")
++        .to_string_lossy()
++        .to_string();
++
++    // ---- Session 1: a plain shell names its tab, then exits. ----
++    {
++        let mut harness = session(&dir_context);
++        harness.editor_mut().set_session_mode(true);
++        harness.editor_mut().open_terminal();
++        harness.render().unwrap();
++        harness
++            .wait_until(|h| h.get_tab_bar().contains(&shell))
++            .expect("the tab should auto-name from the shell");
++        harness.type_text("exit").unwrap();
++        harness
++            .send_key(KeyCode::Enter, KeyModifiers::NONE)
++            .unwrap();
++        harness
++            .wait_until(|h| h.get_tab_bar().contains("(exited)"))
++            .expect("the shell should exit");
++        assert!(
++            harness.get_tab_bar().contains(&shell),
++            "the exited tab keeps its name in this session\nTab bar: {}",
++            harness.get_tab_bar()
++        );
++        harness.shutdown(true).unwrap();
++    }
++
++    // ---- Session 2: reopen. ----
++    {
++        let mut harness = session(&dir_context);
++        assert!(
++            harness.startup(true, &[]).unwrap(),
++            "the workspace should have been restored"
++        );
++        harness.render().unwrap();
++        harness
++            .wait_until(|h| h.get_tab_bar().contains("(exited)"))
++            .expect("the dead shell's tab should be restored");
++        let tab_bar = harness.get_tab_bar();
++        assert!(
++            tab_bar.contains(&shell),
++            "the restored dead tab should keep its derived name\nTab bar: {tab_bar}"
++        );
++        assert!(
++            !tab_bar.contains("*Terminal"),
++            "not the generic fallback\nTab bar: {tab_bar}"
++        );
++
++        // It is still auto-named: restarting it names the tab from the new
++        // shell again.
++        click_restart_indicator(&mut harness, "⟳ Restart");
++        harness
++            .wait_until(|h| {
++                let tab_bar = h.get_tab_bar();
++                tab_bar.contains(&shell) && !tab_bar.contains("(exited)")
++            })
++            .expect("the restarted shell should name its tab again");
++    }
++}
+-- 
+2.43.0
+
