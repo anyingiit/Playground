@@ -106,3 +106,4 @@
 | 434 | [bpmn-io/bpmn-to-image#65](https://github.com/bpmn-io/bpmn-to-image/issues/65) | **已提交** [#70](https://github.com/bpmn-io/bpmn-to-image/pull/70) |
 | 475 | [sql-formatter-org/sql-formatter#864](https://github.com/sql-formatter-org/sql-formatter/issues/864) | 可提交（复核 PASS）；与 476 同仓库，先交 475 |
 | 476 | [sql-formatter-org/sql-formatter#773](https://github.com/sql-formatter-org/sql-formatter/issues/773) | 可提交（复核 PASS）；在 475 之后提交 |
+| 477 | [jsx-eslint/eslint-plugin-react#3357](https://github.com/jsx-eslint/eslint-plugin-react/issues/3357) | 可提交（复核 PASS） |

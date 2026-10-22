@@ -7,7 +7,7 @@
 | Labels | bug, help wanted |
 | 维护者态度 | ljharb（2022-08-15）："shouldn't be removing these parens"，并标 help wanted；报告人后来放弃。 |
 | Base 分支 | `master`（补丁基于 b6ba4e1） |
-| 状态 | 🚧 待独立复核 |
+| 状态 | ✅ 可提交（独立复核 PASS） |
 | 重复检查 | 2026-10-22：issue 无指派、无关联 PR；`is:pr leaked` 中没有开着的相关 PR（#3502/#3623 已合并，只修了 coerce 分支）。master 上仍可复现。 |
 | AI 政策 | 无（CONTRIBUTING 只讲文档格式；无 PR 模板） |
 | CLA/DCO | 无 |
@@ -30,5 +30,11 @@
 ## 如何提交
 ```
 git clone https://github.com/jsx-eslint/eslint-plugin-react && cd eslint-plugin-react && git checkout -b fix-3357 origin/master
-git am /path/to/0001-*.patch
+git am --keep-non-patch /path/to/0001-*.patch   # 保留提交标题里的 [Fix]
 ```
+
+## 独立复核（2026-10-22）
+- 新克隆 b6ba4e1，`git am --keep-non-patch` 干净（普通 `git am` 会丢掉标题里的 `[Fix]`）。红 243/6 failing → 绿 249；全量 18298 passing；eslint/tsc/lint:docs 通过。
+- 三种 parser 下反复修复到稳定：括号内注释、嵌套括号、属性内、TS `as`/`satisfies`/`!` 等都生成合法代码。
+- 无竞争 PR（`jsx-no-leaked-render` 开着的 PR 为 0，`3357` 搜索为 0）。
+- 范围外发现（未修，可作后续）：coerce 分支 `a && (() => 1)` → `!!a && () => 1` 语法错误；`a && (b, c)` 语义改变。

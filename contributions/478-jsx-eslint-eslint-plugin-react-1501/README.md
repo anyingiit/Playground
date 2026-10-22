@@ -32,5 +32,5 @@ issue 标题写的是 jsx-closing-bracket-location，但例子 `foo </div>` 实�
 ## 如何提交
 ```
 git clone https://github.com/jsx-eslint/eslint-plugin-react && cd eslint-plugin-react && git checkout -b fix-1501 origin/master
-git am /path/to/0001-*.patch
+git am --keep-non-patch /path/to/0001-*.patch   # 保留提交标题里的 [Fix]
 ```
