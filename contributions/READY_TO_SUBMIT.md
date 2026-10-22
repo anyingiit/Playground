@@ -46,3 +46,4 @@
 | 421 | [tuProlog/2p-kt#946](https://github.com/tuProlog/2p-kt/issues/946) | **已提交** [#1044](https://github.com/tuProlog/2p-kt/pull/1044) |
 | 336 | phpmyadmin/motranslator#59 | master | 无需认领；提交用 --signoff（DCO），无 CLA |
 | 251 | [simonives/redwrench#57](https://github.com/simonives/redwrench/issues/57) | 待提交：base `main`；无需认领；无 DCO/CLA；**加 `--trailer`**（维护者 commit 自带 AI 署名），不加 `--signoff`；只改测试；复核 PASS |
+| 250 | [femboypuppy/Tessera-Notes#38](https://github.com/femboypuppy/Tessera-Notes/issues/38) | 待提交：base `main`；**需先在 issue 评论认领**（CONTRIBUTING 要求，注明 PR 已就绪）；无 DCO/CLA；不加 `--signoff`/`--trailer`；复核 PASS |

@@ -1,0 +1,115 @@
+From aebb46dde3295bce12c015f0ac82abc28c3510b5 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:23:23 +0000
+Subject: [PATCH] fix(ui): pick the first emoji when Enter is pressed while the
+ picker loads
+
+On first use the emoji data is still loading when the search box gets
+focus, so typing "rocket" and pressing Enter right away did nothing:
+there were no results to pick from yet. Remember an Enter pressed in
+that state and pick the first result once the data arrives. Typing
+again before then drops the pending pick, so it never applies to a
+query the user has moved past.
+
+Fixes #38
+---
+ .../ui/src/components/components.test.tsx     | 24 +++++++++++++++
+ packages/ui/src/components/emoji-picker.tsx   | 30 +++++++++++++++----
+ 2 files changed, 48 insertions(+), 6 deletions(-)
+
+diff --git a/packages/ui/src/components/components.test.tsx b/packages/ui/src/components/components.test.tsx
+index 1d73be6..695e3d5 100644
+--- a/packages/ui/src/components/components.test.tsx
++++ b/packages/ui/src/components/components.test.tsx
+@@ -290,4 +290,28 @@ describe('EmojiPicker', () => {
+     await userEvent.type(search, 'zzzz-no-emoji');
+     expect(await screen.findByText('No emoji found')).toBeInTheDocument();
+   });
++
++  it('picks the first result of an Enter pressed while the emoji are still loading', async () => {
++    const onSelect = vi.fn();
++    render(<EmojiPicker onSelect={onSelect} />);
++    const search = screen.getByRole('searchbox', { name: 'Search emoji' });
++    expect(screen.getByText('Loading emoji…')).toBeInTheDocument();
++    fireEvent.change(search, { target: { value: 'rocket' } });
++    fireEvent.keyDown(search, { key: 'Enter' });
++    expect(onSelect).not.toHaveBeenCalled();
++    await waitFor(() => expect(onSelect).toHaveBeenCalledWith('🚀'));
++    expect(onSelect).toHaveBeenCalledTimes(1);
++  });
++
++  it('drops a pending Enter when the query changes before the emoji load', async () => {
++    const onSelect = vi.fn();
++    render(<EmojiPicker onSelect={onSelect} />);
++    const search = screen.getByRole('searchbox', { name: 'Search emoji' });
++    expect(screen.getByText('Loading emoji…')).toBeInTheDocument();
++    fireEvent.change(search, { target: { value: 'rocket' } });
++    fireEvent.keyDown(search, { key: 'Enter' });
++    fireEvent.change(search, { target: { value: 'pizza' } });
++    await screen.findByRole('button', { name: 'pizza' });
++    expect(onSelect).not.toHaveBeenCalled();
++  });
+ });
+diff --git a/packages/ui/src/components/emoji-picker.tsx b/packages/ui/src/components/emoji-picker.tsx
+index d2025e2..932bb1e 100644
+--- a/packages/ui/src/components/emoji-picker.tsx
++++ b/packages/ui/src/components/emoji-picker.tsx
+@@ -1,5 +1,5 @@
+ import { Search, Shuffle, Trash2 } from 'lucide-react';
+-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
++import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+ import { tUi } from '../i18n/index';
+ import { cn } from '../lib/cn';
+ import { Button } from './button';
+@@ -153,10 +153,22 @@ export function EmojiPicker({
+       .map((item) => item.entry);
+   }, [data, query]);
+ 
+-  const pick = (emoji: string) => {
+-    rememberRecent(emoji);
+-    onSelect(emoji);
+-  };
++  const pick = useCallback(
++    (emoji: string) => {
++      rememberRecent(emoji);
++      onSelect(emoji);
++    },
++    [onSelect],
++  );
++
++  // Enter in the search box before the data has loaded picks the first result once it arrives.
++  const pendingEnter = useRef(false);
++  useEffect(() => {
++    if (!pendingEnter.current || !results) return;
++    pendingEnter.current = false;
++    const first = results[0];
++    if (first) pick(first.emoji);
++  }, [results, pick]);
+ 
+   const buttons = () => [
+     ...(gridRef.current?.querySelectorAll<HTMLButtonElement>('button[data-emoji]') ?? []),
+@@ -220,7 +232,10 @@ export function EmojiPicker({
+             autoFocus={autoFocus}
+             type="search"
+             value={query}
+-            onChange={(event) => setQuery(event.target.value)}
++            onChange={(event) => {
++              pendingEnter.current = false;
++              setQuery(event.target.value);
++            }}
+             onKeyDown={(event) => {
+               if (event.key === 'ArrowDown') {
+                 event.preventDefault();
+@@ -230,6 +245,9 @@ export function EmojiPicker({
+                 if (first) {
+                   event.preventDefault();
+                   pick(first.emoji);
++                } else if (!data && !failed && query.trim()) {
++                  event.preventDefault();
++                  pendingEnter.current = true;
+                 }
+               }
+             }}
+-- 
+2.43.0
+
