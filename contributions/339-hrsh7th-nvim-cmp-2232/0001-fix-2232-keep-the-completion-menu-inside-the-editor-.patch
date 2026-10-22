@@ -1,0 +1,95 @@
+From 51d5fc014320ca47783d0019fe2c383572170696 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:21:51 +0000
+Subject: [PATCH] fix(#2232): keep the completion menu inside the editor when
+ it overflows
+
+The menu was only shifted left when the cursor was in the right half of
+the editor. When the cursor was in the left half and the menu was too
+wide, Neovim clamped the float itself, but the stored geometry still
+held the requested column. The docs window is placed from that stored
+geometry, so it ended up on top of the menu.
+
+Clamp the column whenever the menu does not fit, so the stored geometry
+matches what Neovim draws and the docs view can find the free space (or
+close when there is none).
+---
+ lua/cmp/view/custom_entries_view.lua      |  2 +-
+ lua/cmp/view/custom_entries_view_spec.lua | 52 +++++++++++++++++++++++
+ 2 files changed, 53 insertions(+), 1 deletion(-)
+ create mode 100644 lua/cmp/view/custom_entries_view_spec.lua
+
+diff --git a/lua/cmp/view/custom_entries_view.lua b/lua/cmp/view/custom_entries_view.lua
+index 88d97b1..584d18a 100644
+--- a/lua/cmp/view/custom_entries_view.lua
++++ b/lua/cmp/view/custom_entries_view.lua
+@@ -208,7 +208,7 @@ custom_entries_view.open = function(self, offset, entries)
+   else
+     self.bottom_up = false
+   end
+-  if math.floor(vim.o.columns * 0.5) <= col + border_offset_col and vim.o.columns - col - border_offset_col <= width then
++  if vim.o.columns - col - border_offset_col <= width then
+     width = math.min(width, vim.o.columns - 1)
+     col = vim.o.columns - width - border_offset_col - 1
+     if col < 0 then
+diff --git a/lua/cmp/view/custom_entries_view_spec.lua b/lua/cmp/view/custom_entries_view_spec.lua
+new file mode 100644
+index 0000000..9c5328c
+--- /dev/null
++++ b/lua/cmp/view/custom_entries_view_spec.lua
+@@ -0,0 +1,52 @@
++local spec = require('cmp.utils.spec')
++local entry = require('cmp.entry')
++local custom_entries_view = require('cmp.view.custom_entries_view')
++
++describe('custom_entries_view', function()
++  local columns
++
++  before_each(function()
++    spec.before()
++    columns = vim.o.columns
++  end)
++
++  after_each(function()
++    vim.o.columns = columns
++  end)
++
++  local open = function(label, indent)
++    indent = indent or 0
++    local state = spec.state(string.rep(' ', indent), 1, indent + 1)
++    state.input('a')
++    local view = custom_entries_view.new()
++    view:open(indent + 1, {
++      entry.new(state.manual(), state.source(), {
++        label = label,
++      }),
++    })
++    return view
++  end
++
++  it('clamps a menu wider than the editor', function()
++    vim.o.columns = 40
++    local view = open(string.rep('a', 60))
++    local info = view:info()
++    assert.is_true(info.col + info.width <= vim.o.columns)
++    view:close()
++  end)
++
++  it('keeps a menu that overflows from the left half inside the editor', function()
++    vim.o.columns = 80
++    local view = open(string.rep('a', 65), 20)
++    local info = view:info()
++    assert.is_true(info.col + info.width <= vim.o.columns)
++    view:close()
++  end)
++
++  it('does not move the menu when it fits', function()
++    vim.o.columns = 80
++    local view = open('abc')
++    assert.are.equal(0, view:info().col)
++    view:close()
++  end)
++end)
+-- 
+2.43.0
+

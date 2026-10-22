@@ -93,3 +93,4 @@
 | 338 | [thephpleague/openapi-psr7-validator#273](https://github.com/thephpleague/openapi-psr7-validator/issues/273) | **已提交** [#275](https://github.com/thephpleague/openapi-psr7-validator/pull/275) |
 | 283 | [devonfw/IDEasy#1214](https://github.com/devonfw/IDEasy/issues/1214) | **已提交** [#2737](https://github.com/devonfw/IDEasy/pull/2737)（CLA 待 owner 签） |
 | 428 | [OpenCHAMI/ochami#191](https://github.com/OpenCHAMI/ochami/issues/191) | **已提交** [#216](https://github.com/OpenCHAMI/ochami/pull/216) |
+| 339 | [hrsh7th/nvim-cmp#2232](https://github.com/hrsh7th/nvim-cmp/issues/2232) | main | 无需认领；无 DCO、无 CLA；Lua；高星；复核 PASS |
