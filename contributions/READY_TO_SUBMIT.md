@@ -92,4 +92,4 @@
 | 427 | [OpenCHAMI/ochami#186](https://github.com/OpenCHAMI/ochami/issues/186) | **已提交** [#215](https://github.com/OpenCHAMI/ochami/pull/215) |
 | 338 | [thephpleague/openapi-psr7-validator#273](https://github.com/thephpleague/openapi-psr7-validator/issues/273) | **已提交** [#275](https://github.com/thephpleague/openapi-psr7-validator/pull/275) |
 | 283 | [devonfw/IDEasy#1214](https://github.com/devonfw/IDEasy/issues/1214) | **已提交** [#2737](https://github.com/devonfw/IDEasy/pull/2737)（CLA 待 owner 签） |
-| 428 | [OpenCHAMI/ochami#191](https://github.com/OpenCHAMI/ochami/issues/191) | 待提交（base `main`；无需认领；DCO 已签；无 CLA；Go；同仓库第 3 个，排在 426/427 之后；CI 可能查提交签名；复核 PASS） |
+| 428 | [OpenCHAMI/ochami#191](https://github.com/OpenCHAMI/ochami/issues/191) | **已提交** [#216](https://github.com/OpenCHAMI/ochami/pull/216) |
