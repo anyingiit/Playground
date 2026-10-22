@@ -102,3 +102,4 @@
 | 395 | [sinelaw/fresh#3074](https://github.com/sinelaw/fresh/issues/3074) | 待提交（base `master`；无需认领；无 DCO/CLA，PR 模板的 GPL 许可框已勾；Rust；新锐；复核 PASS；提交信息带 `Assisted-by: Claude Code`） |
 | 396 | [sinelaw/fresh#2944](https://github.com/sinelaw/fresh/issues/2944) | 待提交（base `master`；无需认领；无 DCO/CLA，PR 模板 GPL 许可框已勾；Rust；新锐；复核 PASS；与 395 同仓库不同文件） |
 | 397 | [0xfurai/peekaping#118](https://github.com/0xfurai/peekaping/issues/118) | 待提交（base `main`；无需认领，维护者已邀请 PR；无 DCO/CLA；Go；新锐；复核 PASS（第二轮）；PR 标题带 `#118` 前缀） |
+| 398 | [zerobrewhq/zerobrew#376](https://github.com/zerobrewhq/zerobrew/issues/376) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS；与 393/394 同仓库不同文件；PR 创建后可在 CHANGELOG 补 PR 链接） |

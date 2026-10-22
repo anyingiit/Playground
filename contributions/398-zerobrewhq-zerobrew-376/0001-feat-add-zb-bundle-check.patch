@@ -1,0 +1,247 @@
+From 4961ddefb53fda2f831e901a07b2da531db0f0f9 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:49:28 +0000
+Subject: [PATCH] feat(zb_cli): add zb bundle check
+
+Report the Brewfile entries that are not installed and exit non-zero
+if there are any, reading only the local database, so an .envrc can run
+`zb bundle check || zb bundle install` instead of downloading on every
+run.
+
+Closes #376
+
+Assisted-by: Claude Code
+---
+ CHANGELOG.md                  |   3 +
+ README.md                     |   1 +
+ zb_cli/src/cli.rs             |  23 ++++++
+ zb_cli/src/commands/bundle.rs | 128 ++++++++++++++++++++++++++++++++++
+ 4 files changed, 155 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 823d138..5878c1e 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ 
+ ## [Unreleased]
+ 
++### Added
++- `zb bundle check` reports the packages in a Brewfile that are not installed and exits non-zero if there are any, without downloading anything, so `zb bundle check || zb bundle install` can run from an `.envrc` like `brew bundle check` ([#376](https://github.com/zerobrewhq/zerobrew/issues/376))
++
+ ### Changed
+ - The Homebrew tap is `zerobrewhq/tap`: `brew install zerobrewhq/tap/zerobrew`. The repository was renamed from `homebrew-zerobrew`, so taps of `zerobrewhq/zerobrew` and `cachebag/zerobrew` keep updating through GitHub's redirect
+ 
+diff --git a/README.md b/README.md
+index 83719f0..b1ea144 100644
+--- a/README.md
++++ b/README.md
+@@ -94,6 +94,7 @@ zb install jq                   # install one package
+ zb install wget git             # install multiple
+ zb bundle                       # install from Brewfile
+ zb bundle install -f myfile     # install from custom file
++zb bundle check                 # exit non-zero if anything in Brewfile is missing
+ zb bundle dump                  # export installed packages to Brewfile
+ zb bundle dump -f out --force   # dump to custom file (overwrite)
+ zb uninstall jq                 # uninstall one package
+diff --git a/zb_cli/src/cli.rs b/zb_cli/src/cli.rs
+index 9be49c1..5a64db2 100644
+--- a/zb_cli/src/cli.rs
++++ b/zb_cli/src/cli.rs
+@@ -68,6 +68,17 @@ mod tests {
+         assert_eq!(cli.concurrency, 4);
+     }
+ 
++    #[test]
++    fn parses_bundle_check() {
++        let cli = Cli::try_parse_from(["zb", "bundle", "check", "-f", "Brewfile.dev"]).unwrap();
++        match cli.command {
++            super::Commands::Bundle {
++                command: Some(super::BundleCommands::Check { file }),
++            } => assert_eq!(file, std::path::PathBuf::from("Brewfile.dev")),
++            _ => panic!("expected `bundle check`"),
++        }
++    }
++
+     #[test]
+     fn rejects_zero_concurrency() {
+         let result = Cli::try_parse_from(["zb", "--concurrency", "0", "list"]);
+@@ -222,6 +233,18 @@ pub enum BundleCommands {
+         #[arg(long, help = "Do not create symlinks after installation")]
+         no_link: bool,
+     },
++    /// Check whether everything in a Brewfile is installed, without
++    /// installing or downloading anything
++    Check {
++        #[arg(
++            long,
++            short = 'f',
++            value_name = "FILE",
++            default_value = "Brewfile",
++            help = "Path to the Brewfile"
++        )]
++        file: PathBuf,
++    },
+     /// Dump installed packages to a Brewfile
+     Dump {
+         #[arg(
+diff --git a/zb_cli/src/commands/bundle.rs b/zb_cli/src/commands/bundle.rs
+index 6704a54..7d1ed32 100644
+--- a/zb_cli/src/commands/bundle.rs
++++ b/zb_cli/src/commands/bundle.rs
+@@ -6,6 +6,7 @@ use std::time::Instant;
+ use super::install;
+ use crate::cli::BundleCommands;
+ use crate::ui::StdUi;
++use crate::utils::normalize_formula_name;
+ 
+ pub async fn execute(
+     installer: &mut zb_io::Installer,
+@@ -19,10 +20,62 @@ pub async fn execute(
+         BundleCommands::Install { file, no_link } => {
+             install_from_file(installer, &file, no_link, ui).await
+         }
++        BundleCommands::Check { file } => check_file(installer, &file),
+         BundleCommands::Dump { file, force } => dump_to_file(installer, &file, force),
+     }
+ }
+ 
++/// Report the Brewfile's packages that are not installed, and fail if there
++/// are any, so `zb bundle check || zb bundle install` only installs when it
++/// has to. Nothing is fetched: the check only reads the local database.
++fn check_file(installer: &zb_io::Installer, manifest_path: &Path) -> Result<(), zb_core::Error> {
++    let entries = load_manifest(manifest_path)?;
++    let missing = missing_entries(&entries, |name| installer.is_installed(name))?;
++
++    if missing.is_empty() {
++        println!(
++            "{} The Brewfile's dependencies are satisfied.",
++            style("==>").cyan().bold()
++        );
++        return Ok(());
++    }
++
++    println!(
++        "{} {} of {} packages in {} are not installed:",
++        style("==>").cyan().bold(),
++        style(missing.len()).red().bold(),
++        entries.len(),
++        manifest_path.display()
++    );
++    for name in &missing {
++        println!("  {name}");
++    }
++
++    let install = if manifest_path == Path::new("Brewfile") {
++        "zb bundle install".to_string()
++    } else {
++        format!("zb bundle install -f {}", manifest_path.display())
++    };
++    Err(zb_core::Error::ExecutionError {
++        message: format!("the Brewfile's dependencies are not satisfied (run `{install}`)"),
++    })
++}
++
++/// The entries whose installed name, as `zb install` would record it, is not
++/// installed. Entries are returned as written in the Brewfile.
++fn missing_entries(
++    entries: &[String],
++    is_installed: impl Fn(&str) -> bool,
++) -> Result<Vec<String>, zb_core::Error> {
++    let mut missing = Vec::new();
++    for entry in entries {
++        if !is_installed(&normalize_formula_name(entry)?) {
++            missing.push(entry.clone());
++        }
++    }
++    Ok(missing)
++}
++
+ async fn install_from_file(
+     installer: &mut zb_io::Installer,
+     manifest_path: &Path,
+@@ -236,6 +289,81 @@ mod tests {
+         );
+     }
+ 
++    fn installer_with(installed: &[&str]) -> (zb_io::Installer, tempfile::TempDir) {
++        let tmp = tempfile::TempDir::new().unwrap();
++        let root = tmp.path().join("zerobrew");
++        let prefix = tmp.path().join("homebrew");
++        std::fs::create_dir_all(root.join("db")).unwrap();
++
++        let mut db = zb_io::Database::open(&root.join("db/zb.sqlite3")).unwrap();
++        let tx = db.transaction().unwrap();
++        for name in installed {
++            tx.record_install(name, "1.0.0", "store-key").unwrap();
++        }
++        tx.commit().unwrap();
++
++        let installer = zb_io::Installer::new(
++            zb_io::ApiClient::with_base_url("http://127.0.0.1:9".to_string()).unwrap(),
++            zb_io::BlobCache::new(&root.join("cache")).unwrap(),
++            zb_io::Store::new(&root).unwrap(),
++            zb_io::Cellar::new(&root).unwrap(),
++            zb_io::Linker::new(&prefix).unwrap(),
++            db,
++            prefix,
++            root.join("locks"),
++        );
++        (installer, tmp)
++    }
++
++    fn brewfile(contents: &str) -> tempfile::NamedTempFile {
++        let mut file = tempfile::NamedTempFile::new().unwrap();
++        write!(file, "{contents}").unwrap();
++        file
++    }
++
++    #[test]
++    fn check_passes_when_everything_is_installed() {
++        let (installer, _tmp) =
++            installer_with(&["jq", "hashicorp/tap/terraform", "cask:docker-desktop"]);
++        let file = brewfile(
++            "tap \"hashicorp/tap\"\nbrew \"jq\"\nbrew \"hashicorp/tap/terraform\"\ncask \"docker-desktop\"\n",
++        );
++
++        check_file(&installer, file.path()).unwrap();
++    }
++
++    #[test]
++    fn check_fails_when_a_package_is_missing() {
++        let (installer, _tmp) = installer_with(&["jq"]);
++        let file = brewfile("brew \"jq\"\nbrew \"wget\"\n");
++
++        let err = check_file(&installer, file.path()).unwrap_err();
++        match err {
++            zb_core::Error::ExecutionError { message } => {
++                assert!(message.contains("not satisfied"), "{message}")
++            }
++            other => panic!("expected execution error, got {other:?}"),
++        }
++    }
++
++    #[test]
++    fn missing_entries_uses_installed_names() {
++        let installed = ["jq", "cask:docker-desktop", "hashicorp/tap/terraform"];
++        let entries: Vec<String> = [
++            "homebrew/core/jq",
++            "homebrew/cask/docker-desktop",
++            "hashicorp/tap/terraform",
++            "cask:firefox",
++            "wget",
++        ]
++        .iter()
++        .map(|s| s.to_string())
++        .collect();
++
++        let missing = missing_entries(&entries, |name| installed.contains(&name)).unwrap();
++        assert_eq!(missing, vec!["cask:firefox", "wget"]);
++    }
++
+     #[test]
+     fn parse_brewfile_entry_skips_tap_directive() {
+         assert_eq!(parse_brewfile_entry("tap \"homebrew/core\""), None);
+-- 
+2.43.0
+
