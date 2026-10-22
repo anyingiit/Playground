@@ -1,0 +1,197 @@
+From 22604576ce95c4cf31625be0023caccd386ea80f Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:35:26 +0000
+Subject: [PATCH] fix: shell completion follow-ups from #250 review (#259)
+
+- zsh: exclusion groups now match the binary. --json/--jsonl and
+  --table/--no-table may be combined (the last one wins); only --markdown
+  conflicts with --json, --jsonl and --no-header.
+- zsh: --root completes a comma-separated directory list, like bash.
+- tests/completions_test.zig: a flag only counts when it is named by a
+  completion spec, so a mention in a comment, in another option's
+  exclusion group or in a description no longer satisfies the drift test.
+- README: macOS Terminal reads ~/.bash_profile; the zsh steps create the
+  directory and add it to fpath before compinit.
+---
+ README.md                  |  8 +++-
+ completions/_csvql         | 14 +++----
+ tests/completions_test.zig | 82 ++++++++++++++++++++++++++++++++++----
+ 3 files changed, 88 insertions(+), 16 deletions(-)
+
+diff --git a/README.md b/README.md
+index f471854..c56f627 100644
+--- a/README.md
++++ b/README.md
+@@ -162,11 +162,15 @@ sudo cp zig-out/bin/csvql /usr/local/bin/
+ **Shell completions** for bash and zsh live in [`completions/`](completions/). They complete the flags in `csvql --help`, the `install` subcommand and file paths.
+ 
+ ```bash
+-# bash: add to ~/.bashrc
++# bash: add to ~/.bashrc (on macOS, Terminal opens login shells, so use ~/.bash_profile)
+ source /path/to/csvql/completions/csvql.bash
+ 
+-# zsh: put _csvql on your fpath before compinit
++# zsh: put _csvql in a directory on your fpath
++mkdir -p ~/.zsh/completions
+ cp completions/_csvql ~/.zsh/completions/_csvql
++# then in ~/.zshrc, before compinit runs:
++#   fpath=(~/.zsh/completions $fpath)
++#   autoload -Uz compinit && compinit
+ ```
+ 
+ ## Performance
+diff --git a/completions/_csvql b/completions/_csvql
+index e799fb9..3249279 100644
+--- a/completions/_csvql
++++ b/completions/_csvql
+@@ -17,21 +17,21 @@ fi
+ _arguments -S \
+     '(- *)'{-h,--help}'[show help]' \
+     '(- *)'{-v,--version}'[show version]' \
+-    '--no-header[suppress header row in output]' \
++    '(--markdown)--no-header[suppress header row in output]' \
+     '--no-input-header[treat the first row as data, name columns c1..cN]' \
+     '(-o --output)'{-o,--output}'[write results to a file instead of stdout]:output file:_files' \
+     '(-d --delimiter)'{-d,--delimiter}'[field delimiter]:delimiter: ' \
+-    '(--jsonl --table --no-table --markdown)--json[output a JSON array of objects]' \
+-    '(--json --table --no-table --markdown)--jsonl[output newline-delimited JSON]' \
+-    '(--json --jsonl --no-table --markdown)--table[always render output as a table]' \
+-    '(--json --jsonl --table --markdown)--no-table[never render output as a table]' \
+-    '(--json --jsonl --table --no-table)--markdown[render output as a Markdown table]' \
++    '(--markdown)--json[output a JSON array of objects]' \
++    '(--markdown)--jsonl[output newline-delimited JSON]' \
++    '--table[always render output as a table]' \
++    '--no-table[never render output as a table]' \
++    '(--json --jsonl --no-header)--markdown[render output as a Markdown table]' \
+     '--wrap[wrap long cell text across lines]' \
+     '--threads[worker threads for parallel execution (0 = auto)]:threads: ' \
+     '--strict[error on non-numeric values in WHERE numeric comparisons]' \
+     '--schema[show column names, inferred types, row count, file size]:csv file:_files' \
+     '--mcp[start as an MCP server]' \
+-    '--root[confine file access to these directories]:directories:_files -/' \
++    '--root[confine file access to these directories]:directories:{_dir_list -s ,}' \
+     '--audit[append a JSONL record per query]:audit file:_files' \
+     '1:file or subcommand: _alternative "subcommands:subcommand:(install)" "files:file:_files"' \
+     '*:file or query:_files'
+diff --git a/tests/completions_test.zig b/tests/completions_test.zig
+index a2c1d0e..56e8d86 100644
+--- a/tests/completions_test.zig
++++ b/tests/completions_test.zig
+@@ -1,7 +1,8 @@
+ // Shell completion drift tests (#73): every flag listed in the OPTIONS block of
+-// `csvql --help` (the `help_text` literal in src/main.zig) must appear in both
+-// completions/csvql.bash and completions/_csvql, so adding a flag without
+-// updating the completions fails here.
++// `csvql --help` (the `help_text` literal in src/main.zig) must appear in a
++// completion spec line of both completions/csvql.bash and completions/_csvql,
++// so adding a flag without updating the completions fails here. Comments do
++// not count (#259).
+ const std = @import("std");
+ 
+ const main_source = @embedFile("main_source");
+@@ -25,6 +26,41 @@ fn containsWord(text: []const u8, word: []const u8) bool {
+     return false;
+ }
+ 
++/// True when `line` is part of a completion spec rather than a comment or
++/// shell plumbing: in bash the word lists passed to `compgen -W`, in zsh the
++/// quoted `_arguments` specs and the `compadd` for `install --print`.
++fn isSpecLine(line: []const u8) bool {
++    const trimmed = std.mem.trim(u8, line, " \t\r");
++    if (trimmed.len == 0 or trimmed[0] == '#') return false;
++    if (std.mem.indexOf(u8, trimmed, "compgen -W") != null) return true;
++    return trimmed[0] == '\'' or std.mem.startsWith(u8, trimmed, "compadd ");
++}
++
++/// The part of a spec line that names options. For a zsh `_arguments` spec
++/// such as `'(--json --jsonl)--markdown[text]'` that is `--markdown`: the
++/// leading exclusion group and the `[description]` are dropped, so a flag
++/// listed only in another option's exclusion group does not count.
++fn specNames(line: []const u8) []const u8 {
++    var rest = std.mem.trim(u8, line, " \t\r");
++    if (rest.len == 0 or rest[0] != '\'') return rest; // bash word list, compadd
++    rest = rest[1..];
++    if (rest.len > 0 and rest[0] == '(') {
++        const close = std.mem.indexOfScalar(u8, rest, ')') orelse return rest;
++        rest = std.mem.trimLeft(u8, rest[close + 1 ..], "'");
++    }
++    return rest[0 .. std.mem.indexOfScalar(u8, rest, '[') orelse rest.len];
++}
++
++/// True when `word` occurs as a whole token in the option names of a spec
++/// line of `script`.
++fn specContainsWord(script: []const u8, word: []const u8) bool {
++    var lines = std.mem.splitScalar(u8, script, '\n');
++    while (lines.next()) |line| {
++        if (isSpecLine(line) and containsWord(specNames(line), word)) return true;
++    }
++    return false;
++}
++
+ /// Visit every flag in the OPTIONS block of the help text. Only the first
+ /// column of each entry is read, so flags mentioned in descriptions are skipped.
+ fn forEachHelpFlag(context: anytype, visit: fn (@TypeOf(context), []const u8) anyerror!void) !void {
+@@ -52,11 +88,11 @@ const Missing = struct {
+ 
+     fn check(self: *Missing, flag: []const u8) anyerror!void {
+         self.seen += 1;
+-        if (!containsWord(bash_completion, flag)) {
++        if (!specContainsWord(bash_completion, flag)) {
+             std.debug.print("completions/csvql.bash is missing {s}\n", .{flag});
+             self.missing += 1;
+         }
+-        if (!containsWord(zsh_completion, flag)) {
++        if (!specContainsWord(zsh_completion, flag)) {
+             std.debug.print("completions/_csvql is missing {s}\n", .{flag});
+             self.missing += 1;
+         }
+@@ -77,8 +113,8 @@ test "completions cover every flag in csvql --help" {
+ 
+ test "completions cover the install subcommand and its --print flag" {
+     for ([_][]const u8{ "install", "--print" }) |word| {
+-        try std.testing.expect(containsWord(bash_completion, word));
+-        try std.testing.expect(containsWord(zsh_completion, word));
++        try std.testing.expect(specContainsWord(bash_completion, word));
++        try std.testing.expect(specContainsWord(zsh_completion, word));
+     }
+ }
+ 
+@@ -88,3 +124,35 @@ test "containsWord matches whole flags only" {
+     try std.testing.expect(containsWord("{-h,--help}'[x]'", "--help"));
+     try std.testing.expect(!containsWord("--no-header", "--header"));
+ }
++
++test "specContainsWord ignores flags mentioned only in comments" {
++    const bash =
++        \\# keep --strict in sync with csvql --help
++        \\    COMPREPLY=( $(compgen -W '--json --jsonl' -- "$cur") )
++    ;
++    try std.testing.expect(specContainsWord(bash, "--json"));
++    try std.testing.expect(!specContainsWord(bash, "--strict"));
++
++    const zsh =
++        \\# --strict is documented in csvql --help
++        \\    compadd -- --print
++        \\    '(--markdown)--json[output a JSON array of objects]' \\
++    ;
++    try std.testing.expect(specContainsWord(zsh, "--json"));
++    try std.testing.expect(specContainsWord(zsh, "--print"));
++    try std.testing.expect(!specContainsWord(zsh, "--strict"));
++}
++
++test "specContainsWord ignores flags listed only in exclusion groups or descriptions" {
++    const zsh =
++        \\    '(--markdown)--json[output a JSON array, see --wrap]' \\
++        \\    '(-o --output)'{-o,--output}'[write results to a file]:output file:_files' \\
++        \\    '1:file or subcommand: _alternative "subcommands:subcommand:(install)"' \\
++    ;
++    try std.testing.expect(specContainsWord(zsh, "--json"));
++    try std.testing.expect(specContainsWord(zsh, "-o"));
++    try std.testing.expect(specContainsWord(zsh, "--output"));
++    try std.testing.expect(specContainsWord(zsh, "install"));
++    try std.testing.expect(!specContainsWord(zsh, "--markdown"));
++    try std.testing.expect(!specContainsWord(zsh, "--wrap"));
++}
+-- 
+2.43.0
+

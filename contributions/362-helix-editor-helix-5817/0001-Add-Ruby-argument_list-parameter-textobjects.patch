@@ -1,4 +1,4 @@
-From 16e4d3c0e3b0f9b8359e7072458b5ea1962ad2ed Mon Sep 17 00:00:00 2001
+From 6b500158a0ccf88199131b0484dc35775550cf8c Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Thu, 22 Oct 2026 20:42:54 +0000
 Subject: [PATCH] Add Ruby argument_list parameter textobjects
@@ -9,7 +9,7 @@ Subject: [PATCH] Add Ruby argument_list parameter textobjects
  2 files changed, 38 insertions(+)
 
 diff --git a/helix-term/tests/test/movement.rs b/helix-term/tests/test/movement.rs
-index 0a17c92..6592a2c 100644
+index 0a17c92..f1e0676 100644
 --- a/helix-term/tests/test/movement.rs
 +++ b/helix-term/tests/test/movement.rs
 @@ -842,3 +842,38 @@ async fn tree_sitter_motions_work_across_injections() -> anyhow::Result<()> {
@@ -18,7 +18,7 @@ index 0a17c92..6592a2c 100644
  }
 +
 +#[tokio::test(flavor = "multi_thread")]
-+async fn tree_sitter_motions_work_across_ruby_call_arguments() -> anyhow::Result<()> {
++async fn tree_sitter_motions_ruby_call_arguments() -> anyhow::Result<()> {
 +    test_with_config(
 +        AppBuilder::new().with_file("foo.rb", None),
 +        (

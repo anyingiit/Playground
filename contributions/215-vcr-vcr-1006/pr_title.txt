@@ -1,0 +1,1 @@
+Don't let cassette options modify the default cassette options

@@ -1,0 +1,157 @@
+From a944ad90a94bd36ff0659eb1deb25038d16ab000 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:50:34 +0000
+Subject: [PATCH] Use parent gateway database URLs in slice db providers
+
+configure_from_parent copies all of the parent's db provider settings to
+a slice except its gateways, whose database URLs come only from ENV vars.
+So when an app configured a database_url explicitly in its db provider
+(rather than via ENV), any slice with a db failed to start with
+"A database_url for gateway default is required to start :db."
+
+When no database URL for a slice's gateway is given in ENV, fall back to
+the URL of the parent's gateway with the same name (only when
+config.db.configure_from_parent is enabled). URLs from ENV still take
+precedence, and the parent's other gateways are still not copied to the
+slice.
+
+Fixes #1626
+---
+ CHANGELOG.md                          |  1 +
+ lib/hanami/providers/db.rb            | 11 +++-
+ spec/integration/db/db_slices_spec.rb | 78 +++++++++++++++++++++++++++
+ 3 files changed, 89 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 530ab23..6a110de 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -63,6 +63,7 @@ A complete Hanami app is composed of multiple gems. For a complete overview of c
+ - Give the index and create routes of `resources` with an uncountable name (like `news`) a name with an `_index` suffix (`news_index`). Previously these shared the `news` name with the show route, which left the index route without a usable name. (@timriley in #1643)
+ - Name the params for routes nested under `resources` after the resource name, rather than its `path:`. `resources :cafes, path: "coffee-shops" do resources :reviews end` now gives `/coffee-shops/:cafe_id/reviews`. Previously, a `path:` with a dash or a slash gave an invalid param name, and the nested routes did not match any request. Apps that use a `path:` and read the old param name (for example, `article_id` for `resources :posts, path: "articles"`) will need to read the new name (`post_id`). (@timriley in #1643)
+ - In request logs, include body params parsed by actions (such as from JSON request bodies). Parsed body params were missing from logs in Hanami 3.0 when body parsing moved into Hanami Action. (@timriley in #1649)
++- Slices with `config.db.configure_from_parent` (the default) now use the database URLs of their parent's db gateways when none are given in `ENV`, so that a `database_url` configured explicitly in the parent's db provider (rather than via `ENV`) no longer stops slices from starting their db. URLs from `ENV` still take precedence. (@anyingiit in #1626)
+ 
+ ### Security
+ 
+diff --git a/lib/hanami/providers/db.rb b/lib/hanami/providers/db.rb
+index 30817fb..cb7104f 100644
+--- a/lib/hanami/providers/db.rb
++++ b/lib/hanami/providers/db.rb
+@@ -193,7 +193,8 @@ module Hanami
+ 
+         config.gateways.each do |key, gw_config|
+           gw_config.database_url ||= database_urls_from_env.fetch(key) {
+-            raise Hanami::ComponentLoadError, "A database_url for gateway #{key} is required to start :db."
++            parent_database_url(key) ||
++              raise(Hanami::ComponentLoadError, "A database_url for gateway #{key} is required to start :db.")
+           }
+ 
+           ensure_database_gem(gw_config.database_url)
+@@ -204,6 +205,14 @@ module Hanami
+         end
+       end
+ 
++      # Returns the database URL of the parent's gateway with the given name, so that slices can
++      # use database URLs configured explicitly in the parent (rather than given in ENV vars).
++      def parent_database_url(key)
++        return unless apply_parent_config?
++
++        parent_db_provider.source.config.gateways[key]&.database_url
++      end
++
+       def apply_parent_gateway_config(key, gw_config)
+         parent_gw_config = parent_db_provider.source.config.gateways[key]
+ 
+diff --git a/spec/integration/db/db_slices_spec.rb b/spec/integration/db/db_slices_spec.rb
+index 66a3ab2..ac94373 100644
+--- a/spec/integration/db/db_slices_spec.rb
++++ b/spec/integration/db/db_slices_spec.rb
+@@ -270,6 +270,84 @@ RSpec.describe "DB / Slices", :app_integration do
+     end
+   end
+ 
++  specify "slices use database URLs configured explicitly in the parent db provider" do
++    with_tmp_directory(@dir = Dir.mktmpdir) do
++      write "config/app.rb", <<~RUBY
++        require "hanami"
++
++        module TestApp
++          class App < Hanami::App
++            config.logger.stream = File::NULL
++          end
++        end
++      RUBY
++
++      write "config/providers/db.rb", <<~RUBY
++        Hanami.app.configure_provider :db do
++          config.gateway :default do |gw|
++            gw.database_url = "#{sqlite_database_url(Pathname(@dir).realpath.join("app.db").to_s)}"
++          end
++        end
++      RUBY
++
++      write "slices/admin/relations/.keep", ""
++      write "slices/main/relations/.keep", ""
++
++      ENV.delete("DATABASE_URL")
++      ENV["MAIN__DATABASE_URL"] = sqlite_database_url(Pathname(@dir).realpath.join("main.db").to_s)
++
++      require "hanami/prepare"
++
++      # The parent's URL is used when no URL is given in ENV
++      expect(Admin::Slice["db.gateway"]).to be Hanami.app["db.gateway"]
++      expect(Admin::Slice["db.rom"].gateways.keys).to eq [:default]
++
++      # A URL given in ENV takes precedence over the parent's URL
++      expect(Main::Slice["db.gateway"]).not_to be Hanami.app["db.gateway"]
++      expect(Main::Slice["db.gateway"].connection.opts[:database]).to end_with "main.db"
++    end
++  end
++
++  specify "slices not configured from the parent do not use the parent's database URLs" do
++    with_tmp_directory(@dir = Dir.mktmpdir) do
++      write "config/app.rb", <<~RUBY
++        require "hanami"
++
++        module TestApp
++          class App < Hanami::App
++            config.logger.stream = File::NULL
++          end
++        end
++      RUBY
++
++      write "config/providers/db.rb", <<~RUBY
++        Hanami.app.configure_provider :db do
++          config.gateway :default do |gw|
++            gw.database_url = "#{sqlite_database_url(Pathname(@dir).realpath.join("app.db").to_s)}"
++          end
++        end
++      RUBY
++
++      write "config/slices/admin.rb", <<~RUBY
++        module Admin
++          class Slice < Hanami::Slice
++            config.db.configure_from_parent = false
++          end
++        end
++      RUBY
++
++      write "slices/admin/relations/.keep", ""
++
++      ENV.delete("DATABASE_URL")
++
++      require "hanami/prepare"
++
++      expect { Admin::Slice.prepare :db }.to raise_error(
++        Hanami::ComponentLoadError, "A database_url for gateway default is required to start :db."
++      )
++    end
++  end
++
+   specify "disabling sharing of config from the app" do
+     with_tmp_directory(@dir = Dir.mktmpdir) do
+       write "config/app.rb", <<~RUBY
+-- 
+2.43.0
+

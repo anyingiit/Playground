@@ -1,0 +1,100 @@
+From b09107ec267ae0e49c505b82d9dc87c4dbe06e18 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:51:17 +0000
+Subject: [PATCH] Don't let cassette options modify the default cassette
+ options
+
+Cassette#initialize merged the options into
+VCR.configuration.default_cassette_options without copying the default
+values, so a cassette shared the default match_requests_on array (and the
+tags array) with the configuration. Appending to a cassette's
+match_requests_on, or adding tags such as :preserve_exact_body_bytes,
+changed the defaults for every following cassette.
+
+Fixes #1006
+---
+ CHANGELOG.md                  |  1 +
+ lib/vcr/cassette.rb           | 11 ++++++++++-
+ spec/lib/vcr/cassette_spec.rb | 18 ++++++++++++++++++
+ 3 files changed, 29 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 546dc2a..7bf3862 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -3,6 +3,7 @@ Changelog
+ 
+ - [fix] Fix recompressing response to happen after replacing sensitive data (#951) by @cgunther
+ - [fix] Fix frozen string literal warning when recompressing response (#1073) by @cgunther
++- [fix] Don't let changes to a cassette's `match_requests_on`/`tags` modify `default_cassette_options` (#1006) by @anyingiit
+ 
+ ## 6.4.0 (Dec 11, 2025)
+ [Full Changelog](https://github.com/vcr/vcr/compare/v6.3.1...v6.4.0)
+diff --git a/lib/vcr/cassette.rb b/lib/vcr/cassette.rb
+index 6104793..b7251a3 100644
+--- a/lib/vcr/cassette.rb
++++ b/lib/vcr/cassette.rb
+@@ -57,7 +57,7 @@ module VCR
+     # @see VCR#insert_cassette
+     def initialize(name, options = {})
+       @name    = name
+-      @options = VCR.configuration.default_cassette_options.merge(options)
++      @options = default_options.merge(options)
+       @mutex   = Mutex.new
+ 
+       assert_valid_options!
+@@ -195,6 +195,15 @@ module VCR
+       end
+     end
+ 
++    # Copies the configured defaults so that modifying a cassette's option
++    # (e.g. `cassette.match_requests_on << :body`) does not change the
++    # defaults used by every other cassette.
++    def default_options
++      VCR.configuration.default_cassette_options.transform_values do |value|
++        Array === value || Hash === value ? value.dup : value
++      end
++    end
++
+     def extract_options
+       [:record_on_error, :erb, :match_requests_on, :re_record_interval, :clean_outdated_http_interactions,
+        :allow_playback_repeats, :allow_unused_http_interactions, :exclusive, :drop_unused_requests].each do |name|
+diff --git a/spec/lib/vcr/cassette_spec.rb b/spec/lib/vcr/cassette_spec.rb
+index 5852499..06af1b7 100644
+--- a/spec/lib/vcr/cassette_spec.rb
++++ b/spec/lib/vcr/cassette_spec.rb
+@@ -45,6 +45,16 @@ RSpec.describe VCR::Cassette do
+     it 'accepts an array as the :tags option' do
+       expect(VCR::Cassette.new("name", tags: [:foo]).tags).to eq([:foo])
+     end
++
++    it 'does not change the default :tags when adding tags for other options' do
++      VCR.configuration.default_cassette_options.merge!(tags: [:foo])
++
++      cassette = VCR::Cassette.new("name", preserve_exact_body_bytes: true)
++      expect(cassette.tags).to eq([:foo, :preserve_exact_body_bytes])
++
++      expect(VCR.configuration.default_cassette_options[:tags]).to eq([:foo])
++      expect(VCR::Cassette.new("another").tags).to eq([:foo])
++    end
+   end
+ 
+   describe '#record_http_interaction' do
+@@ -170,6 +180,14 @@ RSpec.describe VCR::Cassette do
+       c = VCR::Cassette.new('example')
+       expect(c.match_requests_on).to eq([:uri, :method])
+     end
++
++    it "does not change the default #match_requests_on when the cassette's list is modified" do
++      c = VCR::Cassette.new('example')
++      c.match_requests_on << :body
++
++      expect(VCR.configuration.default_cassette_options[:match_requests_on]).to eq([:uri, :method])
++      expect(VCR::Cassette.new('another').match_requests_on).to eq([:uri, :method])
++    end
+   end
+ 
+   describe "reading the file from disk" do
+-- 
+2.43.0
+

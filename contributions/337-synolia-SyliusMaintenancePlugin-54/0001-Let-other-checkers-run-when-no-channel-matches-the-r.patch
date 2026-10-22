@@ -1,0 +1,133 @@
+From 9895e0a4636629e83d5c7f662a5029a3508ab1fa Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:57:03 +0000
+Subject: [PATCH] Let other checkers run when no channel matches the request
+
+ChannelChecker runs before ProfilerChecker and TokenChecker. On a
+multi-channel store, a request whose hostname matches no channel (for
+example an admin-only hostname) made ChannelContext::getChannel() throw
+ChannelNotFoundException, so /_profiler, /_wdt and token access returned
+a 500 during maintenance.
+
+Catch the exception and return ACCESS_DENIED so the voter falls through
+to the remaining checkers.
+
+Fixes #54
+---
+ src/Checker/ChannelChecker.php               |  9 ++-
+ tests/PHPUnit/Checker/ChannelCheckerTest.php | 76 ++++++++++++++++++++
+ 2 files changed, 83 insertions(+), 2 deletions(-)
+ create mode 100644 tests/PHPUnit/Checker/ChannelCheckerTest.php
+
+diff --git a/src/Checker/ChannelChecker.php b/src/Checker/ChannelChecker.php
+index c113cbd..e5570af 100644
+--- a/src/Checker/ChannelChecker.php
++++ b/src/Checker/ChannelChecker.php
+@@ -5,6 +5,7 @@ declare(strict_types=1);
+ namespace Synolia\SyliusMaintenancePlugin\Checker;
+ 
+ use Sylius\Component\Channel\Context\ChannelContextInterface;
++use Sylius\Component\Channel\Context\ChannelNotFoundException;
+ use Sylius\Component\Channel\Repository\ChannelRepositoryInterface;
+ use Symfony\Component\HttpFoundation\Request;
+ use Synolia\SyliusMaintenancePlugin\Model\MaintenanceConfiguration;
+@@ -27,8 +28,12 @@ class ChannelChecker implements IsMaintenanceCheckerInterface
+ 
+     public function isMaintenance(MaintenanceConfiguration $configuration, Request $request): bool
+     {
+-        if ($this->channelRepository->count([]) > 1 && !\in_array($this->channelContext->getChannel()->getCode(), $configuration->getChannels(), true)) {
+-            return IsMaintenanceVoterInterface::ACCESS_GRANTED;
++        try {
++            if ($this->channelRepository->count([]) > 1 && !\in_array($this->channelContext->getChannel()->getCode(), $configuration->getChannels(), true)) {
++                return IsMaintenanceVoterInterface::ACCESS_GRANTED;
++            }
++        } catch (ChannelNotFoundException) {
++            // No channel matches the request hostname: let the next checkers decide
+         }
+ 
+         return IsMaintenanceVoterInterface::ACCESS_DENIED;
+diff --git a/tests/PHPUnit/Checker/ChannelCheckerTest.php b/tests/PHPUnit/Checker/ChannelCheckerTest.php
+new file mode 100644
+index 0000000..4e516bf
+--- /dev/null
++++ b/tests/PHPUnit/Checker/ChannelCheckerTest.php
+@@ -0,0 +1,76 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Tests\Synolia\SyliusMaintenancePlugin\PHPUnit\Checker;
++
++use PHPUnit\Framework\TestCase;
++use Sylius\Component\Channel\Context\ChannelContextInterface;
++use Sylius\Component\Channel\Context\ChannelNotFoundException;
++use Sylius\Component\Channel\Model\ChannelInterface;
++use Sylius\Component\Channel\Repository\ChannelRepositoryInterface;
++use Symfony\Component\HttpFoundation\Request;
++use Synolia\SyliusMaintenancePlugin\Checker\ChannelChecker;
++use Synolia\SyliusMaintenancePlugin\Model\MaintenanceConfiguration;
++use Synolia\SyliusMaintenancePlugin\Voter\IsMaintenanceVoterInterface;
++
++final class ChannelCheckerTest extends TestCase
++{
++    public function testAccessIsGrantedOnAChannelNotInMaintenance(): void
++    {
++        $channel = $this->createMock(ChannelInterface::class);
++        $channel->method('getCode')->willReturn('FASHION_WEB');
++
++        $channelContext = $this->createMock(ChannelContextInterface::class);
++        $channelContext->method('getChannel')->willReturn($channel);
++
++        self::assertSame(
++            IsMaintenanceVoterInterface::ACCESS_GRANTED,
++            $this->createChecker($channelContext)->isMaintenance($this->createConfiguration(), new Request()),
++        );
++    }
++
++    public function testAccessIsDeniedOnAChannelInMaintenance(): void
++    {
++        $channel = $this->createMock(ChannelInterface::class);
++        $channel->method('getCode')->willReturn('test');
++
++        $channelContext = $this->createMock(ChannelContextInterface::class);
++        $channelContext->method('getChannel')->willReturn($channel);
++
++        self::assertSame(
++            IsMaintenanceVoterInterface::ACCESS_DENIED,
++            $this->createChecker($channelContext)->isMaintenance($this->createConfiguration(), new Request()),
++        );
++    }
++
++    public function testDecisionIsLeftToOtherCheckersWhenNoChannelMatchesTheRequest(): void
++    {
++        $channelContext = $this->createMock(ChannelContextInterface::class);
++        $channelContext->method('getChannel')->willThrowException(new ChannelNotFoundException());
++
++        self::assertSame(
++            IsMaintenanceVoterInterface::ACCESS_DENIED,
++            $this->createChecker($channelContext)->isMaintenance($this->createConfiguration(), new Request()),
++        );
++    }
++
++    private function createChecker(ChannelContextInterface $channelContext): ChannelChecker
++    {
++        // count() is provided by the Doctrine repository implementation, not by the interface
++        $channelRepository = $this->getMockBuilder(ChannelRepositoryInterface::class)
++            ->addMethods(['count'])
++            ->getMockForAbstractClass();
++        $channelRepository->method('count')->willReturn(2);
++
++        return new ChannelChecker($channelRepository, $channelContext);
++    }
++
++    private function createConfiguration(): MaintenanceConfiguration
++    {
++        $configuration = new MaintenanceConfiguration();
++        $configuration->setChannels(['test']);
++
++        return $configuration;
++    }
++}
+-- 
+2.43.0
+

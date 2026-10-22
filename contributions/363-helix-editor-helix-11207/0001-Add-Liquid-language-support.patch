@@ -1,4 +1,4 @@
-From 3358a8389b3a715a4d8f0d552a43457f99b1b015 Mon Sep 17 00:00:00 2001
+From d4339c141b688d0492419d83078ae3529de665b9 Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Thu, 22 Oct 2026 20:47:19 +0000
 Subject: [PATCH] Add Liquid language support
@@ -6,10 +6,10 @@ Subject: [PATCH] Add Liquid language support
 ---
  book/src/generated/lang-support.md        |   1 +
  languages.toml                            |  12 ++
- runtime/queries/liquid/highlights.scm     | 128 ++++++++++++++++++++++
+ runtime/queries/liquid/highlights.scm     | 131 ++++++++++++++++++++++
  runtime/queries/liquid/injections.scm     |  22 ++++
- tests/query/highlights/liquid/tags.liquid |  21 ++++
- 5 files changed, 184 insertions(+)
+ tests/query/highlights/liquid/tags.liquid |  25 +++++
+ 5 files changed, 191 insertions(+)
  create mode 100644 runtime/queries/liquid/highlights.scm
  create mode 100644 runtime/queries/liquid/injections.scm
  create mode 100644 tests/query/highlights/liquid/tags.liquid
@@ -27,13 +27,14 @@ index eac6942..f356978 100644
  | llvm-mir | ✓ | ✓ | ✓ |  |  |  |
  | llvm-mir-yaml | ✓ |  | ✓ |  |  |  |
 diff --git a/languages.toml b/languages.toml
-index a5403e6..e6b62a5 100644
+index a5403e6..08507fb 100644
 --- a/languages.toml
 +++ b/languages.toml
-@@ -1411,6 +1411,18 @@ indent = { tab-width = 2, unit = "  " }
- name = "twig"
- source = { git = "https://github.com/gbprod/tree-sitter-twig", rev = "0afd9a6d808944e65a7be393e31868b85345735f" }
- 
+@@ -5655,3 +5655,15 @@ comment-tokens = ["REM", "::"]
+ [[grammar]]
+ name = "batch"
+ source = { git = "https://github.com/wharflab/tree-sitter-batch", rev = "5fc5f54267ef9a78e7a5319b80e092194252aabf" }
++
 +[[language]]
 +name = "liquid"
 +scope = "source.liquid"
@@ -45,19 +46,17 @@ index a5403e6..e6b62a5 100644
 +[[grammar]]
 +name = "liquid"
 +source = { git = "https://github.com/hankthetank27/tree-sitter-liquid", rev = "e45dbac8c5fa95b1f0e00e7e0c04bc8855823391" }
-+
- [[language]]
- name = "latex"
- scope = "source.tex"
 diff --git a/runtime/queries/liquid/highlights.scm b/runtime/queries/liquid/highlights.scm
 new file mode 100644
-index 0000000..497eb45
+index 0000000..4f34c32
 --- /dev/null
 +++ b/runtime/queries/liquid/highlights.scm
-@@ -0,0 +1,128 @@
+@@ -0,0 +1,131 @@
 +(raw_statement) @markup.raw
 +
 +(identifier) @variable
++((identifier) @constant.builtin
++  (#any-of? @constant.builtin "nil" "empty" "blank"))
 +
 +(string) @string
 +
@@ -95,6 +94,7 @@ index 0000000..497eb45
 +  "|"
 +  ":"
 +  "="
++  ".."
 +  (predicate)
 +] @operator
 +
@@ -213,10 +213,10 @@ index 0000000..517f2b7
 +  (#set! injection.language "yaml"))
 diff --git a/tests/query/highlights/liquid/tags.liquid b/tests/query/highlights/liquid/tags.liquid
 new file mode 100644
-index 0000000..e78b4fd
+index 0000000..a45dcff
 --- /dev/null
 +++ b/tests/query/highlights/liquid/tags.liquid
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,25 @@
 +{% if user.name == "x" and true %}
 +// ^ @keyword.control.conditional
 +//    ^ @variable
@@ -238,6 +238,10 @@ index 0000000..e78b4fd
 +//          ^ @markup.raw
 +{% comment %} a comment {% endcomment %}
 +//              ^ @comment
++{% for i in (1..5) %}{% if x == empty or y == nil %}{% endif %}{% endfor %}
++//            ^ @operator
++//                                 ^ @constant.builtin
++//                                             ^ @constant.builtin
 -- 
 2.43.0
 

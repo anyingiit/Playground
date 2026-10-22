@@ -5,7 +5,7 @@
 | Issue | https://github.com/helix-editor/helix/issues/5817 |
 | Tier | 高星（helix ~45k★） |
 | Labels | A-language-support, C-enhancement |
-| Status | 🚧 待独立复核 |
+| Status | ✅ 待提交（独立复核 PASS） |
 | 重复 PR 检查 | 2026-10-22 21:00 UTC：`is:pr 5817` 0 条；`ruby textobjects` 只有已合并的 #2143、#4601（2022 年的旧改动）；issue 无 assignee、无关联 PR |
 | AI 政策 | 无（同 360），正文含披露 |
 | Base | `master` @ ba40e54 |
@@ -32,4 +32,6 @@ tools/submit_pr.sh $D helix-editor/helix master ruby-argument-textobjects $D/pr_
 ```
 
 ## 独立复核
-（待补）
+**PASS**（独立 agent，干净克隆 ba40e54）：git am 干净；红（仅回退 .scm，光标不动）→绿；query-check ruby 通过；无竞争 PR（搜 5817 / ruby argument / ruby textobject）。
+边界探测：`super(*a, **{..}.merge(opts))`、`foo(a: 1, &blk)`、嵌套调用、`puts *a, **h`、带块调用、`[a`、`mia`/`maa` 均正确；`def f(a, b)` 旧行为不变。
+已采纳：PR 正文补充 yield/return/break/next 也用 argument_list；`ma`→`maa`；测试重命名为 `tree_sitter_motions_ruby_call_arguments`（重跑通过）。
