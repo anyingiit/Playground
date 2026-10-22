@@ -31,3 +31,4 @@
 | 274 | [dry-rb/dry-validation#741](https://github.com/dry-rb/dry-validation/issues/741) | **已提交** [#524](https://github.com/dry-rb/dry-schema/pull/524) |
 | 248 | [open-nexus-OS/open-nexus-OS#47](https://github.com/open-nexus-OS/open-nexus-OS/issues/47) | 待提交：base `main`；**需先在 issue 评论认领**；**CLA**（cla-assistant，PR 下评论签署后编辑一次 PR 描述触发重跑）；无 DCO；不加 `--signoff`/`--trailer`（仓库禁 Co-authored-by） |
 | 212 | [troessner/reek#1476](https://github.com/troessner/reek/issues/1476) | 待提交（base `master`；无需认领；无 DCO/CLA；复核 PASS（两轮）；与 211 同仓库、互不冲突） |
+| 420 | [opendatahub-io/ai-gateway-payload-processing#315](https://github.com/opendatahub-io/ai-gateway-payload-processing/issues/315) | 待提交（base `main`；无需认领；DCO：补丁已带 anyingiit 的 Signed-off-by；无 CLA；Go 测试文件合并；复核 PASS） |
