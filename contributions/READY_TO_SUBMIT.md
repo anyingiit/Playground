@@ -103,3 +103,4 @@
 | 284 | [tuProlog/2p-kt#945](https://github.com/tuProlog/2p-kt/issues/945) | 待提交（base `master`；无需认领；无 DCO/CLA；Kotlin；自由；复核 PASS；注意：我们已有 2p-kt #1044 待审，外部 PR 10/5 起仍未审，合并慢，优先级低于其他仓库） |
 | 342 | [stevearc/conform.nvim#877](https://github.com/stevearc/conform.nvim/issues/877) | master | 无需认领；无 DCO、无 CLA；Lua；高星；复核 PASS |
 | 433 | [tuProlog/2p-kt#1005](https://github.com/tuProlog/2p-kt/issues/1005) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Kotlin；同仓库第 2 个（421 已提交为 #1044）；复核 PASS） |
+| 434 | [bpmn-io/bpmn-to-image#65](https://github.com/bpmn-io/bpmn-to-image/issues/65) | 待提交（base `main`；无需认领；**需签 bpmn-io CLA assistant**（与 432 同一 CLA）；纯 README 文档；用 `Related to #65` 不关闭 issue；PR 模板标题/清单勿改；复核 PASS） |

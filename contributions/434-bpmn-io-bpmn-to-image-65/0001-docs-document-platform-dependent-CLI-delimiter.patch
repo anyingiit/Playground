@@ -1,0 +1,37 @@
+From f3ebd3cb70efb4762969deded326eb839f96fef9 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:53:11 +0000
+Subject: [PATCH] docs: document platform-dependent CLI delimiter
+
+The CLI separates `<diagramFile>` and `<outputConfig>` with
+`path.delimiter`, which is `;` on Windows, while the README only shows
+the `:` form. Explain the difference, show the Windows form of the first
+example and point out that it has to be quoted.
+
+Related to #65
+---
+ README.md | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/README.md b/README.md
+index fce5726..09d4d11 100644
+--- a/README.md
++++ b/README.md
+@@ -44,6 +44,14 @@ $ bpmn-to-image --help
+     $ bpmn-to-image --min-dimensions=500x300 diagram.bpmn:png
+ ```
+ 
++__Note:__ `<diagramFile>` and `<outputConfig>` are separated by the platform's path delimiter ([`path.delimiter`](https://nodejs.org/api/path.html#pathdelimiter)): `:` on Linux and macOS, but `;` on Windows, where `:` is part of absolute paths such as `C:\diagram.bpmn`. `bpmn-to-image --help` prints the delimiter for the current platform. On Windows, the first example therefore reads:
++
++```bash
++bpmn-to-image "diagram.bpmn;diagram.png"
++```
++
++Quote the argument, because shells such as PowerShell and Bash treat `;` as a command separator.
++
+ 
+ ## Embedding
+ 
+-- 
+2.43.0
+
