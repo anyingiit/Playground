@@ -1,0 +1,120 @@
+From 9452c49f70ddb9af8f44632f8d212a0a5ac896b1 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:46:32 +0000
+Subject: [PATCH] test(arch): forbid standard stream access in the core module
+
+The MCP server speaks JSON-RPC over stdio, so core must not write to
+System.out or System.err. Add ArchUnit's
+NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS rule to CoreArchitectureTest
+and move the four System.err warnings in ActuatorClient and
+HikariMXBeanClient to System.Logger, as JvmAttachService already does.
+
+Fixes #177
+---
+ .../java/dev/jvmmcp/core/jmx/HikariMXBeanClient.java     | 5 ++++-
+ .../main/java/dev/jvmmcp/core/spring/ActuatorClient.java | 9 ++++++---
+ .../jvmmcp/core/architecture/CoreArchitectureTest.java   | 5 +++++
+ 3 files changed, 15 insertions(+), 4 deletions(-)
+
+diff --git a/core/src/main/java/dev/jvmmcp/core/jmx/HikariMXBeanClient.java b/core/src/main/java/dev/jvmmcp/core/jmx/HikariMXBeanClient.java
+index 25aaa3c..c3c0200 100644
+--- a/core/src/main/java/dev/jvmmcp/core/jmx/HikariMXBeanClient.java
++++ b/core/src/main/java/dev/jvmmcp/core/jmx/HikariMXBeanClient.java
+@@ -7,6 +7,7 @@ import dev.jvmmcp.core.port.HikariDiagnosticPort;
+ import javax.management.MBeanServerConnection;
+ import javax.management.ObjectName;
+ import java.io.IOException;
++import java.lang.System.Logger;
+ import java.util.ArrayList;
+ import java.util.LinkedHashSet;
+ import java.util.List;
+@@ -14,6 +15,8 @@ import java.util.Set;
+ 
+ public class HikariMXBeanClient implements HikariDiagnosticPort {
+ 
++    private static final Logger LOGGER = System.getLogger(HikariMXBeanClient.class.getName());
++
+     private static final String HIKARI_POOL_DOMAIN = "com.zaxxer.hikari";
+ 
+     private final MBeanServerConnection mbsc;
+@@ -50,7 +53,7 @@ public class HikariMXBeanClient implements HikariDiagnosticPort {
+                 try {
+                     pools.add(readPool(poolName));
+                 } catch (IOException e) {
+-                    System.err.println("[jvm-mcp] Skipping unreadable HikariCP pool " + poolName + ": " + e.getMessage());
++                    LOGGER.log(Logger.Level.WARNING, "Skipping unreadable HikariCP pool {0}: {1}", poolName, e.getMessage());
+                 }
+             }
+ 
+diff --git a/core/src/main/java/dev/jvmmcp/core/spring/ActuatorClient.java b/core/src/main/java/dev/jvmmcp/core/spring/ActuatorClient.java
+index edcbdc5..0ff30f4 100644
+--- a/core/src/main/java/dev/jvmmcp/core/spring/ActuatorClient.java
++++ b/core/src/main/java/dev/jvmmcp/core/spring/ActuatorClient.java
+@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream;
+ import java.io.IOException;
+ import java.io.InputStream;
+ import java.io.UncheckedIOException;
++import java.lang.System.Logger;
+ import java.net.Socket;
+ import java.net.URI;
+ import java.net.http.HttpClient;
+@@ -35,6 +36,8 @@ import java.util.zip.InflaterInputStream;
+  */
+ public class ActuatorClient {
+ 
++    private static final Logger LOGGER = System.getLogger(ActuatorClient.class.getName());
++
+     private static final long MAX_PAYLOAD_SIZE = 30L * 1024 * 1024; // 30MB
+     private final String baseUrl;
+     private final ActuatorAuth auth;
+@@ -108,7 +111,7 @@ public class ActuatorClient {
+             .connectTimeout(Duration.ofMillis(3000))
+             .followRedirects(HttpClient.Redirect.NEVER);
+         if (auth.insecure()) {
+-            System.err.println("[jvm-mcp] WARNING: Insecure TLS mode enabled for Actuator. Server certificate verification is disabled.");
++            LOGGER.log(Logger.Level.WARNING, "Insecure TLS mode enabled for Actuator. Server certificate verification is disabled.");
+             builder.sslContext(trustAllSslContext());
+         }
+         return builder.build();
+@@ -326,7 +329,7 @@ public class ActuatorClient {
+                         }
+                     })
+                     .exceptionally(ex -> {
+-                        System.err.println("Failed to fetch metric " + name + ": " + ex.getMessage());
++                        LOGGER.log(Logger.Level.WARNING, "Failed to fetch metric {0}: {1}", name, ex.getMessage());
+                         return dev.jvmmcp.core.util.SimpleJson.toJson(name) + ": {\"error\": \"Failed to fetch\"}"; 
+                     });
+             })
+@@ -339,7 +342,7 @@ public class ActuatorClient {
+         try {
+             allFutures.join();
+         } catch (Exception ex) {
+-            System.err.println("Batch metrics operation timed out: " + ex.getMessage());
++            LOGGER.log(Logger.Level.WARNING, "Batch metrics operation timed out: {0}", ex.getMessage());
+         }
+ 
+         return futures.stream()
+diff --git a/core/src/test/java/dev/jvmmcp/core/architecture/CoreArchitectureTest.java b/core/src/test/java/dev/jvmmcp/core/architecture/CoreArchitectureTest.java
+index 0e6ad6b..506d158 100644
+--- a/core/src/test/java/dev/jvmmcp/core/architecture/CoreArchitectureTest.java
++++ b/core/src/test/java/dev/jvmmcp/core/architecture/CoreArchitectureTest.java
+@@ -6,6 +6,7 @@ import com.tngtech.archunit.junit.ArchTest;
+ import com.tngtech.archunit.lang.ArchRule;
+ 
+ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
++import static com.tngtech.archunit.library.GeneralCodingRules.NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS;
+ 
+ @AnalyzeClasses(packages = "dev.jvmmcp.core", importOptions = ImportOption.DoNotIncludeTests.class)
+ public class CoreArchitectureTest {
+@@ -33,4 +34,8 @@ public class CoreArchitectureTest {
+             "dev.jvmmcp.core.spring.."
+         )
+         .because("Domain model records must remain pure DTOs without coupling to reader/service infrastructure");
++
++    @ArchTest
++    static final ArchRule coreMustNotWriteToStandardStreams = NO_CLASSES_SHOULD_ACCESS_STANDARD_STREAMS
++        .because("The MCP server speaks JSON-RPC over stdio, so core must log through System.Logger instead of writing to System.out or System.err");
+ }
+-- 
+2.43.0
+
