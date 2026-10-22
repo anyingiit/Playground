@@ -1,0 +1,49 @@
+From 10ba9cf269d7fd8ca2bbdfbf21bed82d4ebe70d3 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:23:09 +0000
+Subject: [PATCH] Add cucumber-language-server for gherkin
+
+---
+ book/src/generated/lang-support.md | 2 +-
+ languages.toml                     | 5 +++++
+ 2 files changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/book/src/generated/lang-support.md b/book/src/generated/lang-support.md
+index eac6942..8789279 100644
+--- a/book/src/generated/lang-support.md
++++ b/book/src/generated/lang-support.md
+@@ -88,7 +88,7 @@
+ | gas | ✓ | ✓ |  |  |  | `asm-lsp` |
+ | gdscript | ✓ | ✓ | ✓ | ✓ | ✓ | `ncat` |
+ | gemini | ✓ |  |  |  |  |  |
+-| gherkin | ✓ |  |  |  |  |  |
++| gherkin | ✓ |  |  |  |  | `cucumber-language-server` |
+ | ghostty | ✓ |  |  |  |  | `ghostty-ls` |
+ | git-attributes | ✓ |  |  |  |  |  |
+ | git-cliff-config | ✓ | ✓ |  |  | ✓ | `taplo`, `tombi` |
+diff --git a/languages.toml b/languages.toml
+index a5403e6..3bd204d 100644
+--- a/languages.toml
++++ b/languages.toml
+@@ -321,6 +321,10 @@ mode = "location"
+ command = "clarinet"
+ args = ["lsp"]
+ 
++[language-server.cucumber-language-server]
++command = "cucumber-language-server"
++args = ["--stdio"]
++
+ [language-server.docker-language-server]
+ command = "docker-language-server"
+ args = ["start", "--stdio"]
+@@ -4633,6 +4637,7 @@ scope = "source.feature"
+ file-types = ["feature"]
+ comment-token = "#"
+ indent = { tab-width = 2, unit = "  " }
++language-servers = [ "cucumber-language-server" ]
+ 
+ [[grammar]]
+ name = "gherkin"
+-- 
+2.43.0
+
