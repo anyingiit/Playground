@@ -1,0 +1,1 @@
+Fix #18: glk_set_echo_line_event() no longer affects a pending line input request

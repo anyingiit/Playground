@@ -93,6 +93,10 @@
 | 338 | [thephpleague/openapi-psr7-validator#273](https://github.com/thephpleague/openapi-psr7-validator/issues/273) | **已提交** [#275](https://github.com/thephpleague/openapi-psr7-validator/pull/275) |
 | 283 | [devonfw/IDEasy#1214](https://github.com/devonfw/IDEasy/issues/1214) | **已提交** [#2737](https://github.com/devonfw/IDEasy/pull/2737)（CLA 待 owner 签） |
 | 428 | [OpenCHAMI/ochami#191](https://github.com/OpenCHAMI/ochami/issues/191) | **已提交** [#216](https://github.com/OpenCHAMI/ochami/pull/216) |
-| 339 | [hrsh7th/nvim-cmp#2232](https://github.com/hrsh7th/nvim-cmp/issues/2232) | main | 无需认领；无 DCO、无 CLA；Lua；高星；复核 PASS |
+| 339 | [hrsh7th/nvim-cmp#2232](https://github.com/hrsh7th/nvim-cmp/issues/2232) | **已提交** [#2234](https://github.com/hrsh7th/nvim-cmp/pull/2234) |
+| 429 | [supabase/terraform-provider-supabase#372](https://github.com/supabase/terraform-provider-supabase/issues/372) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；高星；复核 PASS；未对真实 API 验证，正文已说明） |
+| 430 | [curiousdannii/remglk-rs#18](https://github.com/curiousdannii/remglk-rs/issues/18) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Rust；补丁含 2KB 二进制 .ulx，用 git am 应用；复核 PASS） |
+| 431 | [OpenCHAMI/ochami#206](https://github.com/OpenCHAMI/ochami/issues/206) | 待提交（base `main`；无需认领；DCO 已签；无 CLA；man 文档；同仓库第 4 个，最后提交；复核 PASS） |
+| 340 | [stevearc/oil.nvim#754](https://github.com/stevearc/oil.nvim/issues/754) | master | 无需认领；无 DCO、无 CLA；Lua；高星；复核 PASS |
 | 395 | [sinelaw/fresh#3074](https://github.com/sinelaw/fresh/issues/3074) | 待提交（base `master`；无需认领；无 DCO/CLA，PR 模板的 GPL 许可框已勾；Rust；新锐；复核 PASS；提交信息带 `Assisted-by: Claude Code`） |
 | 396 | [sinelaw/fresh#2944](https://github.com/sinelaw/fresh/issues/2944) | 待提交（base `master`；无需认领；无 DCO/CLA，PR 模板 GPL 许可框已勾；Rust；新锐；复核 PASS；与 395 同仓库不同文件） |

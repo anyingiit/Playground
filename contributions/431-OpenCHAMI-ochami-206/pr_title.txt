@@ -1,0 +1,1 @@
+docs(smd): document iface add and delete in ochami-smd(1)

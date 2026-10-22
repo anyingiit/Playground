@@ -1,0 +1,190 @@
+From 596c604bf727503c875a5ee7d789b43bcbca9909 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:26:20 +0000
+Subject: [PATCH] Fix #18: glk_set_echo_line_event() no longer affects a
+ pending line input request
+
+The Glk spec says glk_set_echo_line_event() "does not affect a pending
+line input request", but handle_line_input read the window's current echo
+setting. Record the echo setting when line input is requested and use
+that when the input arrives or the request is cancelled.
+
+Add echolinetest, a small Glulx test (Inform 6 source included) that
+changes the echo setting while a line request is pending in both
+directions.
+---
+ remglk/src/glkapi/mod.rs       |   4 ++-
+ remglk/src/glkapi/windows.rs   |   2 ++
+ tests/echolinetest.inf         |  59 +++++++++++++++++++++++++++++++++
+ tests/echolinetest.ulx         | Bin 0 -> 2048 bytes
+ tests/echolinetest.ulx.regtest |  17 ++++++++++
+ tests/runtests.sh              |   2 ++
+ 6 files changed, 83 insertions(+), 1 deletion(-)
+ create mode 100644 tests/echolinetest.inf
+ create mode 100644 tests/echolinetest.ulx
+ create mode 100644 tests/echolinetest.ulx.regtest
+
+diff --git a/remglk/src/glkapi/mod.rs b/remglk/src/glkapi/mod.rs
+index 6d2f40b..cab0a41 100644
+--- a/remglk/src/glkapi/mod.rs
++++ b/remglk/src/glkapi/mod.rs
+@@ -1618,7 +1618,7 @@ where S: Default + GlkSystem {
+ 
+     fn handle_line_input(&mut self, win: &mut GlkWindowMetadata, input: &str, termkey: Option<TerminatorCode>) -> GlkResult<'_, GlkEvent> {
+         let (request_echo_line_input, mut line_input_buffer) = match &mut win.data {
+-            WindowData::Buffer(data) => (data.echo_line_input, data.line_input_buffer.take().unwrap()),
++            WindowData::Buffer(data) => (data.line_input_echo, data.line_input_buffer.take().unwrap()),
+             WindowData::Grid(data) => (true, data.line_input_buffer.take().unwrap()),
+             _ => unreachable!(),
+         };
+@@ -1831,6 +1831,8 @@ where S: Default + GlkSystem {
+         match win.data {
+             WindowData::Buffer(ref mut data) => {
+                 data.line_input_buffer = Some(buf);
++                // glk_set_echo_line_event() does not affect a pending line input request
++                data.line_input_echo = data.echo_line_input;
+             },
+             WindowData::Grid(ref mut data) => {
+                 data.line_input_buffer = Some(buf);
+diff --git a/remglk/src/glkapi/windows.rs b/remglk/src/glkapi/windows.rs
+index 1d0423a..56f5e06 100644
+--- a/remglk/src/glkapi/windows.rs
++++ b/remglk/src/glkapi/windows.rs
+@@ -167,6 +167,8 @@ pub struct BufferWindow {
+     last_bg: Option<u32>,
+     last_fg: Option<u32>,
+     pub line_input_buffer: Option<GlkOwnedBuffer>,
++    /** Whether the pending line input request echoes its input (`echo_line_input` when it was requested) */
++    pub line_input_echo: bool,
+     sent_stylehints: bool,
+     stylehints: WindowStyles,
+ }
+diff --git a/tests/echolinetest.inf b/tests/echolinetest.inf
+new file mode 100644
+index 0000000..fb8b30c
+--- /dev/null
++++ b/tests/echolinetest.inf
+@@ -0,0 +1,59 @@
++! echolinetest: glk_set_echo_line_event() must not affect a pending line
++! input request. Compile with: inform6 -G echolinetest.inf
++
++Array linebuf -> 256;
++Array gg_event --> 4;
++Global mainwin;
++
++[ glk0 id  res;
++  @glk id 0 res;
++  return res;
++];
++
++[ glk1 id a  res;
++  @copy a sp;
++  @glk id 1 res;
++  return res;
++];
++
++[ glk2 id a b  res;
++  @copy b sp; @copy a sp;
++  @glk id 2 res;
++  return res;
++];
++
++[ glk4 id a b c d  res;
++  @copy d sp; @copy c sp; @copy b sp; @copy a sp;
++  @glk id 4 res;
++  return res;
++];
++
++[ glk5 id a b c d e  res;
++  @copy e sp; @copy d sp; @copy c sp; @copy b sp; @copy a sp;
++  @glk id 5 res;
++  return res;
++];
++
++! Request line input with echo set to start_echo, then change it to
++! pending_echo while the request is pending, and wait for the line.
++[ ReadLine start_echo pending_echo;
++  glk2($0150, mainwin, start_echo);     ! glk_set_echo_line_event
++  print ">";
++  glk4($00D0, mainwin, linebuf, 256, 0); ! glk_request_line_event
++  glk2($0150, mainwin, pending_echo);   ! glk_set_echo_line_event
++  do {
++    glk1($00C0, gg_event);              ! glk_select
++  } until (gg_event-->0 == 3);          ! evtype_LineInput
++  print "Read ", gg_event-->2, " characters.^";
++];
++
++[ Main;
++  @setiosys 2 0;
++  mainwin = glk5($0023, 0, 0, 0, 3, 0); ! glk_window_open: text buffer
++  glk1($002F, mainwin);                 ! glk_set_window
++  print "EchoLineTest^^";
++  ReadLine(1, 0);
++  ReadLine(0, 1);
++  print "Done.^";
++  glk0($0001);                          ! glk_exit
++];
+diff --git a/tests/echolinetest.ulx b/tests/echolinetest.ulx
+new file mode 100644
+index 0000000000000000000000000000000000000000..64c412333972b8495145b7724bad4d3a39705e8f
+GIT binary patch
+literal 2048
+zcmeH{TSygA6o&U+d**mf9YfGc=_aX3Wj14CMpB0|GrC`}tcOy|EKSR@h>{wU$RdLz
+z60$H5#OMM=7wDl*lte))5@A8LAt;Fg?Ls|7{cBVbtmh)yhi~Rz>z}h{uRSwsZc$m0
+zAc0{3Z!ck-NE1R<blsX?KCd{xL`Wf05|fjy#3`vlCZ*U`Qc_R|OW{H}-WEXvlQ@>o
+zCk)$X1P$Z^Rfc0l`GoY^K5x*#{DCTOUy}T`&mS~AoD2(8`TJQ$gzbw68X;^&3~<dz
+z+ZWk$x4f9syv_o-BtewohAJ(vKTsh>-~g(z0!I@96{6J&=WEJMr{C3vlN-Ye&l0zV
+zFs)35x=kxCQmQxZJTo)H-3)E>x^cQKC5m<CNx~f*g#-Vb7%My!)6{wroLpCBO-^wC
+zum~{>aZNh83Ofhk=Chp~H=ikaMgv=B!;}p;%*VN!gOfr~Jd1jW5iFX(7Z#VnV-`0-
+zJBz!Znbxyx0d15|n`tA5&%tLFuR$jju<QmOsgQP35kkVkNYN&ielUc}SPlnKw1w7k
+z5DUi91}=dtaG1q3u$09tu$ToFPYY=~MN<xktHB`_d0;CG+>eSWw<p+*;2>u!Kqc*>
+zMA}WIoTvfsSk!?tRLrswG*Jml)K6SLp?<p00`*ffrPCY^+CV!k=vfl#r<b&h^PS)=
+zEvFS6U{B}^?SSM5qfnqwgMgoK6ly3K%VIQ$rZk#OGbm4AN}X-#XXdK!etq*^b%sap
+zd6L|!OO&1-7Z$3!VmiJq9(C@R)ThQ|uStHo^2Tdhk0@MG?$?uxmRy+-{^4TNy2k5L
+z*VOs-trPJ|UwHALM(X`{KAj8IlM*)-)JwhZ#8s(h+9`TNd!58#<h~;<@6U(o+6+@g
+z>9Foug^#qI!LRNA@ptV2zu`T@#FwbXp_x4F%ka6MUkQIA{8zv68{nfQnBRWwb5>0i
+z!ZWPD|5Hmr+^EeCPMPTg4Rin)>jxN~!LCs`(1>-7hMz{C;^}!Nvl8_B9_}j!*0&dD
+zv``PeW05LE2*<rcZRt~}WgFND;45?kRRz!m)p3AEsL+J|W$?I!It$R`{>=CR$`9u{
+
+literal 0
+HcmV?d00001
+
+diff --git a/tests/echolinetest.ulx.regtest b/tests/echolinetest.ulx.regtest
+new file mode 100644
+index 0000000..d573c35
+--- /dev/null
++++ b/tests/echolinetest.ulx.regtest
+@@ -0,0 +1,17 @@
++** game: echolinetest.ulx
++** remformat: yes
++
++# glk_set_echo_line_event() does not affect a pending line input request
++
++* echo
++
++EchoLineTest
++
++> xyzzy
++xyzzy
++Read 5 characters.
++
++> plugh
++!plugh
++Read 5 characters.
++Done.
+diff --git a/tests/runtests.sh b/tests/runtests.sh
+index 1c1af70..12082fe 100755
+--- a/tests/runtests.sh
++++ b/tests/runtests.sh
+@@ -17,6 +17,8 @@ run_test advent.ulx.regtest
+ echo 'Glk tests'
+ echo ' datetimetest'
+ run_test datetimetest.ulx.regtest
++echo ' echolinetest'
++run_test echolinetest.ulx.regtest
+ echo ' extbinaryfile'
+ run_test extbinaryfile.ulx.regtest
+ rm binfile.glkdata
+-- 
+2.43.0
+
