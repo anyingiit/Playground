@@ -95,3 +95,4 @@
 | 428 | [OpenCHAMI/ochami#191](https://github.com/OpenCHAMI/ochami/issues/191) | **已提交** [#216](https://github.com/OpenCHAMI/ochami/pull/216) |
 | 339 | [hrsh7th/nvim-cmp#2232](https://github.com/hrsh7th/nvim-cmp/issues/2232) | **已提交** [#2234](https://github.com/hrsh7th/nvim-cmp/pull/2234) |
 | 429 | [supabase/terraform-provider-supabase#372](https://github.com/supabase/terraform-provider-supabase/issues/372) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；高星；复核 PASS；未对真实 API 验证，正文已说明） |
+| 430 | [curiousdannii/remglk-rs#18](https://github.com/curiousdannii/remglk-rs/issues/18) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Rust；补丁含 2KB 二进制 .ulx，用 git am 应用；复核 PASS） |
