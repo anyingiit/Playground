@@ -63,3 +63,4 @@
 | 279 | [hanami/hanami-view#264](https://github.com/hanami/hanami-view/issues/264) | **已提交** [#291](https://github.com/hanami/hanami-view/pull/291) |
 | 424 | [wiktor-k/ssh-agent-lib#116](https://github.com/wiktor-k/ssh-agent-lib/issues/116) | **已提交** [#117](https://github.com/wiktor-k/ssh-agent-lib/pull/117) |
 | 303 | [melihbirim/csvql#259](https://github.com/melihbirim/csvql/issues/259) | **已提交** [#264](https://github.com/melihbirim/csvql/pull/264) |
+| 215 | [vcr/vcr#1006](https://github.com/vcr/vcr/issues/1006) | 待提交（base `master`；无需认领；无 DCO/CLA；无 PR 模板；复核 PASS） |
