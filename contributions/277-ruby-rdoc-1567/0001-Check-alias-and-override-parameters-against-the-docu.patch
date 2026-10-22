@@ -1,0 +1,187 @@
+From ef7dd58181a82d3a9cef6742eea867aedeb1d1dc Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:27:21 +0000
+Subject: [PATCH] Check alias and override parameters against the documenting
+ comment
+
+A method without a comment of its own counts as documented when the
+method it aliases, or the method it overrides, is documented
+(MethodAttr#documented?). But `rdoc -C1` only parsed the method's own
+(empty) comment when checking parameters, so it reported every
+parameter of such a method as undocumented.
+
+Follow the same chain as #documented? (is_alias_for, then see) to the
+first method with a comment, so aliases of aliases and overrides several
+levels down are covered too.
+
+Fixes #1567
+---
+ lib/rdoc/stats.rb            |  24 ++++++++-
+ test/rdoc/rdoc_stats_test.rb | 102 +++++++++++++++++++++++++++++++++++
+ 2 files changed, 125 insertions(+), 1 deletion(-)
+
+diff --git a/lib/rdoc/stats.rb b/lib/rdoc/stats.rb
+index c5de281..a67f044 100644
+--- a/lib/rdoc/stats.rb
++++ b/lib/rdoc/stats.rb
+@@ -469,7 +469,7 @@ module RDoc
+ 
+       return 0, [] if params.empty?
+ 
+-      document = parse method.comment
++      document = parse documenting_comment(method)
+ 
+       tts = document.accept @formatter
+ 
+@@ -478,6 +478,28 @@ module RDoc
+       [params.length, undoc]
+     end
+ 
++    ##
++    # Returns the comment documenting +method+.  A method without a comment of
++    # its own is documented by the method it aliases or, failing that, by the
++    # method it overrides (see MethodAttr#documented?), so this follows that
++    # chain until it reaches a method with a comment.
++    #
++    #: (MethodAttr) -> (Comment | Markup::Document | String)
++    def documenting_comment(method) # :nodoc:
++      seen = []
++
++      while method.comment.empty?
++        seen << method
++        documenting = method.is_alias_for || method.see
++        break unless MethodAttr === documenting
++        break if seen.any? { |m| m.equal? documenting }
++
++        method = documenting
++      end
++
++      method.comment
++    end
++
+     autoload :Quiet,   "#{__dir__}/stats/quiet"
+     autoload :Normal,  "#{__dir__}/stats/normal"
+     autoload :Verbose, "#{__dir__}/stats/verbose"
+diff --git a/test/rdoc/rdoc_stats_test.rb b/test/rdoc/rdoc_stats_test.rb
+index 43755c5..b659d8e 100644
+--- a/test/rdoc/rdoc_stats_test.rb
++++ b/test/rdoc/rdoc_stats_test.rb
+@@ -335,6 +335,68 @@ class RDocStatsTest < RDoc::TestCase
+     assert_match "100% documentation!\nGreat Job!\n", @s.report
+   end
+ 
++  def test_report_method_parameters_alias
++    c = @tl.add_class RDoc::NormalClass, 'C'
++    c.record_location @tl
++    c.add_comment 'C', @tl
++
++    m = RDoc::AnyMethod.new 'm'
++    m.record_location @tl
++    m.params = '(p1, &block)'
++    m.comment = 'Stuff with +p1+ and +block+'
++    c.add_method m
++
++    a1 = RDoc::Alias.new 'm', 'a1', ''
++    a1.record_location @tl
++    c.add_alias a1
++
++    a2 = RDoc::Alias.new 'a1', 'a2', ''
++    a2.record_location @tl
++    c.add_alias a2
++
++    @store.complete :public
++
++    @s.coverage_level = 1
++
++    assert_match "100% documentation!\nGreat Job!\n", @s.report
++  end
++
++  def test_report_method_parameters_override
++    a = @tl.add_class RDoc::NormalClass, 'A'
++    a.record_location @tl
++    a.add_comment 'A', @tl
++
++    m = RDoc::AnyMethod.new 'm'
++    m.record_location @tl
++    m.params = '(p1)'
++    m.comment = 'Stuff with +p1+'
++    a.add_method m
++
++    b = @tl.add_class RDoc::NormalClass, 'B', 'A'
++    b.record_location @tl
++    b.add_comment 'B', @tl
++
++    b_m = RDoc::AnyMethod.new 'm'
++    b_m.record_location @tl
++    b_m.params = '(p1)'
++    b.add_method b_m
++
++    c = @tl.add_class RDoc::NormalClass, 'C', 'B'
++    c.record_location @tl
++    c.add_comment 'C', @tl
++
++    c_m = RDoc::AnyMethod.new 'm'
++    c_m.record_location @tl
++    c_m.params = '(p1)'
++    c.add_method c_m
++
++    @store.complete :public
++
++    @s.coverage_level = 1
++
++    assert_match "100% documentation!\nGreat Job!\n", @s.report
++  end
++
+   def test_report_method_parameters_yield
+     c = @tl.add_class RDoc::NormalClass, 'C'
+     c.record_location @tl
+@@ -683,6 +745,46 @@ m(a, b) { |c, d| ... }
+     assert_empty    undoc
+   end
+ 
++  def test_undoc_params_alias
++    method = RDoc::AnyMethod.new 'm'
++    method.params = '(a)'
++    method.comment = comment '+a+'
++
++    an_alias = method.add_alias RDoc::Alias.new('m', 'n', ''), nil
++
++    total, undoc = @s.undoc_params an_alias
++
++    assert_equal 1, total
++    assert_empty    undoc
++  end
++
++  def test_undoc_params_alias_chain
++    method = RDoc::AnyMethod.new 'm'
++    method.params = '(a)'
++    method.comment = comment '+a+'
++
++    an_alias = method.add_alias RDoc::Alias.new('m', 'n', ''), nil
++    alias_of_alias = an_alias.add_alias RDoc::Alias.new('n', 'o', ''), nil
++
++    total, undoc = @s.undoc_params alias_of_alias
++
++    assert_equal 1, total
++    assert_empty    undoc
++  end
++
++  def test_undoc_params_alias_undocumented
++    method = RDoc::AnyMethod.new 'm'
++    method.params = '(a)'
++    method.comment = comment 'comment'
++
++    an_alias = method.add_alias RDoc::Alias.new('m', 'n', ''), nil
++
++    total, undoc = @s.undoc_params an_alias
++
++    assert_equal 1,     total
++    assert_equal %w[a], undoc
++  end
++
+   def test_undoc_params_keywords
+     method = RDoc::AnyMethod.new 'm'
+     method.params = '(**a)'
+-- 
+2.43.0
+
