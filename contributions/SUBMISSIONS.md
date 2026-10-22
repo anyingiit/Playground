@@ -58,7 +58,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | # | Issue | PR | 备注 |
 |---|---|---|---|
 | 046 | [symfony/ai#2430](https://github.com/symfony/ai/issues/2430) | [symfony/ai#2634](https://github.com/symfony/ai/pull/2634) | ✅ 已合并（2026-10-06，wachterjohannes） |
-| 049 | [microsoft/litebox#1222](https://github.com/microsoft/litebox/issues/1222) | [microsoft/litebox#1481](https://github.com/microsoft/litebox/pull/1481) | 10-22 已代签 CLA。但上游 #1594（10-15，Sangho Lee）已在 main 落地同一修复，本 PR 冲突且多余，建议关闭（关闭操作被自动模式拦下，待 owner 确认） |
+| 049 | [microsoft/litebox#1222](https://github.com/microsoft/litebox/issues/1222) | [microsoft/litebox#1481](https://github.com/microsoft/litebox/pull/1481) | 已关闭（10-22，owner 确认）：上游 #1594（10-15）已在 main 落地同一修复；CLA 已签。无需操作 |
 | 052 | [eugenioenko/ttt#277](https://github.com/eugenioenko/ttt/issues/277) | [eugenioenko/ttt#698](https://github.com/eugenioenko/ttt/pull/698) | ✅ 已合并（2026-10-02） |
 | 054 | [kubecolor/kubecolor#171](https://github.com/kubecolor/kubecolor/issues/171) | [kubecolor/kubecolor#370](https://github.com/kubecolor/kubecolor/pull/370) | ✅ 已合并（2026-10-17，applejag） |
 | 056 | [stackrox/kube-linter#1241](https://github.com/stackrox/kube-linter/issues/1241) | [stackrox/kube-linter#1273](https://github.com/stackrox/kube-linter/pull/1273) | 待 review；CodeRabbit 无意见；只有 codecov/project 失败（非必需） |
