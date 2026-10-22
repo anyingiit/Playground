@@ -1,3 +1,6 @@
+<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
+_Requested by **winshyon**_
+
 ## Description
 
 `HashTrieMap::new_with_degree(1)` (and every other constructor that funnels into
@@ -24,3 +27,5 @@ Closes #113
 - [x] Tests pass locally: new test `test_new_with_degree_one_panics` fails without the fix ("test did not panic as expected") and passes with it; `cargo test --all-targets --all-features` (277 passed), `cargo test --all-targets --no-default-features` (259 passed), `cargo test --doc --all-features` (29 passed), `cargo fmt -- --check`, `cargo clippy --all-targets -- -D warnings`, `cargo doc --no-deps --all-features` all clean with `RUSTFLAGS=-Dwarnings`
 - [ ] `CHANGELOG.md` is updated (if applicable) — n/a, happy to add a `release-notes.md` entry if you'd like one
 - [ ] Documentation is updated (if applicable) — n/a
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
