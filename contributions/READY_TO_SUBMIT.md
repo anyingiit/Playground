@@ -32,3 +32,4 @@
 | 248 | [open-nexus-OS/open-nexus-OS#47](https://github.com/open-nexus-OS/open-nexus-OS/issues/47) | **已提交** [#53](https://github.com/open-nexus-OS/open-nexus-OS/pull/53) |
 | 212 | [troessner/reek#1476](https://github.com/troessner/reek/issues/1476) | **已提交** [#1849](https://github.com/troessner/reek/pull/1849) |
 | 420 | [opendatahub-io/ai-gateway-payload-processing#315](https://github.com/opendatahub-io/ai-gateway-payload-processing/issues/315) | 待提交（base `main`；无需认领；DCO：补丁已带 anyingiit 的 Signed-off-by；无 CLA；Go 测试文件合并；复核 PASS） |
+| 333 | [mpdf/mpdf#2232](https://github.com/mpdf/mpdf/issues/2232) | 待提交（base **`development`**；无需认领；无 DCO/CLA；commit 第三行 `Assisted-by: Claude Code` 为仓库要求的 AI 声明须保留；复核 PASS） |

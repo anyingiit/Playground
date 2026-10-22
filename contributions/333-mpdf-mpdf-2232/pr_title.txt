@@ -1,0 +1,1 @@
+Write the SVG transparency group only when the SVG uses transparency (#2232)

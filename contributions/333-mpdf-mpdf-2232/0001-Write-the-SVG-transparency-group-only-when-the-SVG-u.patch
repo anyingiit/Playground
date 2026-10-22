@@ -1,0 +1,214 @@
+From 960569ba49bd27f44829ce74d73640216e1fe307 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:07:40 +0000
+Subject: [PATCH] Write the SVG transparency group only when the SVG uses
+ transparency (#2232)
+
+Assisted-by: Claude Code
+---
+ CHANGELOG.md                   |  1 +
+ src/Image/Svg.php              | 27 +++++++++++++++++++
+ src/Writer/FormWriter.php      | 11 +++++++-
+ tests/Issues/Issue2232Test.php | 48 ++++++++++++++++++++++++++++++++++
+ 4 files changed, 86 insertions(+), 1 deletion(-)
+ create mode 100644 tests/Issues/Issue2232Test.php
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index c9840f3..030f4e4 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -18,6 +18,7 @@ Bugfixes
+ * Conditional calls to functions removed in PHP 8.5
+ * Fixed undefined array key warning when ending a multi-column layout (#2214)
+ * Fixed division by zero error with invalid (<= 0>) `@page` `size` values, allowed standard values such as `size: A4` (#2101)
++* SVG images are only written with a transparency group when they use transparency, so content painted after an opaque SVG is no longer lost when printing on macOS (#2232)
+ 
+ mPDF 8.2.x
+ ===========================
+diff --git a/src/Image/Svg.php b/src/Image/Svg.php
+index 94d9624..5ce3adc 100644
+--- a/src/Image/Svg.php
++++ b/src/Image/Svg.php
+@@ -139,6 +139,13 @@ class Svg
+ 
+ 	var $subPathInit;
+ 
++	/**
++	 * Whether the drawing paints anything translucent, i.e. needs a transparency group
++	 *
++	 * @var bool
++	 */
++	private $usesTransparency = false;
++
+ 	var $spxstart;
+ 
+ 	var $spystart;
+@@ -288,6 +295,10 @@ class Svg
+ 			return;
+ 		}
+ 
++		if (isset($info['masked'])) {
++			$this->usesTransparency = true;
++		}
++
+ 		// x,y,w,h define the reference rectangle
+ 		$img_h = $h;
+ 		$img_w = $w;
+@@ -795,6 +806,7 @@ class Svg
+ 			$this->mpdf->gradients[$n]['extend'] = ['true', 'true'];
+ 			if ($trans) {
+ 				$this->mpdf->gradients[$n]['trans'] = true;
++				$this->usesTransparency = true;
+ 				$return .= ' /TGS' . ($n) . ' gs ';
+ 			}
+ 			$return .= ' /Sh' . ($n) . ' sh ';
+@@ -1026,6 +1038,7 @@ class Svg
+ 			$this->mpdf->gradients[$n]['extend'] = ['true', 'true'];
+ 			if (isset($trans) && $trans) {
+ 				$this->mpdf->gradients[$n]['trans'] = true;
++				$this->usesTransparency = true;
+ 				$return .= ' /TGS' . ($n) . ' gs ';
+ 			}
+ 			$return .= ' /Sh' . ($n) . ' sh ';
+@@ -1512,6 +1525,9 @@ class Svg
+ 			} elseif ($critere_style['fill-opacity'] < 0) {
+ 				$opacity = 0;
+ 			}
++			if ($opacity < 1) {
++				$this->usesTransparency = true;
++			}
+ 			$gs = $this->mpdf->AddExtGState(['ca' => $opacity, 'BM' => '/Normal']);
+ 			$this->mpdf->extgstates[$gs]['fo'] = true;
+ 			$path_style .= sprintf(' /GS%d gs ', $gs);
+@@ -1528,6 +1544,9 @@ class Svg
+ 			} elseif ($critere_style['stroke-opacity'] < 0) {
+ 				$opacity = 0;
+ 			}
++			if ($opacity < 1) {
++				$this->usesTransparency = true;
++			}
+ 			$gs = $this->mpdf->AddExtGState(['CA' => $opacity, 'BM' => '/Normal']);
+ 			$this->mpdf->extgstates[$gs]['fo'] = true;
+ 			$path_style .= sprintf(' /GS%d gs ', $gs);
+@@ -2436,6 +2455,9 @@ class Svg
+ 					}
+ 				}
+ 
++				if ($fopacity < 1 || $sopacity < 1) {
++					$this->usesTransparency = true;
++				}
+ 				$gs = $this->mpdf->AddExtGState(['ca' => $fopacity, 'CA' => $sopacity, 'BM' => '/Normal']);
+ 				$this->mpdf->extgstates[$gs]['fo'] = true;
+ 				$opacitystr = sprintf(' /GS%d gs ', $gs);
+@@ -2612,6 +2634,9 @@ class Svg
+ 				}
+ 			}
+ 
++			if ($fopacity < 1 || $sopacity < 1) {
++				$this->usesTransparency = true;
++			}
+ 			$gs = $this->mpdf->AddExtGState(['ca' => $fopacity, 'CA' => $sopacity, 'BM' => '/Normal']);
+ 			$this->mpdf->extgstates[$gs]['fo'] = true;
+ 			$opacitystr = sprintf(' /GS%d gs ', $gs);
+@@ -3108,6 +3133,7 @@ class Svg
+ 		}
+ 
+ 		$this->svg_info = [];
++		$this->usesTransparency = false;
+ 		$last_gradid = ''; // mPDF 6
+ 		$last_svg_fontid = ''; // mPDF 6
+ 		$last_svg_fontdefw = ''; // mPDF 6
+@@ -3319,6 +3345,7 @@ class Svg
+ 				'w' => $this->svg_info['w'] * $this->kp,
+ 				'h' => -$this->svg_info['h'] * $this->kp,
+ 				'data' => $this->svg_string,
++				'transparency' => $this->usesTransparency,
+ 			];
+ 		}
+ 	}
+diff --git a/src/Writer/FormWriter.php b/src/Writer/FormWriter.php
+index 88c6f35..f3b9306 100644
+--- a/src/Writer/FormWriter.php
++++ b/src/Writer/FormWriter.php
+@@ -36,7 +36,12 @@ final class FormWriter
+ 
+ 			$this->writer->write('<</Type /XObject');
+ 			$this->writer->write('/Subtype /Form');
+-			$this->writer->write('/Group ' . ($this->mpdf->n + 1) . ' 0 R');
++			// Only forms that paint something translucent need a transparency group. Some renderers
++			// (e.g. macOS printing) drop the page content painted after a form that has one.
++			$group = !empty($info['transparency']);
++			if ($group) {
++				$this->writer->write('/Group ' . ($this->mpdf->n + 1) . ' 0 R');
++			}
+ 			$this->writer->write('/BBox [' . $info['x'] . ' ' . $info['y'] . ' ' . ($info['w'] + $info['x']) . ' ' . ($info['h'] + $info['y']) . ']');
+ 
+ 			if ($this->mpdf->compress) {
+@@ -51,6 +56,10 @@ final class FormWriter
+ 
+ 			$this->writer->write('endobj');
+ 
++			if (!$group) {
++				continue;
++			}
++
+ 			// Required for SVG transparency (opacity) to work
+ 			$this->writer->object();
+ 			$this->writer->write('<</Type /Group');
+diff --git a/tests/Issues/Issue2232Test.php b/tests/Issues/Issue2232Test.php
+new file mode 100644
+index 0000000..1a26528
+--- /dev/null
++++ b/tests/Issues/Issue2232Test.php
+@@ -0,0 +1,48 @@
++<?php
++
++namespace Issues;
++
++class Issue2232Test extends \Mpdf\BaseMpdfTest
++{
++
++	public function testOpaqueSvgIsWrittenWithoutTransparencyGroup()
++	{
++		$output = $this->getOutput('<circle cx="50" cy="50" r="50" fill="black"/>');
++
++		$this->assertSame(1, preg_match_all('#/Subtype /Form\s*(/Group \d+ 0 R)?#', $output, $matches));
++		$this->assertSame('', $matches[1][0]);
++	}
++
++	/**
++	 * @dataProvider translucentSvgProvider
++	 */
++	public function testTranslucentSvgIsWrittenWithTransparencyGroup($svg)
++	{
++		$output = $this->getOutput($svg);
++
++		$this->assertSame(1, preg_match('#/Subtype /Form\s*/Group (\d+) 0 R#', $output, $matches));
++		$this->assertSame(1, preg_match('#\n' . $matches[1] . ' 0 obj\s*<</Type /Group\s*/S /Transparency\s*>>#', $output));
++	}
++
++	public function translucentSvgProvider()
++	{
++		return [
++			'fill-opacity' => ['<circle cx="50" cy="50" r="50" fill="black" fill-opacity="0.5"/>'],
++			'stroke-opacity' => ['<circle cx="50" cy="50" r="40" fill="none" stroke="black" stroke-width="5" stroke-opacity="0.5"/>'],
++			'opacity' => ['<circle cx="50" cy="50" r="50" fill="black" style="opacity: 0.5"/>'],
++			'text opacity' => ['<text x="10" y="50" fill-opacity="0.5">Text</text>'],
++			'gradient stop-opacity' => ['<defs><linearGradient id="g"><stop offset="0" stop-color="black" stop-opacity="0.2"/><stop offset="1" stop-color="black"/></linearGradient></defs><rect width="100" height="100" fill="url(#g)"/>'],
++		];
++	}
++
++	private function getOutput($svgBody)
++	{
++		$this->mpdf->SetCompression(false);
++		$this->mpdf->WriteHTML('<p>Before the SVG</p>'
++			. '<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">' . $svgBody . '</svg>'
++			. '<table border="1"><tr><td>After the SVG</td></tr></table>');
++
++		return $this->mpdf->OutputBinaryData();
++	}
++
++}
+-- 
+2.43.0
+
