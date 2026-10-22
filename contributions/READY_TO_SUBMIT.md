@@ -11,3 +11,4 @@
 | 200 | [plotly/plotly.py#2059](https://github.com/plotly/plotly.py/issues/2059) | **已提交** [#5839](https://github.com/plotly/plotly.py/pull/5839) |
 | 201 | [plotly/plotly.py#4040](https://github.com/plotly/plotly.py/issues/4040) | 待定：复核时改了补丁，README 未写 PASS；提交前需 rebase CHANGELOG（与 200 同位置） |
 | 242 | [getsotto/sotto#696](https://github.com/getsotto/sotto/issues/696) | 待提交（base `main`；无需认领；DCO 已在 commit 中签；无 CLA；复核 PASS） |
+| 241 | [ZcashFoundation/zebra#11892](https://github.com/ZcashFoundation/zebra/issues/11892) | 待提交（base `main`；建议先在 issue 评论认领；无 DCO/CLA；**PR 正文禁止 "Generated with" 页脚**；复核 PASS） |

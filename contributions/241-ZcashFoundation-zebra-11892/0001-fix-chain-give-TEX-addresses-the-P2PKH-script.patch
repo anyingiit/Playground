@@ -1,0 +1,94 @@
+From 5c50c9e71b1bd0b1b631a0a1b1e49be63b147462 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:20:53 +0000
+Subject: [PATCH] fix(chain): give TEX addresses the P2PKH script
+
+Under ZIP 320 a TEX address is a P2PKH destination with a restriction on the
+sender, so its output script is the P2PKH script for the validating key hash.
+`Address::script()` returned an empty script for `Tex`, which anyone can
+spend. No caller reaches that arm today, since the funding-stream check rejects
+TEX addresses, but it is a trap for a future caller of this public API.
+
+Part of #11892: the script part. The binary encoding part is left out because
+`Display` still goes through `zcash_serialize` until #11880 lands.
+---
+ .../zebra-chain-Fixed-20261022-193000.yaml    |  4 +++
+ zebra-chain/src/transparent/address.rs        | 30 +++++++++++++++++--
+ 2 files changed, 31 insertions(+), 3 deletions(-)
+ create mode 100644 .changes/unreleased/zebra-chain-Fixed-20261022-193000.yaml
+
+diff --git a/.changes/unreleased/zebra-chain-Fixed-20261022-193000.yaml b/.changes/unreleased/zebra-chain-Fixed-20261022-193000.yaml
+new file mode 100644
+index 0000000..43f1ebb
+--- /dev/null
++++ b/.changes/unreleased/zebra-chain-Fixed-20261022-193000.yaml
+@@ -0,0 +1,4 @@
++project: zebra-chain
++kind: Fixed
++body: '`transparent::Address::script()` now returns the P2PKH script for TEX addresses, as ZIP 320 specifies, instead of an empty script ([#11892](https://github.com/ZcashFoundation/zebra/issues/11892)).'
++time: 2026-10-22T19:30:00.000000000Z
+diff --git a/zebra-chain/src/transparent/address.rs b/zebra-chain/src/transparent/address.rs
+index 5fb0884..ee07841 100644
+--- a/zebra-chain/src/transparent/address.rs
++++ b/zebra-chain/src/transparent/address.rs
+@@ -294,7 +294,9 @@ impl Address {
+ 
+     /// Turns the address into the `scriptPubKey` script that can be used in a coinbase output.
+     ///
+-    /// TEX addresses are not supported and return an empty script.
++    /// TEX addresses return the P2PKH script for their validating key hash: per
++    /// [ZIP-320](https://zips.z.cash/zip-0320), a TEX address is a P2PKH destination
++    /// with a restriction on the sender, not on the output script.
+     pub fn script(&self) -> Script {
+         let mut script_bytes = Vec::new();
+ 
+@@ -307,7 +309,8 @@ impl Address {
+                 script_bytes.push(OpCode::Equal as u8);
+             }
+             // https://developer.bitcoin.org/devguide/transactions.html#pay-to-public-key-hash-p2pkh
+-            Address::PayToPublicKeyHash { .. } => {
++            // https://zips.z.cash/zip-0320#specification
++            Address::PayToPublicKeyHash { .. } | Address::Tex { .. } => {
+                 script_bytes.push(OpCode::Dup as u8);
+                 script_bytes.push(OpCode::Hash160 as u8);
+                 script_bytes.push(OpCode::Push20Bytes as u8);
+@@ -315,7 +318,6 @@ impl Address {
+                 script_bytes.push(OpCode::EqualVerify as u8);
+                 script_bytes.push(OpCode::CheckSig as u8);
+             }
+-            Address::Tex { .. } => {}
+         };
+ 
+         Script::new(&script_bytes)
+@@ -431,6 +433,28 @@ mod tests {
+         assert_eq!(format!("{t_addr}"), "t2L51LcmpA43UMvKTw2Lwtt9LMjwyqU2V1P");
+     }
+ 
++    #[test]
++    fn tex_script_is_p2pkh_script() {
++        let _init_guard = zebra_test::init();
++
++        let key_hash = [7; 20];
++
++        for network_kind in [
++            NetworkKind::Mainnet,
++            NetworkKind::Testnet,
++            NetworkKind::Regtest,
++        ] {
++            let tex = Address::from_tex(network_kind, key_hash);
++            let p2pkh = Address::from_pub_key_hash(network_kind, key_hash);
++
++            assert!(
++                !tex.script().as_raw_bytes().is_empty(),
++                "a TEX address must not produce an empty, anyone-can-spend script"
++            );
++            assert_eq!(tex.script(), p2pkh.script());
++        }
++    }
++
+     #[test]
+     fn from_string() {
+         let _init_guard = zebra_test::init();
+-- 
+2.43.0
+

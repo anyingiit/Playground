@@ -1,0 +1,1 @@
+fix(chain): give TEX addresses the P2PKH script
