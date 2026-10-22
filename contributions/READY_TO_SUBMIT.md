@@ -62,3 +62,4 @@
 | 423 | [whtsky/pixelmatch-py#256](https://github.com/whtsky/pixelmatch-py/issues/256) | 待提交（base `master`；无需认领；无 DCO/CLA；Python；本地跑测试前需 `git lfs pull` 取 fixtures；复核 PASS） |
 | 279 | [hanami/hanami-view#264](https://github.com/hanami/hanami-view/issues/264) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；开 PR 后可把 CHANGELOG 的 #264 改成 PR 号） |
 | 393 | [zerobrewhq/zerobrew#414](https://github.com/zerobrewhq/zerobrew/issues/414) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS；同仓库已有我们的 #479，不冲突） |
+| 394 | [zerobrewhq/zerobrew#348](https://github.com/zerobrewhq/zerobrew/issues/348) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS；与 393 同仓库、不同文件，可任意顺序提交） |
