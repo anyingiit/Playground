@@ -1,0 +1,134 @@
+From bfa956b83715f950041f9f77a0dc97f5e51767ff Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:45:20 +0000
+Subject: [PATCH] Type nested schemas in maybe(:array).each as arrays
+
+`required(:foo).maybe(:array).each(NestedSchema)` (and the block form
+`each { hash { ... } }`) replaced the key's `nil | array` type with
+`nil | NestedSchema`, because the array check did not look inside the
+optional type. The key map then described `foo` as a hash rather than
+an array of hashes, so `validate_keys` rejected every nested key and
+`Params` schemas neither coerced nor sanitized them.
+
+Build `nil | array(NestedSchema)` when the current type is an optional
+array.
+
+Fixes #455
+---
+ CHANGELOG.md                                 |  2 +
+ lib/dry/schema/macros/schema.rb              |  2 +
+ lib/dry/schema/macros/value.rb               |  7 +++
+ spec/integration/schema/macros/maybe_spec.rb | 46 ++++++++++++++++++++
+ 4 files changed, 57 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index b08ada5..d95994c 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -17,6 +17,8 @@ and this project adheres to [Break Versioning](https://www.taoensso.com/break-ve
+ 
+ ### Fixed
+ 
++- Set the correct type for a nested schema given to `each` after `maybe(:array)`, e.g. `required(:foo).maybe(:array).each(NestedSchema)`. Previously the key was typed as an optional hash instead of an optional array of hashes, so with `config.validate_keys = true` every nested key was reported as "is not allowed", and `Params` schemas did not coerce or sanitize the nested keys. (@anyingiit)
++
+ ### Security
+ 
+ [Unreleased]: https://github.com/dry-rb/dry-schema/compare/v1.16.0...main
+diff --git a/lib/dry/schema/macros/schema.rb b/lib/dry/schema/macros/schema.rb
+index 5c6c659..9be87fe 100644
+--- a/lib/dry/schema/macros/schema.rb
++++ b/lib/dry/schema/macros/schema.rb
+@@ -61,6 +61,8 @@ module Dry
+           type_schema =
+             if array_type?(parent_type)
+               build_array_type(parent_type, definition.strict_type_schema)
++            elsif maybe_array_type?(parent_type)
++              build_array_type(parent_type.right, definition.strict_type_schema)
+             elsif redefined_schema?(args)
+               parent_type.schema(definition.types)
+             else
+diff --git a/lib/dry/schema/macros/value.rb b/lib/dry/schema/macros/value.rb
+index 51b3426..4b89fd4 100644
+--- a/lib/dry/schema/macros/value.rb
++++ b/lib/dry/schema/macros/value.rb
+@@ -28,6 +28,8 @@ module Dry
+             updated_type =
+               if array_type?(current_type)
+                 build_array_type(current_type, schema.strict_type_schema)
++              elsif maybe_array_type?(current_type)
++                build_array_type(current_type.right, schema.strict_type_schema)
+               else
+                 schema.strict_type_schema
+               end
+@@ -85,6 +87,11 @@ module Dry
+           type.meta[:maybe].equal?(true)
+         end
+ 
++        # @api private
++        def maybe_array_type?(type)
++          maybe_type?(type) && type.respond_to?(:right) && array_type?(type.right)
++        end
++
+         # @api private
+         def build_array_type(array_type, member)
+           if array_type.respond_to?(:of)
+diff --git a/spec/integration/schema/macros/maybe_spec.rb b/spec/integration/schema/macros/maybe_spec.rb
+index 3a7187f..22a6613 100644
+--- a/spec/integration/schema/macros/maybe_spec.rb
++++ b/spec/integration/schema/macros/maybe_spec.rb
+@@ -176,6 +176,52 @@ RSpec.describe "Macros #maybe" do
+     end
+   end
+ 
++  context "with an array with nested schema and validate_keys enabled" do
++    inner_schema = Dry::Schema.define do
++      required(:name).filled(:string)
++    end
++
++    schema = Dry::Schema.define do
++      config.validate_keys = true
++
++      required(:users).maybe(:array).each(inner_schema)
++      required(:admins).maybe(:array).each do
++        hash do
++          required(:name).filled(:string)
++        end
++      end
++    end
++
++    it "passes when valid" do
++      expect(schema.(users: [{name: "John"}], admins: [{name: "Jane"}])).to be_success
++    end
++
++    it "builds a key map with arrays of hashes" do
++      expect(schema.key_map.to_dot_notation).to eq(%w[users[].name admins[].name])
++    end
++
++    it "fails when nested keys are not allowed" do
++      expect(schema.(users: [{name: "John", age: 1}], admins: [{name: "Jane", age: 2}]).errors.to_h).to eq(
++        users: {0 => {age: ["is not allowed"]}},
++        admins: {0 => {age: ["is not allowed"]}}
++      )
++    end
++  end
++
++  context "with an array with nested schema in params" do
++    inner_schema = Dry::Schema.Params do
++      required(:name).filled(:string)
++    end
++
++    schema = Dry::Schema.Params do
++      required(:users).maybe(:array).each(inner_schema)
++    end
++
++    it "coerces nested keys" do
++      expect(schema.("users" => [{"name" => "John"}]).to_h).to eq(users: [{name: "John"}])
++    end
++  end
++
+   describe "nested into further DSLs" do
+     subject(:schema) do
+       Dry::Schema.define do
+-- 
+2.43.0
+
