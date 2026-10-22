@@ -1,0 +1,77 @@
+From 4fb447cb8daae532dce6215ba373415776e5d2c4 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 19:42:08 +0000
+Subject: [PATCH] Set constructor types that infer no predicates
+
+When a type such as `Types::Any.constructor { ... }` was given to
+`value`, `filled` or `maybe` without other predicates, no predicates
+could be inferred from it and the macro returned early, before the type
+was set for the key. The constructor was then never applied.
+
+Set the type before returning early.
+
+Fixes #504
+---
+ CHANGELOG.md                         |  2 ++
+ lib/dry/schema/macros/dsl.rb         |  6 +++++-
+ spec/integration/schema/type_spec.rb | 14 ++++++++++++++
+ 3 files changed, 21 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index b08ada5..8d483fa 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -17,6 +17,8 @@ and this project adheres to [Break Versioning](https://www.taoensso.com/break-ve
+ 
+ ### Fixed
+ 
++- Apply constructor types that infer no predicates, such as `Types::Any.constructor { ... }`, when given to `value`, `filled` or `maybe` without any other predicates. Previously such a type was not set for the key, so its constructor was never called. (@anyingiit)
++
+ ### Security
+ 
+ [Unreleased]: https://github.com/dry-rb/dry-schema/compare/v1.16.0...main
+diff --git a/lib/dry/schema/macros/dsl.rb b/lib/dry/schema/macros/dsl.rb
+index f0f3fec..0c75a3f 100644
+--- a/lib/dry/schema/macros/dsl.rb
++++ b/lib/dry/schema/macros/dsl.rb
+@@ -243,7 +243,11 @@ module Dry
+ 
+               predicates.replace(type_predicates + predicates) unless type_predicates.empty?
+ 
+-              return self if predicates.empty?
++              if predicates.empty?
++                type(resolved_type) if set_type
++
++                return self
++              end
+             end
+           end
+ 
+diff --git a/spec/integration/schema/type_spec.rb b/spec/integration/schema/type_spec.rb
+index 6eda85c..4b16bad 100644
+--- a/spec/integration/schema/type_spec.rb
++++ b/spec/integration/schema/type_spec.rb
+@@ -137,6 +137,20 @@ RSpec.describe Dry::Schema, "types specs" do
+     end
+   end
+ 
++  context "using a constructor type built on Any" do
++    subject(:schema) do
++      Dry::Schema.Params do
++        required(:stuff).value(Types::Any.constructor { |input| input.to_s.upcase })
++        required(:name).value(:string)
++      end
++    end
++
++    it "applies the constructor" do
++      expect(schema.(stuff: "foo", name: "Jane").to_h).to eql(stuff: "FOO", name: "Jane")
++      expect(schema.(stuff: 1, name: "Jane").to_h).to eql(stuff: "1", name: "Jane")
++    end
++  end
++
+   context "using a type object" do
+     subject(:schema) do
+       Dry::Schema.Params do
+-- 
+2.43.0
+

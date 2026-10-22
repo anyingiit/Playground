@@ -1,0 +1,146 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index b08ada5..06c953b 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -17,6 +17,8 @@ and this project adheres to [Break Versioning](https://www.taoensso.com/break-ve
+ 
+ ### Fixed
+ 
++- Apply the rules of both sides of a sum or intersection type used as an `array` or `each` member type. Previously, `required(:things).array(TypeA | TypeB)` with hash schema types only checked that each element was a hash, so elements matching neither schema passed validation. (@anyingiit)
++
+ ### Security
+ 
+ [Unreleased]: https://github.com/dry-rb/dry-schema/compare/v1.16.0...main
+diff --git a/lib/dry/schema/macros/dsl.rb b/lib/dry/schema/macros/dsl.rb
+index f0f3fec..64895d0 100644
+--- a/lib/dry/schema/macros/dsl.rb
++++ b/lib/dry/schema/macros/dsl.rb
+@@ -228,16 +228,13 @@ module Dry
+           if type_spec
+             resolved_type = resolve_type(type_spec, nullable)
+ 
+-            if type_spec.is_a?(::Array)
++            case type_spec
++            when ::Array
+               type_rule = type_spec.map { |ts| new(chain: false).value(ts) }.reduce(:|)
+-            elsif type_spec.is_a?(Dry::Types::Sum) && set_type
+-              type_rule = [type_spec.left, type_spec.right].map { |ts|
+-                new(klass: Core, chain: false).value(ts)
+-              }.reduce(:|)
+-            elsif type_spec.is_a?(Dry::Types::Intersection) && set_type
+-              type_rule = [type_spec.left, type_spec.right].map { |ts|
+-                new(klass: Core, chain: false).value(ts)
+-              }.reduce(:&)
++            when Dry::Types::Sum
++              type_rule = type_rules_for(type_spec, set_type).reduce(:|)
++            when Dry::Types::Intersection
++              type_rule = type_rules_for(type_spec, set_type).reduce(:&)
+             else
+               type_predicates = predicate_inferrer[resolved_type]
+ 
+@@ -250,7 +247,7 @@ module Dry
+           type(resolved_type) if set_type && resolved_type
+ 
+           if type_rule
+-            yield(*predicates, type_spec: nil, type_rule: type_rule)
++            yield(*predicates, type_spec: set_type ? nil : type_spec, type_rule: type_rule)
+           else
+             yield(*predicates, type_spec: type_spec, type_rule: nil)
+           end
+@@ -259,6 +256,21 @@ module Dry
+         # rubocop: enable Metrics/CyclomaticComplexity
+         # rubocop: enable Metrics/PerceivedComplexity
+ 
++        # Build rules for both sides of a sum or intersection type
++        #
++        # When the key's type must not be overwritten (e.g. for array members),
++        # the rules are built against a separate DSL, so that only the
++        # resulting rules are kept.
++        #
++        # @api private
++        def type_rules_for(type_spec, set_type)
++          dsl = set_type ? schema_dsl : schema_dsl.new(path: schema_dsl.path)
++
++          [type_spec.left, type_spec.right].map { |ts|
++            Value.new(name: name, compiler: compiler, schema_dsl: dsl, chain: false).value(ts)
++          }
++        end
++
+         # @api private
+         def resolve_type(type_spec, nullable)
+           resolved = schema_dsl.resolve_type(type_spec)
+diff --git a/spec/integration/schema/macros/array_spec.rb b/spec/integration/schema/macros/array_spec.rb
+index c8456ae..c50dfcb 100644
+--- a/spec/integration/schema/macros/array_spec.rb
++++ b/spec/integration/schema/macros/array_spec.rb
+@@ -329,4 +329,40 @@ RSpec.describe "Macros #array" do
+       end
+     end
+   end
++
++  context "with a sum of hash types" do
++    let(:schema) do
++      hash_type = Types::Hash.schema(name: "string") | Types::Hash.schema(other_name: "string")
++
++      Dry::Schema.define do
++        required(:foo).array(hash_type)
++      end
++    end
++
++    context "valid input" do
++      let(:input) do
++        {foo: [{name: "John"}, {other_name: "Jane"}]}
++      end
++
++      specify do
++        expect(result).to be_success
++        expect(result.to_h).to eql(input)
++      end
++    end
++
++    context "errors" do
++      let(:input) do
++        {foo: [{name: "John"}, {email: "jane@example.com"}]}
++      end
++
++      specify do
++        expect(result).to be_failing(
++          1 => {or: [
++            {name: ["is missing", "must be a string"]},
++            {other_name: ["is missing", "must be a string"]}
++          ]}
++        )
++      end
++    end
++  end
+ end
+diff --git a/spec/integration/schema/macros/each_spec.rb b/spec/integration/schema/macros/each_spec.rb
+index 68bf783..8471d08 100644
+--- a/spec/integration/schema/macros/each_spec.rb
++++ b/spec/integration/schema/macros/each_spec.rb
+@@ -269,4 +269,25 @@ RSpec.describe "Macros #each" do
+       expect(schema.(foo: [{bar: "123"}])).to be_success
+     end
+   end
++
++  context "using a sum of hash types for elements" do
++    let(:schema) do
++      hash_type = Types::Hash.schema(name: "string") | Types::Hash.schema(other_name: "string")
++
++      Dry::Schema.define do
++        required(:foo).value(:array).each(hash_type)
++      end
++    end
++
++    it "applies both hash schemas to element values" do
++      expect(schema.(foo: [{name: "John"}, {other_name: "Jane"}])).to be_success
++
++      expect(schema.(foo: [{email: "jane@example.com"}]).errors.to_h).to eql(
++        foo: {0 => {or: [
++          {name: ["is missing"]},
++          {other_name: ["is missing"]}
++        ]}}
++      )
++    end
++  end
+ end
