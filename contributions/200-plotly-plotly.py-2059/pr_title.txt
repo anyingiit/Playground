@@ -1,0 +1,1 @@
+Fix px marginal color with named continuous color scales
