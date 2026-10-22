@@ -107,3 +107,4 @@
 | 435 | [tuProlog/2p-kt#947](https://github.com/tuProlog/2p-kt/issues/947) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Kotlin；同仓库第 4 个（284/421/433），建议错开提交；复核 PASS；提交员：错开到 23:00 UTC 后再提交） |
 | 286 | [benbalter/jekyll-remote-theme#109](https://github.com/benbalter/jekyll-remote-theme/issues/109) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby 文档；高星；复核 PASS） |
 | 287 | [benbalter/jekyll-optional-front-matter#67](https://github.com/benbalter/jekyll-optional-front-matter/issues/67) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；高星；复核 PASS） |
+| 436 | [bpmn-io/properties-panel#553](https://github.com/bpmn-io/properties-panel/issues/553) | 待提交（base `main`；无需认领；**需签 bpmn-io CLA**（同 432/434）；CSS + karma 测试；PR 模板标题/清单勿改；可选：附改前/改后截图；复核 PASS） |
