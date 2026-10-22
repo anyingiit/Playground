@@ -100,3 +100,4 @@
 | 340 | [stevearc/oil.nvim#754](https://github.com/stevearc/oil.nvim/issues/754) | **已提交** [#793](https://github.com/stevearc/oil.nvim/pull/793) |
 | 432 | [bpmn-io/dmn-migrate#60](https://github.com/bpmn-io/dmn-migrate/issues/60) | **已提交** [#63](https://github.com/bpmn-io/dmn-migrate/pull/63)（CLA 待签） |
 | 341 | [nvim-orgmode/orgmode#1171](https://github.com/nvim-orgmode/orgmode/issues/1171) | **已提交** [#1201](https://github.com/nvim-orgmode/orgmode/pull/1201) |
+| 284 | [tuProlog/2p-kt#945](https://github.com/tuProlog/2p-kt/issues/945) | 待提交（base `master`；无需认领；无 DCO/CLA；Kotlin；自由；复核 PASS） |

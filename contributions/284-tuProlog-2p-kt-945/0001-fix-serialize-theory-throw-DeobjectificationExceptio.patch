@@ -1,0 +1,84 @@
+From b3d3ebe21435f514471abec78ad47f2813dc82b1 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:45:26 +0000
+Subject: [PATCH] fix(serialize-theory): throw DeobjectificationException for
+ non-clause theory elements
+
+TheoryDeobjectifier cast every deobjectified term to Clause without
+checking, so a theory containing a non-clause element (e.g. a number,
+a variable or a plain struct) failed with a raw ClassCastException
+instead of the documented DeobjectificationException.
+
+Fixes #945
+---
+ .../serialize/TestTheoryDeserialization.kt    | 21 +++++++++++++++++++
+ .../serialize/JsTheoryDeobjectifier.kt        |  2 +-
+ .../serialize/JvmTheoryDeobjectifier.kt       |  2 +-
+ 3 files changed, 23 insertions(+), 2 deletions(-)
+
+diff --git a/serialize-theory/src/commonTest/kotlin/it/unibo/tuprolog/serialize/TestTheoryDeserialization.kt b/serialize-theory/src/commonTest/kotlin/it/unibo/tuprolog/serialize/TestTheoryDeserialization.kt
+index fc35275..257a4b9 100644
+--- a/serialize-theory/src/commonTest/kotlin/it/unibo/tuprolog/serialize/TestTheoryDeserialization.kt
++++ b/serialize-theory/src/commonTest/kotlin/it/unibo/tuprolog/serialize/TestTheoryDeserialization.kt
+@@ -1,6 +1,7 @@
+ package it.unibo.tuprolog.serialize
+ 
+ import kotlin.test.Test
++import kotlin.test.assertFailsWith
+ 
+ class TestTheoryDeserialization {
+     @Test
+@@ -18,4 +19,24 @@ class TestTheoryDeserialization {
+                 MimeType.Yaml,
+             ).assertDeserializationWorks(Instances.commonRules, Instances.commonRulesInYAML)
+     }
++
++    @Test
++    fun testNonClauseElementsAreRejectedInJSON() {
++        val deserializer = TheoryDeserializer.of(MimeType.Json)
++        for (nonClause in listOf("1", "{\"var\":\"X\"}", "{\"fun\":\"foo\",\"args\":[{\"var\":\"X\"}]}")) {
++            assertFailsWith<DeobjectificationException>(nonClause) {
++                deserializer.deserialize("[$nonClause]")
++            }
++        }
++    }
++
++    @Test
++    fun testNonClauseElementsAreRejectedInYAML() {
++        val deserializer = TheoryDeserializer.of(MimeType.Yaml)
++        for (nonClause in listOf("1", "var: \"X\"", "fun: \"foo\"\n  args:\n  - var: \"X\"")) {
++            assertFailsWith<DeobjectificationException>(nonClause) {
++                deserializer.deserialize("- $nonClause")
++            }
++        }
++    }
+ }
+diff --git a/serialize-theory/src/jsMain/kotlin/it/unibo/tuprolog/serialize/JsTheoryDeobjectifier.kt b/serialize-theory/src/jsMain/kotlin/it/unibo/tuprolog/serialize/JsTheoryDeobjectifier.kt
+index 0024175..52c4b7d 100644
+--- a/serialize-theory/src/jsMain/kotlin/it/unibo/tuprolog/serialize/JsTheoryDeobjectifier.kt
++++ b/serialize-theory/src/jsMain/kotlin/it/unibo/tuprolog/serialize/JsTheoryDeobjectifier.kt
+@@ -9,7 +9,7 @@ internal class JsTheoryDeobjectifier : TheoryDeobjectifier {
+             TermDeobjectifier.default
+                 .deobjectifyMany(`object`)
+                 .asSequence()
+-                .map { it as Clause },
++                .map { it as? Clause ?: throw DeobjectificationException(it) },
+         )
+ 
+     override fun deobjectifyMany(`object`: Any): Iterable<Theory> =
+diff --git a/serialize-theory/src/jvmMain/kotlin/it/unibo/tuprolog/serialize/JvmTheoryDeobjectifier.kt b/serialize-theory/src/jvmMain/kotlin/it/unibo/tuprolog/serialize/JvmTheoryDeobjectifier.kt
+index 07e4aca..26c5c0c 100644
+--- a/serialize-theory/src/jvmMain/kotlin/it/unibo/tuprolog/serialize/JvmTheoryDeobjectifier.kt
++++ b/serialize-theory/src/jvmMain/kotlin/it/unibo/tuprolog/serialize/JvmTheoryDeobjectifier.kt
+@@ -12,7 +12,7 @@ internal class JvmTheoryDeobjectifier : TheoryDeobjectifier {
+             TermDeobjectifier.default
+                 .deobjectifyMany(`object`)
+                 .asSequence()
+-                .map { it as Clause },
++                .map { it as? Clause ?: throw DeobjectificationException(it) },
+         )
+ 
+     override fun deobjectifyMany(`object`: Any): Iterable<Theory> =
+-- 
+2.43.0
+
