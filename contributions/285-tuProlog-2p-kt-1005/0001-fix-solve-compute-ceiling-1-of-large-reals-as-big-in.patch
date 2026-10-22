@@ -1,0 +1,122 @@
+From c6b70e628f7db5a164d20f51d7b9c7fc0e4ea870 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 21:50:37 +0000
+Subject: [PATCH] fix(solve): compute ceiling/1 of large reals as big integers
+
+ceiling/1 converted its result through Double.toLong(), which saturates
+at Long.MAX_VALUE (and loses precision through the Double round-trip),
+so `X is ceiling(1.0e30)` gave 9223372036854775807. Use the same
+BigDecimal rounding as floor/1, with RoundingMode.CEILING.
+
+Fixes #1005
+---
+ .../solve/problog/prolog/TestProblogIs.kt     |  5 +++++
+ .../tuprolog/solve/prolog/TestPrologIs.kt     |  5 +++++
+ .../tuprolog/solve/stdlib/function/Ceiling.kt |  4 ++--
+ .../kotlin/it/unibo/tuprolog/solve/TestIs.kt  | 13 ++++++++++++
+ .../it/unibo/tuprolog/solve/TestIsImpl.kt     | 21 +++++++++++++++++++
+ 5 files changed, 46 insertions(+), 2 deletions(-)
+
+diff --git a/solve-problog/src/commonTest/kotlin/it/unibo/tuprolog/solve/problog/prolog/TestProblogIs.kt b/solve-problog/src/commonTest/kotlin/it/unibo/tuprolog/solve/problog/prolog/TestProblogIs.kt
+index 65b2960..6beb161 100644
+--- a/solve-problog/src/commonTest/kotlin/it/unibo/tuprolog/solve/problog/prolog/TestProblogIs.kt
++++ b/solve-problog/src/commonTest/kotlin/it/unibo/tuprolog/solve/problog/prolog/TestProblogIs.kt
+@@ -39,4 +39,9 @@ class TestProblogIs :
+     override fun testIsXFloat() {
+         prototype.testIsXFloat()
+     }
++
++    @Test
++    override fun testIsCeilingOfLargeReal() {
++        prototype.testIsCeilingOfLargeReal()
++    }
+ }
+diff --git a/solve-prolog/src/commonTest/kotlin/it/unibo/tuprolog/solve/prolog/TestPrologIs.kt b/solve-prolog/src/commonTest/kotlin/it/unibo/tuprolog/solve/prolog/TestPrologIs.kt
+index 85a9796..f5a0522 100644
+--- a/solve-prolog/src/commonTest/kotlin/it/unibo/tuprolog/solve/prolog/TestPrologIs.kt
++++ b/solve-prolog/src/commonTest/kotlin/it/unibo/tuprolog/solve/prolog/TestPrologIs.kt
+@@ -38,4 +38,9 @@ class TestPrologIs :
+     override fun testIsXFloat() {
+         prototype.testIsXFloat()
+     }
++
++    @Test
++    override fun testIsCeilingOfLargeReal() {
++        prototype.testIsCeilingOfLargeReal()
++    }
+ }
+diff --git a/solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/stdlib/function/Ceiling.kt b/solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/stdlib/function/Ceiling.kt
+index bb51066..daf3259 100644
+--- a/solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/stdlib/function/Ceiling.kt
++++ b/solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/stdlib/function/Ceiling.kt
+@@ -5,7 +5,7 @@ import it.unibo.tuprolog.core.Numeric
+ import it.unibo.tuprolog.core.Real
+ import it.unibo.tuprolog.solve.ExecutionContext
+ import it.unibo.tuprolog.solve.function.UnaryMathFunction
+-import kotlin.math.ceil
++import org.gciatto.kt.math.RoundingMode
+ 
+ /**
+  * Implementation of `ceiling/1` arithmetic functor
+@@ -41,5 +41,5 @@ object Ceiling : UnaryMathFunction("ceiling") {
+     override fun mathFunction(
+         real: Real,
+         context: ExecutionContext,
+-    ): Numeric = Numeric.of(ceil(real.value.toDouble()).toLong())
++    ): Numeric = Numeric.of(real.value.setScale(0, RoundingMode.CEILING).toBigInteger())
+ }
+diff --git a/test-solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/TestIs.kt b/test-solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/TestIs.kt
+index eee85a3..c2e1c0f 100644
+--- a/test-solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/TestIs.kt
++++ b/test-solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/TestIs.kt
+@@ -67,4 +67,17 @@ interface TestIs : SolverTest {
+      * producing 1 solution which binds variable `X` to `3.0`.
+      */
+     fun testIsXFloat()
++
++    /**
++     * Tests the queries
++     * ```prolog
++     * ?- 'is'(X,ceiling(1.0e30)).
++     * ?- 'is'(X,ceiling(-1.0e30)).
++     * ```
++     * succeed on a solver initialized with default built-ins and with and empty theory,
++     * producing 1 solution each, which binds variable `X` to `1000000000000000000000000000000`
++     * (resp. `-1000000000000000000000000000000`), i.e. the result does not saturate at `Long.MAX_VALUE`.
++     * Also checks that small values still round up, e.g. `ceiling(2.1)` is `3` and `ceiling(-0.5)` is `0`.
++     */
++    fun testIsCeilingOfLargeReal()
+ }
+diff --git a/test-solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/TestIsImpl.kt b/test-solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/TestIsImpl.kt
+index 2bb82b5..d81d8ba 100644
+--- a/test-solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/TestIsImpl.kt
++++ b/test-solve/src/commonMain/kotlin/it/unibo/tuprolog/solve/TestIsImpl.kt
+@@ -110,4 +110,25 @@ internal class TestIsImpl(
+             )
+         }
+     }
++
++    override fun testIsCeilingOfLargeReal() {
++        logicProgramming {
++            val solver = solverFactory.solverWithDefaultBuiltins()
++
++            for ((real, expected) in kotlin.collections.listOf(
++                Pair("1.0e30", "1000000000000000000000000000000"),
++                Pair("-1.0e30", "-1000000000000000000000000000000"),
++                Pair("2.1", "3"),
++                Pair("-0.5", "0"),
++            )) {
++                val query = "X" `is` structOf("ceiling", numOf(real))
++                val solutions = solver.solve(query, mediumDuration).toList()
++
++                assertSolutionEquals(
++                    kotlin.collections.listOf(query.yes("X" to intOf(expected))),
++                    solutions,
++                )
++            }
++        }
++    }
+ }
+-- 
+2.43.0
+
