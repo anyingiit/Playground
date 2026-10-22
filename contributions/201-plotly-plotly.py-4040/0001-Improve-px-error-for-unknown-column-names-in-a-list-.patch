@@ -1,0 +1,127 @@
+From 22fc42c6c3cfc19c3487d24ba7417feb54941b2e Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 03:04:10 +0800
+Subject: [PATCH] Improve px error for unknown column names in a list passed to
+ x or y
+
+When x or y is a list of column names and one of them is not a column of
+data_frame (e.g. a typo), Plotly Express does not switch to wide mode and
+treats the list as data, which then fails with a misleading "All
+arguments should have the same length" error. Detect a list of strings
+that cannot be valid data (wrong length, or a mix of column names and
+other strings) and raise an error naming the missing column(s) instead.
+
+Closes #4040
+---
+ CHANGELOG.md                                 |  1 +
+ plotly/express/_core.py                      | 36 ++++++++++++++++++++
+ tests/test_optional/test_px/test_px_input.py | 30 ++++++++++++++++
+ 3 files changed, 67 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 32590d34..727243e7 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -21,6 +21,7 @@ This project adheres to [Semantic Versioning](http://semver.org/).
+ - Fix `convert_dash` mapping dotted lines (`linestyle=':'`) to invalid `'circle'` in Plotly, correctly converting them to `'dot'` and preserving custom dash patterns as pixel lists, [[#5719](https://github.com/plotly/plotly.py/pull/5719)] with thanks to @robertoffmoura for the contribution!
+ - Fix `px.sunburst`, `px.treemap` and `px.icicle` listing sectors in a different order on every run when `path` is used with a Polars DataFrame; sectors now follow their order of first appearance for all dataframe backends [[#5766](https://github.com/plotly/plotly.py/pull/5766)], with thanks to @Irahan2 for the contribution!
+ - Fix `mpl_to_plotly` conversion of matplotlib contour lines and line collections: close contour rings ending with `Z` codes, support dash styles, convert date x-axes, separate disjoint subpaths with `None` separators, hide line collection traces from the legend by default, and group consecutive same-style lines into single traces [[#5770](https://github.com/plotly/plotly.py/pull/5770)], with thanks to @robertoffmoura for the contribution!
++- Fix the misleading "All arguments should have the same length" error raised by Plotly Express when a list of column names passed to `x` or `y` contains a name that is not a column of `data_frame` (e.g. a typo); the error now names the missing column(s) and lists the available ones [[#4040](https://github.com/plotly/plotly.py/issues/4040)]
+ 
+ ## [7.1.0] - 2026-09-15
+ 
+diff --git a/plotly/express/_core.py b/plotly/express/_core.py
+index 9994720b..2583c10c 100644
+--- a/plotly/express/_core.py
++++ b/plotly/express/_core.py
+@@ -1188,6 +1188,39 @@ def _is_col_list(columns, arg, is_pd_like, native_namespace):
+     return True
+ 
+ 
++def _check_col_list_typos(field, argument, df_input, length):
++    """Raise a helpful error if `argument` looks like a list of column names of
++    `df_input` (e.g. `y=["a", "b"]`) but some of them are not columns, instead of
++    letting it be treated as a list of values with a confusing length error.
++    `length` is the length of the previously-processed arguments (0 if none).
++    """
++    if (
++        not isinstance(argument, (list, tuple))
++        or len(argument) == 0
++        or not all(isinstance(c, str) for c in argument)
++    ):
++        return
++    missing = [c for c in argument if c not in df_input.columns]
++    if not missing or len(argument) == len(df_input):
++        return
++    # Only raise if `argument` can't be valid data: its length doesn't match the
++    # previously-processed arguments, or it mixes column names with other strings
++    if (length and len(argument) != length) or len(missing) < len(argument):
++        raise ValueError(
++            "Value of '%s' looks like a list of column names, but %s %s in "
++            "'data_frame'. Expected one of %s but received: %s"
++            % (
++                field,
++                ", ".join(repr(c) for c in missing),
++                "is not the name of a column"
++                if len(missing) == 1
++                else "are not names of columns",
++                str(list(df_input.columns)),
++                list(argument),
++            )
++        )
++
++
+ def _isinstance_listlike(x):
+     """Returns True if x is an iterable which can be transformed into a pandas Series,
+     False for the other types of possible values of a `hover_data` dict.
+@@ -1421,6 +1454,9 @@ def process_args_into_dataframe(
+                 if col_name is None:  # numpy array, list...
+                     col_name = _check_name_not_reserved(field, reserved_names)
+ 
++                if df_provided and field_name in ("x", "y"):
++                    _check_col_list_typos(field, argument, df_input, length)
++
+                 if length and (len_arg := len(argument)) != length:
+                     raise ValueError(
+                         "All arguments should have the same length. "
+diff --git a/tests/test_optional/test_px/test_px_input.py b/tests/test_optional/test_px/test_px_input.py
+index ce09e251..140eca88 100644
+--- a/tests/test_optional/test_px/test_px_input.py
++++ b/tests/test_optional/test_px/test_px_input.py
+@@ -756,3 +756,33 @@ def test_no_futurewarning():
+         warn for warn in warn_list if issubclass(warn.category, FutureWarning)
+     ]
+     assert len(future_warnings) == 0, "FutureWarning(s) raised!"
++
++
++def test_wrong_column_name_in_list(constructor):  # issue 4040
++    df = constructor(dict(x=[1, 2, 3], data1=[1, 4, 9], data2=[1, 8, 27]))
++    # a typo in a list of column names used to raise a misleading
++    # "All arguments should have the same length" error
++    with pytest.raises(ValueError) as err_msg:
++        px.line(df, x="x", y=["data1", "Data2"])
++    msg = str(err_msg.value)
++    assert "Value of 'y' looks like a list of column names" in msg
++    assert "'Data2' is not the name of a column in 'data_frame'" in msg
++    assert "same length" not in msg
++    # no previously-processed argument
++    with pytest.raises(ValueError, match="'Data2' is not the name of a column"):
++        px.line(df, y=["data1", "Data2"])
++    # all names wrong
++    with pytest.raises(ValueError, match="'Data1', 'Data2' are not names of columns"):
++        px.line(df, x="x", y=["Data1", "Data2"])
++    # typo in x, processed before y
++    with pytest.raises(ValueError, match="Value of 'x' looks like a list of column"):
++        px.scatter(df, x=["x", "X2"], y="data1")
++
++
++def test_list_of_strings_as_values_with_data_frame():
++    # lists of strings whose length matches are still treated as data
++    df = pd.DataFrame(dict(a=[1, 2, 3], b=[4, 5, 6]))
++    fig = px.scatter(df, x=["u", "v", "w"], y="b")
++    assert list(fig.data[0].x) == ["u", "v", "w"]
++    fig = px.scatter(df, x=["u", "v"], y=["w", "z"])
++    assert list(fig.data[0].y) == ["w", "z"]
+-- 
+2.45.0
+
