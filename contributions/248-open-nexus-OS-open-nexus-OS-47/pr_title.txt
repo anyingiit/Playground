@@ -1,0 +1,1 @@
+test(nxs-pack): unit tests for the host-side helpers
