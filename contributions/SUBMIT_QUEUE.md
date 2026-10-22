@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | 046 | [symfony/ai#2430](https://github.com/symfony/ai/issues/2430) | 新锐 | 先认领、DCO、**已提交** | `contributions/046-symfony-ai-2430` |
 | 047 | [modelcontextprotocol/php-sdk#523](https://github.com/modelcontextprotocol/php-sdk/issues/523) | 新锐 | 先认领、DCO、**已跳过（10-22）** | `contributions/_skipped/047-modelcontextprotocol-php-sdk-523` |
-| 048 | [DeusData/codebase-memory-mcp#2232](https://github.com/DeusData/codebase-memory-mcp/issues/2232) | 新锐 | DCO | `contributions/048-DeusData-codebase-memory-mcp-2232` |
+| 048 | [DeusData/codebase-memory-mcp#2232](https://github.com/DeusData/codebase-memory-mcp/issues/2232) | 新锐 | DCO、**暂缓（10-22，维护者已邀请报告者提 PR）** | `contributions/048-DeusData-codebase-memory-mcp-2232` |
 | 049 | [microsoft/litebox#1222](https://github.com/microsoft/litebox/issues/1222) | 新锐 | 先认领、CLA、DCO、**已提交** | `contributions/049-microsoft-litebox-1222` |
 | 050 | [pgdogdev/pgdog#1682](https://github.com/pgdogdev/pgdog/issues/1682) | 新锐 | DCO、**已跳过（10-22）** | `contributions/_skipped/050-pgdogdev-pgdog-1682` |
 | 051 | [unstablebuild/rune#153](https://github.com/unstablebuild/rune/issues/153) | 新锐 | DCO、**已跳过（10-22）** | `contributions/_skipped/051-unstablebuild-rune-153` |

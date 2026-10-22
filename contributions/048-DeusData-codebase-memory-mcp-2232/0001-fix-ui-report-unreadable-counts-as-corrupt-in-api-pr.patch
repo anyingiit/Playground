@@ -1,6 +1,6 @@
-From 89ece6e3504ce61959ae78ac3df3451150e3205a Mon Sep 17 00:00:00 2001
+From d83d3697461eef26e711b2d931a17d255926145f Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
-Date: Thu, 1 Oct 2026 17:33:13 +0000
+Date: Fri, 23 Oct 2026 02:57:16 +0800
 Subject: [PATCH] fix(ui): report unreadable counts as corrupt in
  /api/project-health
 
@@ -19,41 +19,50 @@ Fixes #2232
 
 Signed-off-by: anyingiit <49945850+anyingiit@users.noreply.github.com>
 ---
- src/ui/http_server.c | 15 ++++++++++++++
- tests/test_httpd.c   | 48 ++++++++++++++++++++++++++++++++++++++++++++
- 2 files changed, 63 insertions(+)
+ src/ui/http_server.c | 24 ++++++++++++++++++----
+ tests/test_httpd.c   | 49 ++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 69 insertions(+), 4 deletions(-)
 
 diff --git a/src/ui/http_server.c b/src/ui/http_server.c
-index 66f1aff..7da2de1 100644
+index ffc834f6..59f948d3 100644
 --- a/src/ui/http_server.c
 +++ b/src/ui/http_server.c
-@@ -1368,6 +1368,21 @@ static void handle_project_health(cbm_http_conn_t *c, const cbm_http_req_t *req)
-     int edge_count = cbm_store_count_edges(store, name);
-     cbm_store_close(store);
- 
-+    /* A negative count is a failed read (CBM_STORE_ERR), e.g. a store whose
-+     * nodes or edges table is missing or damaged. That is not a healthy
-+     * project with -1 rows; report it as corrupt and name what failed. */
-+    const bool nodes_unreadable = node_count < 0;
-+    const bool edges_unreadable = edge_count < 0;
-+    if (nodes_unreadable || edges_unreadable) {
-+        const char *what = "edges";
-+        if (nodes_unreadable) {
-+            what = edges_unreadable ? "nodes and edges" : "nodes";
-+        }
-+        cbm_http_replyf(c, 200, g_cors_json,
-+                        "{\"status\":\"corrupt\",\"reason\":\"cannot read %s\"}", what);
-+        return;
-+    }
-+
-     int64_t size = cbm_file_size(db_path);
- 
-     cbm_http_replyf(c, 200, g_cors_json,
+@@ -1931,10 +1931,26 @@ static void handle_project_health(cbm_http_conn_t *c, const cbm_http_req_t *req,
+             yyjson_mut_obj_add_str(doc, root, "status", "corrupt");
+             yyjson_mut_obj_add_str(doc, root, "reason", "cannot open");
+         } else {
+-            yyjson_mut_obj_add_str(doc, root, "status", "healthy");
+-            yyjson_mut_obj_add_int(doc, root, "nodes", cbm_store_count_nodes(store, name));
+-            yyjson_mut_obj_add_int(doc, root, "edges", cbm_store_count_edges(store, name));
+-            yyjson_mut_obj_add_int(doc, root, "size_bytes", cbm_file_size(db_path));
++            int node_count = cbm_store_count_nodes(store, name);
++            int edge_count = cbm_store_count_edges(store, name);
++            /* A negative count is a failed read (CBM_STORE_ERR), e.g. a store whose
++             * nodes or edges table is missing or damaged. That is not a healthy
++             * project with -1 rows; report it as corrupt and name what failed. */
++            const bool nodes_unreadable = node_count < 0;
++            const bool edges_unreadable = edge_count < 0;
++            if (nodes_unreadable || edges_unreadable) {
++                const char *reason = "cannot read edges";
++                if (nodes_unreadable) {
++                    reason = edges_unreadable ? "cannot read nodes and edges" : "cannot read nodes";
++                }
++                yyjson_mut_obj_add_str(doc, root, "status", "corrupt");
++                yyjson_mut_obj_add_str(doc, root, "reason", reason);
++            } else {
++                yyjson_mut_obj_add_str(doc, root, "status", "healthy");
++                yyjson_mut_obj_add_int(doc, root, "nodes", node_count);
++                yyjson_mut_obj_add_int(doc, root, "edges", edge_count);
++                yyjson_mut_obj_add_int(doc, root, "size_bytes", cbm_file_size(db_path));
++            }
+             (void)cbm_store_get_project(store, name, &project);
+             cbm_store_close(store);
+         }
 diff --git a/tests/test_httpd.c b/tests/test_httpd.c
-index 322130c..40d5d66 100644
+index c61abf9b..752c8265 100644
 --- a/tests/test_httpd.c
 +++ b/tests/test_httpd.c
-@@ -1430,6 +1430,53 @@ TEST(ui_server_delete_mutation_guard_balances_success) {
+@@ -2678,6 +2678,54 @@ TEST(ui_server_delete_mutation_guard_balances_success) {
      PASS();
  }
  
@@ -95,7 +104,8 @@ index 322130c..40d5d66 100644
 +    ASSERT_GT(n, 0);
 +    ASSERT_EQ(th_status(resp), 200);
 +    ASSERT_NULL(strstr(resp, "healthy"));
-+    ASSERT_NULL(strstr(resp, "-1"));
++    ASSERT_NULL(strstr(resp, "\"nodes\":-1"));
++    ASSERT_NULL(strstr(resp, "\"edges\":-1"));
 +    ASSERT_NOT_NULL(strstr(resp, "\"status\":\"corrupt\""));
 +    ASSERT_NOT_NULL(strstr(resp, "\"reason\":\"cannot read nodes and edges\""));
 +
@@ -107,7 +117,7 @@ index 322130c..40d5d66 100644
  TEST(ui_server_delete_project_unwatches_after_delete) {
      ui_delete_fixture_t fx;
      ASSERT_EQ(ui_delete_fixture_init(&fx), 0);
-@@ -2471,6 +2518,7 @@ SUITE(httpd) {
+@@ -4129,6 +4177,7 @@ SUITE(httpd) {
      RUN_TEST(ui_server_adr_mutation_guard_balances_success);
      RUN_TEST(ui_server_delete_mutation_guard_busy_preserves_project);
      RUN_TEST(ui_server_delete_mutation_guard_balances_success);
@@ -116,5 +126,5 @@ index 322130c..40d5d66 100644
      RUN_TEST(ui_server_delete_project_unwatches_missing_db);
      RUN_TEST(ui_server_delete_project_no_watcher_still_deletes);
 -- 
-2.43.0
+2.45.0
 

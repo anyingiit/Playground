@@ -1,3 +1,5 @@
+> **暂缓（2026-10-22）**：新补丁已在最新 main 上验证（macOS，httpd 套件 红 95/1 失败 → 绿 96 通过），PR 文本已更新。但维护者 9-26 在 issue 下明确请报告者 AmirF194 提 PR（“Please go ahead with your PR”），10-19 仍无实现。为避免抢别人已被邀请的活，本轮没提交；若 owner 认为可以，直接用 `tools/submit_pr.sh` 提交（需 `--signoff`）。
+
 # DeusData/codebase-memory-mcp #2232 — /api/project-health 在表缺失时仍报 healthy
 
 | 项 | 内容 |
