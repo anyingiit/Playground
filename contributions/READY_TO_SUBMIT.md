@@ -80,7 +80,6 @@
 | 422 | [BSC-ES/autosubmit#3240](https://github.com/BSC-ES/autosubmit/issues/3240) | 待提交（base `master`；无需认领；无 DCO/CLA；Python；复核 PASS） |
 | 301 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（GTP） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS；先交 301 再交 302，两者改不同文件不冲突） |
 | 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（QUIC） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS） |
-| 361 | [helix-editor/helix#11198](https://github.com/helix-editor/helix/issues/11198) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；SQL 默认接 sqls；与 360 同仓库、可任意顺序提交） |
 | 423 | [whtsky/pixelmatch-py#256](https://github.com/whtsky/pixelmatch-py/issues/256) | 待提交（base `master`；无需认领；无 DCO/CLA；Python；本地跑测试前需 `git lfs pull` 取 fixtures；复核 PASS） |
 | 279 | [hanami/hanami-view#264](https://github.com/hanami/hanami-view/issues/264) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；开 PR 后可把 CHANGELOG 的 #264 改成 PR 号） |
 | 362 | [helix-editor/helix#5817](https://github.com/helix-editor/helix/issues/5817) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；Ruby `]a` 调用参数；与 360/361/363 互不冲突） |
