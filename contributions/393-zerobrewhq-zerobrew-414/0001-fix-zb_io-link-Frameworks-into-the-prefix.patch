@@ -1,0 +1,182 @@
+From 5267eebc281361a86836a289fb069f06dd8f64a1 Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 20:43:34 +0000
+Subject: [PATCH] fix(zb_io): link Frameworks into the prefix
+
+Homebrew links a keg's Frameworks directory into the prefix: the
+Foo.framework bundle and its Versions directory are created as real
+directories and shared between kegs, everything below them is linked
+as a whole. zerobrew left Frameworks out of LINK_DIRS, so Python's
+framework build on macOS never showed up in the prefix's Frameworks.
+
+Closes #414
+---
+ CHANGELOG.md             |  3 ++
+ zb_cli/tests/parity.rs   | 11 ++++-
+ zb_io/src/cellar/link.rs | 88 +++++++++++++++++++++++++++++++++++++++-
+ 3 files changed, 99 insertions(+), 3 deletions(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 823d138..be12e9c 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ ### Changed
+ - The Homebrew tap is `zerobrewhq/tap`: `brew install zerobrewhq/tap/zerobrew`. The repository was renamed from `homebrew-zerobrew`, so taps of `zerobrewhq/zerobrew` and `cachebag/zerobrew` keep updating through GitHub's redirect
+ 
++### Fixed
++- A keg's `Frameworks` directory is linked into the prefix, as Homebrew does, so Python's framework build on macOS shows up in the prefix's `Frameworks`. `Foo.framework` and its `Versions` directory are created and shared, everything below them is linked as a whole ([#414](https://github.com/zerobrewhq/zerobrew/issues/414))
++
+ ## [0.4.2] - 2026-10-21
+ 
+ ### Added
+diff --git a/zb_cli/tests/parity.rs b/zb_cli/tests/parity.rs
+index ad3feb5..7f611cb 100644
+--- a/zb_cli/tests/parity.rs
++++ b/zb_cli/tests/parity.rs
+@@ -631,7 +631,16 @@ fn ca_certificates_bundle_matches_homebrew() {
+ /// relative to the prefix, with targets relative to the prefix too.
+ fn links_into(prefix: &Path, keg: &Path) -> BTreeMap<String, String> {
+     let mut links = BTreeMap::new();
+-    for dir in ["bin", "sbin", "lib", "include", "share", "etc", "opt"] {
++    for dir in [
++        "bin",
++        "sbin",
++        "lib",
++        "include",
++        "share",
++        "etc",
++        "Frameworks",
++        "opt",
++    ] {
+         let root = prefix.join(dir);
+         if !root.exists() {
+             continue;
+diff --git a/zb_io/src/cellar/link.rs b/zb_io/src/cellar/link.rs
+index f447c60..50ba696 100644
+--- a/zb_io/src/cellar/link.rs
++++ b/zb_io/src/cellar/link.rs
+@@ -7,7 +7,15 @@ use zb_core::{ConflictedLink, Error};
+ /// Keg directories linked into the prefix. Like Homebrew, `libexec` is not
+ /// linked: it holds files private to a keg, like the Python formulae's
+ /// unversioned `python` and `pip`, which would collide across versions.
+-const LINK_DIRS: &[&str] = &["bin", "sbin", "lib", "include", "share", "etc"];
++const LINK_DIRS: &[&str] = &[
++    "bin",
++    "sbin",
++    "lib",
++    "include",
++    "share",
++    "etc",
++    "Frameworks",
++];
+ 
+ /// Directories older versions of zerobrew linked. Still unlinked, so those
+ /// links are cleaned up on uninstall and upgrade.
+@@ -139,10 +147,22 @@ fn dir_mode(top: &str, rel: &str) -> DirMode {
+             DirMode::Mkpath
+         }
+         "lib" => DirMode::Link,
++        // Homebrew creates `Foo.framework` and `Foo.framework/Versions` so
++        // several kegs can link their versions into one framework, and links
++        // everything else, such as `Versions/3.13`, as a whole.
++        "Frameworks" if is_framework_or_versions(rel) => DirMode::Mkpath,
++        "Frameworks" => DirMode::Link,
+         _ => DirMode::Mkpath,
+     }
+ }
+ 
++/// Whether `rel`, a path inside `Frameworks`, ends in a `.framework` bundle or
++/// its `Versions` directory. Homebrew's `[^/]*\.framework(/Versions)?$`.
++fn is_framework_or_versions(rel: &str) -> bool {
++    let bundle = rel.strip_suffix("/Versions").unwrap_or(rel);
++    bundle.ends_with(".framework")
++}
++
+ /// Files Homebrew leaves out of the prefix: generated caches that every keg
+ /// ships its own copy of.
+ fn is_skipped_file(top: &str, rel: &str) -> bool {
+@@ -278,8 +298,10 @@ impl Linker {
+         fs::create_dir_all(&bin_dir)?;
+         fs::create_dir_all(&opt_dir)?;
+ 
++        // `Frameworks` is created on first use: most prefixes, and every
++        // Linux one, never get a framework.
+         for dir in LINK_DIRS {
+-            if *dir != "bin" {
++            if *dir != "bin" && *dir != "Frameworks" {
+                 fs::create_dir_all(prefix.join(dir))?;
+             }
+         }
+@@ -921,6 +943,68 @@ mod tests {
+         assert!(tmp.path().join("sbin/php-fpm").is_symlink());
+     }
+ 
++    /// Homebrew links a keg's `Frameworks` like its other directories:
++    /// `Foo.framework` and `Foo.framework/Versions` are created so several
++    /// kegs can share them, and a version directory, the `Current` link and
++    /// the bundle's top-level links are linked as they are. See
++    /// https://github.com/zerobrewhq/zerobrew/issues/414
++    #[test]
++    fn links_frameworks_the_way_homebrew_does() {
++        let tmp = TempDir::new().unwrap();
++        let prefix = tmp.path();
++        let keg = prefix.join("cellar/python@3.13/3.13.9");
++        let framework = keg.join("Frameworks/Python.framework");
++        fs::create_dir_all(framework.join("Versions/3.13/Headers")).unwrap();
++        fs::write(framework.join("Versions/3.13/Python"), b"dylib").unwrap();
++        fs::write(framework.join("Versions/3.13/Headers/Python.h"), b"h").unwrap();
++        std::os::unix::fs::symlink("3.13", framework.join("Versions/Current")).unwrap();
++        std::os::unix::fs::symlink("Versions/Current/Python", framework.join("Python")).unwrap();
++        std::os::unix::fs::symlink("Versions/Current/Headers", framework.join("Headers")).unwrap();
++
++        let linker = Linker::new(prefix).unwrap();
++        linker.link_keg(&keg).unwrap();
++
++        let linked = prefix.join("Frameworks/Python.framework");
++        for dir in [&linked, &linked.join("Versions")] {
++            assert!(
++                dir.is_dir() && !dir.is_symlink(),
++                "{} should be a real directory",
++                dir.display()
++            );
++        }
++        for link in ["Versions/3.13", "Versions/Current", "Python", "Headers"] {
++            assert!(linked.join(link).is_symlink(), "{link} should be linked");
++        }
++        assert_eq!(fs::read(linked.join("Python")).unwrap(), b"dylib");
++        assert!(linked.join("Headers/Python.h").is_file());
++
++        linker.unlink_keg(&keg).unwrap();
++        assert!(linked.join("Versions/3.13").symlink_metadata().is_err());
++        assert!(linked.join("Python").symlink_metadata().is_err());
++        assert!(!linked.exists(), "the created framework dirs are removed");
++    }
++
++    /// A prefix gets a `Frameworks` directory only once a keg links into it.
++    #[test]
++    fn frameworks_dir_is_created_on_first_use() {
++        let tmp = TempDir::new().unwrap();
++        Linker::new(tmp.path()).unwrap();
++        assert!(!tmp.path().join("Frameworks").exists());
++    }
++
++    #[test]
++    fn framework_dirs_are_recognised() {
++        assert!(is_framework_or_versions("Python.framework"));
++        assert!(is_framework_or_versions("Python.framework/Versions"));
++        assert!(!is_framework_or_versions("Python.framework/Versions/3.13"));
++        assert!(!is_framework_or_versions("Python.framework/Headers"));
++        assert!(!is_framework_or_versions("Versions"));
++        assert!(is_framework_or_versions(
++            "A.framework/Versions/A/Frameworks/B.framework"
++        ));
++        assert!(!is_framework_or_versions("A.framework/Versions/Versions"));
++    }
++
+     /// Homebrew links `include/<pkg>` and `share/doc/<pkg>` as one symlink
+     /// each, and creates shared directories like `lib/pkgconfig` and
+     /// `share/man/man1` as real directories. See
+-- 
+2.43.0
+
