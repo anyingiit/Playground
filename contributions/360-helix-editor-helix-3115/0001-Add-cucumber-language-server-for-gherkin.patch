@@ -1,12 +1,12 @@
-From 10ba9cf269d7fd8ca2bbdfbf21bed82d4ebe70d3 Mon Sep 17 00:00:00 2001
+From f09017d160bd61a10206459fe96fe17eaf30f49a Mon Sep 17 00:00:00 2001
 From: anyingiit <49945850+anyingiit@users.noreply.github.com>
 Date: Thu, 22 Oct 2026 20:23:09 +0000
 Subject: [PATCH] Add cucumber-language-server for gherkin
 
 ---
  book/src/generated/lang-support.md | 2 +-
- languages.toml                     | 5 +++++
- 2 files changed, 6 insertions(+), 1 deletion(-)
+ languages.toml                     | 2 ++
+ 2 files changed, 3 insertions(+), 1 deletion(-)
 
 diff --git a/book/src/generated/lang-support.md b/book/src/generated/lang-support.md
 index eac6942..8789279 100644
@@ -22,21 +22,18 @@ index eac6942..8789279 100644
  | git-attributes | ✓ |  |  |  |  |  |
  | git-cliff-config | ✓ | ✓ |  |  | ✓ | `taplo`, `tombi` |
 diff --git a/languages.toml b/languages.toml
-index a5403e6..3bd204d 100644
+index a5403e6..bf42e77 100644
 --- a/languages.toml
 +++ b/languages.toml
-@@ -321,6 +321,10 @@ mode = "location"
- command = "clarinet"
- args = ["lsp"]
- 
-+[language-server.cucumber-language-server]
-+command = "cucumber-language-server"
-+args = ["--stdio"]
-+
- [language-server.docker-language-server]
- command = "docker-language-server"
- args = ["start", "--stdio"]
-@@ -4633,6 +4637,7 @@ scope = "source.feature"
+@@ -33,6 +33,7 @@ commit-lsp = { command = "commit-lsp", args = ["run"] }
+ crystalline = { command = "crystalline", args = ["--stdio"] }
+ cs = { command = "cs", args = ["launch", "--contrib", "smithy-language-server", "--", "0"] }
+ csharp-ls = { command = "csharp-ls" }
++cucumber-language-server = { command = "cucumber-language-server", args = ["--stdio"] }
+ cuelsp = { command = "cue", args = ["lsp", "serve"] }
+ dart = { command = "dart", args = ["language-server", "--client-id=helix"] }
+ debian-lsp = { command = "debian-lsp" }
+@@ -4633,6 +4634,7 @@ scope = "source.feature"
  file-types = ["feature"]
  comment-token = "#"
  indent = { tab-width = 2, unit = "  " }

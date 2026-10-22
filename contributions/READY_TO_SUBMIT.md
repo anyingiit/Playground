@@ -51,3 +51,13 @@
 | 391 | [Gaurav-Gosain/tuios#980](https://github.com/Gaurav-Gosain/tuios/issues/980) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；新锐；复核 PASS；用仓库自己的 PR 模板） |
 | 392 | [Gaurav-Gosain/tuios#585](https://github.com/Gaurav-Gosain/tuios/issues/585) | 待提交（base `main`；无需认领；无 DCO/CLA；Go；新锐；复核 PASS；与 391 同仓库，391 合并后用 alt-0001-on-top-of-391.patch） |
 | 278 | [ruby/rdoc#1782](https://github.com/ruby/rdoc/issues/1782) | 待提交（base **`master`**；无需认领；无 DCO/CLA；Ruby；复核 PASS；**按仓库 AGENTS.md，正文不加 AI 声明段**；与 277 同仓库不冲突） |
+| 420 | [opendatahub-io/ai-gateway-payload-processing#315](https://github.com/opendatahub-io/ai-gateway-payload-processing/issues/315) | 待提交（base `main`；无需认领；DCO：补丁已带 anyingiit 的 Signed-off-by；无 CLA；Go 测试文件合并；复核 PASS） |
+| 333 | [mpdf/mpdf#2232](https://github.com/mpdf/mpdf/issues/2232) | 待提交（base **`development`**；无需认领；无 DCO/CLA；commit 第三行 `Assisted-by: Claude Code` 为仓库要求的 AI 声明须保留；复核 PASS） |
+| 390 | [pydantic/monty#1101](https://github.com/pydantic/monty/issues/1101) | 待提交（base `main`；无需认领；无 DCO/CLA；Rust；新锐；复核 PASS） |
+| 249 | [KnockOutEZ/wigolo#526](https://github.com/KnockOutEZ/wigolo/issues/526) | 待提交：base `main`；无需认领（维护者 10-21 标 up for grabs）；无 DCO，不加 `--signoff`；CLA 提交即同意（含维护者再许可条款，已在 README 说明）；复核 PASS |
+| 276 | [hanami/hanami-cli#450](https://github.com/hanami/hanami-cli/issues/450) | 待提交（base `main`；无需认领；无 DCO/CLA；Ruby；复核 PASS；owner 在该仓库已有 #464，此为第二个） |
+| 422 | [BSC-ES/autosubmit#3240](https://github.com/BSC-ES/autosubmit/issues/3240) | 待提交（base `master`；无需认领；无 DCO/CLA；Python；复核 PASS） |
+| 301 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（GTP） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS；先交 301 再交 302，两者改不同文件不冲突） |
+| 302 | [seladb/PcapPlusPlus#2278](https://github.com/seladb/PcapPlusPlus/issues/2278)（QUIC） | 待提交（base `dev`；无需认领；无 DCO/CLA；C++；复核 PASS） |
+| 360 | [helix-editor/helix#3115](https://github.com/helix-editor/helix/issues/3115) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；gherkin 默认接 cucumber-language-server，纯 languages.toml + 生成文档） |
+| 361 | [helix-editor/helix#11198](https://github.com/helix-editor/helix/issues/11198) | 待提交（base `master`；无需认领；无 DCO/CLA；高星；复核 PASS；SQL 默认接 sqls；与 360 同仓库、可任意顺序提交） |
