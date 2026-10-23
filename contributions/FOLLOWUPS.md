@@ -35,3 +35,15 @@
 - KnockOutEZ/wigolo#663：CodeRabbit 指出 CDP 存储状态未应用、池回退泄漏、认证上下文无上限。 ✅ 10-22 三条全修，推送 29afe80 并回复（vitest fetch 904 通过），PR 描述同步修正
 - OpsiMate/OpsiMate#1293：CodeRabbit 建议空 PUT 测试也比较 updatedAt（小）。 ✅ 10-22 推送 5d0d238 并回复
 - synolia/SyliusMaintenancePlugin#55、devonfw/IDEasy#2737、bpmn-io/dmn-migrate#63、bpmn-io/bpmn-to-image#70：CLA 待 owner 签。
+
+## 最后一小时复扫（10-22 22:30 UTC 之后的新意见与 CI，处理到 00:20 UTC）
+
+| PR | 处理 |
+|---|---|
+| XAGI-Lab/melra#393 | ✅ bhavana-sanal 新的 CHANGES_REQUESTED 两点已改，推送 011779a（--signoff），release.test 9/9；CHANGELOG 冲突按 dhe-eraj-s 说明由维护者合并时处理，未 rebase |
+| KnockOutEZ/wigolo#663 | ✅ CodeRabbit 新的两条小意见（等待槽位时中止、CDP newPage 失败未关连接）已修，推送 8c4e285，vitest fetch 906/906 |
+| stackrox/kube-linter#1280 | 已回复不改：CodeRabbit 说的显式映射键锚点，goccy 解析器本身就拒绝该写法；codecov/project 失败源于过旧的比较基准，非本改动 |
+| ipython/ipython#15448 | ✅ formatting CI 失败确为我们的行（darker+ruff），推送 a5b9e79 修复 |
+| infection/infection#3699 | 未改：E2E 失败只在 PHPStan_Integration 固定输出（PHPStan dev 版多杀一个变异），与本改动无关；维护者重跑即可 |
+| bpmn-io/dmn-migrate#63 | merge-gate 失败 = CLA 未签，需 owner 签：https://cla-assistant.io/bpmn-io/dmn-migrate?pullRequest=63 |
+| tuProlog/2p-kt#1047 | Codex 无发现，无需操作 |
