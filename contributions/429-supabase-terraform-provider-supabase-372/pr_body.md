@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 Fixes #372
 
 `readProject` sets `instance_size` from the `compute_instance` entry in `selected_addons` returned by `GET /v1/projects/{ref}/billing/addons`. Before reading, it resets the value to null. Nano is the base compute size, not an addon, so a nano project has no such entry, and `instance_size` ends up null. With `instance_size = "nano"` in the config, apply then fails:

@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 Refs #116
 
 This covers the first half of #116: the crate docs, comments and README now point at [RFC 9987](https://www.rfc-editor.org/rfc/rfc9987.html) instead of `draft-miller-ssh-agent-14`. It also reports what I found when I checked the implementation against the RFC (below).

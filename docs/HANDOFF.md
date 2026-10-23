@@ -63,7 +63,7 @@ contributions/
 5. **运行任何代码前先审计**：跑 `tools/audit_repo.py` 并逐条人工复核，结论写进 `AUDIT.md`；发现可疑立即停止。
 6. 测试必须**红→绿**：回归测试不带修复时失败、带修复时通过；同时跑项目自己的 lint/format/typecheck/test。跑不全要如实写明。
 7. 遵守仓库惯例：提交信息格式、changelog/changeset/news 片段、文档、PR 模板。
-8. PR 正文用 chefs-pick-oss-starter 格式，**必须含动机与声明段落**（用 Claude Code 准备、如何验证、维护者不想要可直接关闭）。
+8. PR 正文用 chefs-pick-oss-starter 格式，**必须含动机与声明段落**（用 Claude Code 准备、如何验证、维护者不想要可直接关闭）。**禁止**出现 claude-projects-attribution 标记、"Requested by" 行、任何 claude.ai 链接、Claude-Session 或 Co-Authored-By: Claude 行（云端默认会加，owner 明令禁止，submit_pr.sh 会拦）。
 9. 每个贡献最后由**另一个独立 agent 复核**：补丁能在新克隆上 `git am`、重跑红→绿、确认没出现竞争 PR。
 
 ### 3.2 owner 的额外决定

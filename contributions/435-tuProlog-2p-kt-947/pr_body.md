@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 ## Description
 
 The fallback branch of `getArgumentAsTypeRef(index)` in `PrimitiveExtensions.kt` called `ensuringArgumentIsTypeRef(1)` instead of `ensuringArgumentIsTypeRef(index)`. `new_object/3` resolves its type from argument 0, so a non-type first argument was blamed on the constructor-argument list. For example, `new_object(foo(1), [], L)` raised a `type_error(type_reference, [])` for argument index 1 instead of one for `foo(1)` at index 0. `cast/3` was unaffected only because it happens to use index 1.

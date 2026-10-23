@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KPKpHzfAxy5KoBhHBfd3QVb)_
-
 ## Description
 
 `TooManyMethods` counted methods defined inside a nested `Foo = Struct.new(...) do ... end` (or `Foo = Class.new do ... end`) towards the enclosing class. `ContextBuilder` already opens a separate module context for such a constant assignment (`defines_module?`), but `ModuleContext#node_instance_methods` uses `local_nodes(:def)`, which only stops at `:class` and `:module` nodes.

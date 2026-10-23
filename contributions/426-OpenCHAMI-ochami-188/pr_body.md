@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 Fixes #188
 
 The four `metadata * delete` commands (`defaults`, `group`, `instance`, `peer`) created the metadata-service client in `RunE` and called `rt.HandleToken` at the top of `runCore*`. Both happened before the "Really delete?" prompt. With no base URI or token configured, they failed (exit 3) without ever prompting.

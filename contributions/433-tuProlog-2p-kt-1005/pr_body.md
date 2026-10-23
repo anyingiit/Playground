@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 ## Description
 
 `ceiling/1` converted its result through `Double` and `toLong()`. Results beyond the 64-bit range therefore saturated (`X is ceiling(1.0e30)` gave `9223372036854775807`), and large reals also lost precision in the `Double` round-trip.

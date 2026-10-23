@@ -1,0 +1,98 @@
+From 0c4988f5e4c2fcfc0112b248240b73ee35d0791e Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:27:16 +0000
+Subject: [PATCH] [Fix] `jsx-closing-tag-location`: keep rendered trailing
+ spaces when autofixing
+
+Fixes #1501
+
+Assisted-by: Claude Code
+---
+ CHANGELOG.md                                |  2 ++
+ lib/rules/jsx-closing-tag-location.js       | 14 ++++++++++++
+ tests/lib/rules/jsx-closing-tag-location.js | 24 +++++++++++++++++++++
+ 3 files changed, 40 insertions(+)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index fa67ed8..cbad627 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -29,6 +29,7 @@ This change log adheres to standards from [Keep a CHANGELOG](https://keepachange
+ * [`jsx-closing-bracket-location`]: preserve comments in autofix ([#4028][] @raisulchowdhury)
+ * [`jsx-closing-bracket-location`]: keep TS type arguments when autofixing (@ljharb)
+ * [`jsx-closing-bracket-location`]: say "on the next line" when a comment shares the closing bracket's line (@ljharb)
++* [`jsx-closing-tag-location`]: keep rendered trailing spaces when moving the closing tag to its own line ([#1501][] @anyingiit)
+ * [`sort-prop-types`]: keep comments on the opening brace's line in place when autofixing (@ljharb)
+ * [`sort-prop-types`]: preserve comments and separators in autofix ([#4029][] @raisulchowdhury)
+ * [`jsx-no-leaked-render`]: autofix `cond ? false : alternate` to `!cond && alternate` with correct negation and parentheses (@ljharb)
+@@ -87,6 +88,7 @@ This change log adheres to standards from [Keep a CHANGELOG](https://keepachange
+ [#3877]: https://github.com/jsx-eslint/eslint-plugin-react/pull/3877
+ [#3729]: https://github.com/jsx-eslint/eslint-plugin-react/pull/3729
+ [#3441]: https://github.com/jsx-eslint/eslint-plugin-react/pull/3441
++[#1501]: https://github.com/jsx-eslint/eslint-plugin-react/issues/1501
+ 
+ ## [7.37.5] - 2025.04.03
+ 
+diff --git a/lib/rules/jsx-closing-tag-location.js b/lib/rules/jsx-closing-tag-location.js
+index 5f6f6ef..6388ed7 100644
+--- a/lib/rules/jsx-closing-tag-location.js
++++ b/lib/rules/jsx-closing-tag-location.js
+@@ -129,6 +129,20 @@ module.exports = {
+             );
+           }
+ 
++          // Trailing spaces right before the closing tag are rendered, but would be
++          // dropped by JSX once a newline follows them, so keep them as an expression.
++          const children = node.parent.children || [];
++          const lastChild = children[children.length - 1];
++          const trailingSpaces = lastChild
++            && (lastChild.type === 'JSXText' || lastChild.type === 'Literal')
++            && /[ \t]+$/.exec(lastChild.raw);
++          if (trailingSpaces) {
++            return fixer.replaceTextRange(
++              [node.range[0] - trailingSpaces[0].length, node.range[0]],
++              `{'${trailingSpaces[0]}'}\n${indent}`
++            );
++          }
++
+           return fixer.insertTextBefore(node, `\n${indent}`);
+         },
+       });
+diff --git a/tests/lib/rules/jsx-closing-tag-location.js b/tests/lib/rules/jsx-closing-tag-location.js
+index 23b71cd..72d9a52 100644
+--- a/tests/lib/rules/jsx-closing-tag-location.js
++++ b/tests/lib/rules/jsx-closing-tag-location.js
+@@ -150,6 +150,30 @@ ruleTester.run('jsx-closing-tag-location', rule, {
+       `,
+       errors: [{ messageId: 'onOwnLine' }],
+     },
++    {
++      code: `
++        <App>
++          foo </App>
++      `,
++      output: `
++        <App>
++          foo{' '}
++        </App>
++      `,
++      errors: [{ messageId: 'onOwnLine' }],
++    },
++    {
++      code: `
++        <App>
++          {foo} </App>
++      `,
++      output: `
++        <App>
++          {foo}{' '}
++        </App>
++      `,
++      errors: [{ messageId: 'onOwnLine' }],
++    },
+     {
+       code: `
+         <>
+-- 
+2.43.0
+

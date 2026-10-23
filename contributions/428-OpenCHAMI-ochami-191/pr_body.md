@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 Fixes #191
 
 `smd group add` and `smd rfe add` get their client from `smd.GetClient` (`internal/cli/smd/smd.go`), which already calls `rt.UseCACert`. Both commands then called `rt.UseCACert` again on the same client, so the CA file was read and parsed twice. This PR removes the second call and its comment from both commands, as the issue suggests. The `UseCACert` call in `discover static` stays, because that command builds its client with `smd.NewClient`.

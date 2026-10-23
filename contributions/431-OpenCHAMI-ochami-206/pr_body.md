@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 Fixes #206
 
 This adds `add` and `delete` entries to the `iface` section of `man/ochami-smd.1.sc`, which until now covered only `get`. The new entries follow the existing `compep` and `rfe` sections.

@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 Fixes #18
 
 The Glk spec says that `glk_set_echo_line_event()` "does not affect a pending line input request". Right now `handle_line_input` reads the window's *current* `echo_line_input`. So if a game turns echo off while a line request is pending, the input is not echoed when it arrives or when the request is cancelled. This is the case discussed in i7/extensions#187: the Glk Input Suspending extension turns echo off and then cancels the pending request.

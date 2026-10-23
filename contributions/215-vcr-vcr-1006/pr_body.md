@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KPKpHzfAxy5KoBhHBfd3QVb)_
-
 Fixes #1006
 
 `Cassette#initialize` merged the cassette's options into `VCR.configuration.default_cassette_options` without copying the default values. A cassette that didn't set `match_requests_on` therefore shared the *same* array object as the configuration, so `cassette.match_requests_on << :body` silently changed the default for every cassette inserted afterwards in the same process (the intermittent matching failures described in the issue).

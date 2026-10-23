@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon**_
-
 ## Description
 
 `HashTrieMap::new_with_degree(1)` (and every other constructor that funnels into

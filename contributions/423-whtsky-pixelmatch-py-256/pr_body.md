@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 ## Description
 
 This ports upstream pixelmatch v8's `ignoreMask` (mapbox/pixelmatch#171) as `ignore_mask`, following the acceptance criteria in the issue. It behaves like upstream:

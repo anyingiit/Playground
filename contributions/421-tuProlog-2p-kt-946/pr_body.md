@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 ## Description
 
 `UnifyLogicProgrammingScope.withTheories(...)` defaulted `unificator` to `LogicProgrammingScope.defaultUnificator`. Upgrading a `:dsl-unify` scope that was created with a custom unificator therefore silently switched back to the default strict unificator, and the default `IndexedTheoryFactory` was built on that default too.

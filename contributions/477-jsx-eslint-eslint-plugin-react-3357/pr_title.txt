@@ -1,0 +1,1 @@
+[Fix] `jsx-no-leaked-render`: keep parens around the right side when autofixing to a ternary

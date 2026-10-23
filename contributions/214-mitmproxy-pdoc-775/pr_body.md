@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KPKpHzfAxy5KoBhHBfd3QVb)_
-
 ## Description
 
 With `--docformat google`, the section regex in `docstrings.google()` also ran over fenced code blocks, so a line like `ABC:` followed by indented lines inside a ```` ``` ```` block was turned into a `###### ABC:` heading plus a block quote.

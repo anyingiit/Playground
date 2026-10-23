@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon**_
-
 Before: `Dockerfile`, `DockerfileDev` and `DockerfileTests` build on `php:8.4-fpm-alpine3.21` / `php:8.4-alpine3.21`. The official PHP images stopped updating the Alpine 3.21 variants in November 2025 (last push 2025-11-22), so a rebuild with `--no-cache` still produces **PHP 8.4.15**. That is affected by PHP2Shell (CVE-2026-109618 / CVE-2026-109619), which is fixed in 8.4.27. The published `ghcr.io/wireless-broadband-alliance/wba-openroaming-portal:1.14.1` image reports PHP 8.4.15 as well. This is the case asked about in #10.
 
 After: the three Dockerfiles use the `alpine3.23` variants, which are still maintained and currently ship **PHP 8.4.27**.

@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KPKpHzfAxy5KoBhHBfd3QVb)_
-
 ## Description
 
 When source is piped in with `--stdin-filename` (as editor integrations such as ALE do), Reek ignored `exclude_paths`, even with `--force-exclusion`. `Application#source_from_pipe` built the source directly and never went through the exclusion check that `SourceLocator` applies to files given on the command line.

@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 ## Description
 
 The provider store and the model store were unified into a single `infoStore` in `pkg/plugins/model-provider-resolver/store.go` (#288 / #308), but their tests were still split between `store_test.go` and `model_store_test.go`.

@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon**_
-
 Before: `docker/Dockerfile` builds on `php:8.4-fpm-alpine3.21`. The official PHP images stopped updating the Alpine 3.21 variants in November 2025, so `docker-compose up -d --build` still produces **PHP 8.4.15**, even with `--no-cache`. That version is affected by PHP2Shell (CVE-2026-109618 / CVE-2026-109619, remote code execution in PHP-FPM), fixed in 8.4.27.
 
 After: the image is built on `php:8.4-fpm-alpine3.24`, which is maintained and currently ships **PHP 8.4.27**. Future PHP patch releases will also arrive with a normal rebuild.

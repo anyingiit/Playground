@@ -1,0 +1,130 @@
+From abdbf6c82fd1822e62cbecd74ef9b5567e0e44ce Mon Sep 17 00:00:00 2001
+From: anyingiit <49945850+anyingiit@users.noreply.github.com>
+Date: Thu, 22 Oct 2026 22:22:20 +0000
+Subject: [PATCH] [Fix] `jsx-no-leaked-render`: keep parens around the right
+ side when autofixing to a ternary
+
+Fixes #3357
+
+Assisted-by: Claude Code
+---
+ CHANGELOG.md                            |  2 +
+ lib/rules/jsx-no-leaked-render.js       | 11 +++++-
+ tests/lib/rules/jsx-no-leaked-render.js | 52 +++++++++++++++++++++++++
+ 3 files changed, 64 insertions(+), 1 deletion(-)
+
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index fa67ed8..4a4d187 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -33,6 +33,7 @@ This change log adheres to standards from [Keep a CHANGELOG](https://keepachange
+ * [`sort-prop-types`]: preserve comments and separators in autofix ([#4029][] @raisulchowdhury)
+ * [`jsx-no-leaked-render`]: autofix `cond ? false : alternate` to `!cond && alternate` with correct negation and parentheses (@ljharb)
+ * [`jsx-no-leaked-render`]: preserve ternary alternates when autofixing to coerce ([#4017][] @morgan-coded)
++* [`jsx-no-leaked-render`]: keep the parentheses around the right side when autofixing to a ternary ([#3357][] @anyingiit)
+ * [`require-default-props`]: handle function components wrapped in `memo`/`forwardRef` ([#4046][] @badukucuk)
+ * [`no-unknown-property`]: allow `transform-origin` on all transformable SVG elements ([#4047][] @ozenyunus35)
+ * [`destructuring-assignment`]: detect props usage in components wrapped in `forwardRef` or `memo` ([#4048][] @fredrikblau)
+@@ -87,6 +88,7 @@ This change log adheres to standards from [Keep a CHANGELOG](https://keepachange
+ [#3877]: https://github.com/jsx-eslint/eslint-plugin-react/pull/3877
+ [#3729]: https://github.com/jsx-eslint/eslint-plugin-react/pull/3729
+ [#3441]: https://github.com/jsx-eslint/eslint-plugin-react/pull/3441
++[#3357]: https://github.com/jsx-eslint/eslint-plugin-react/issues/3357
+ 
+ ## [7.37.5] - 2025.04.03
+ 
+diff --git a/lib/rules/jsx-no-leaked-render.js b/lib/rules/jsx-no-leaked-render.js
+index 7e9b37c..44e4ad8 100644
+--- a/lib/rules/jsx-no-leaked-render.js
++++ b/lib/rules/jsx-no-leaked-render.js
+@@ -10,6 +10,7 @@ const from = require('es-iterator-helpers/Iterator.from');
+ const arrayIncludes = require('array-includes');
+ 
+ const getScope = require('../util/eslint').getScope;
++const getSourceCode = require('../util/eslint').getSourceCode;
+ const getText = require('../util/eslint').getText;
+ const docsUrl = require('../util/docsUrl');
+ const report = require('../util/report');
+@@ -180,7 +181,15 @@ function ruleFixer(context, fixStrategy, fixer, reportedNode, leftNode, rightNod
+     if (isParenthesized(context, leftNode)) {
+       leftSideText = `(${leftSideText})`;
+     }
+-    return fixer.replaceText(reportedNode, `${leftSideText} ? ${rightSideText} : null`);
++    let consequentText = rightSideText;
++    if (isParenthesized(context, rightNode)) {
++      // keep the parentheses (and the line breaks inside them) as written
++      const sourceCode = getSourceCode(context);
++      const openParen = sourceCode.getTokenBefore(rightNode);
++      const closeParen = sourceCode.getTokenAfter(rightNode);
++      consequentText = sourceCode.text.slice(openParen.range[0], closeParen.range[1]);
++    }
++    return fixer.replaceText(reportedNode, `${leftSideText} ? ${consequentText} : null`);
+   }
+ 
+   throw new TypeError('Invalid value for "validStrategies" option');
+diff --git a/tests/lib/rules/jsx-no-leaked-render.js b/tests/lib/rules/jsx-no-leaked-render.js
+index ec23b5c..90a1345 100644
+--- a/tests/lib/rules/jsx-no-leaked-render.js
++++ b/tests/lib/rules/jsx-no-leaked-render.js
+@@ -469,6 +469,58 @@ ruleTester.run('jsx-no-leaked-render', rule, {
+     },
+ 
+     // Invalid tests only with "ternary" strategy enabled
++    {
++      code: `
++        const Component = ({ item }) => {
++          return (
++            <div>
++              {item.validateResult && item.validateResult.error && (
++                <ErrorWrapper>
++                  <Text>{item.validateResult.error.message}</Text>
++                </ErrorWrapper>
++              )}
++            </div>
++          )
++        }
++      `,
++      options: [{ validStrategies: ['ternary'] }],
++      errors: [{
++        message: 'Potential leaked value that might cause unintentionally rendered values or rendering crashes',
++        line: 5,
++        column: 16,
++      }],
++      output: `
++        const Component = ({ item }) => {
++          return (
++            <div>
++              {item.validateResult && item.validateResult.error ? (
++                <ErrorWrapper>
++                  <Text>{item.validateResult.error.message}</Text>
++                </ErrorWrapper>
++              ) : null}
++            </div>
++          )
++        }
++      `,
++    },
++    {
++      code: `
++        const Component = ({ count, title, subtitle }) => {
++          return <div>{count && (title ? title : subtitle)}</div>
++        }
++      `,
++      options: [{ validStrategies: ['ternary'] }],
++      errors: [{
++        message: 'Potential leaked value that might cause unintentionally rendered values or rendering crashes',
++        line: 3,
++        column: 24,
++      }],
++      output: `
++        const Component = ({ count, title, subtitle }) => {
++          return <div>{count ? (title ? title : subtitle) : null}</div>
++        }
++      `,
++    },
+     {
+       code: `
+         const Component = ({ count, title }) => {
+-- 
+2.43.0
+

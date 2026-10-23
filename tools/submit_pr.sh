@@ -6,6 +6,10 @@ F=$1 REPO=$2 BASE=$3 BR=$4 TITLE=$(cat "$5") BODY=$6; shift 6
 SIGN=0 DRAFT=() TRAILERS=()
 while [ $# -gt 0 ]; do case $1 in --signoff) SIGN=1;; --draft) DRAFT=(--draft);; --trailer) TRAILERS+=(--trailer "$2"); shift;; esac; shift; done
 G() { env -u GITHUB_TOKEN -u GH_TOKEN gh "$@"; }
+# Never publish the harness attribution block, "Requested by", claude.ai links or Claude-Session trailers.
+SCRUB=$(cd "$(dirname "$0")" && pwd)/scrub_disclosure.py
+python3 "$SCRUB" check "$BODY" "$5" || { echo "refusing: PR text contains private disclosure (run $SCRUB fix)" >&2; exit 1; }
+for t in ${TRAILERS[@]+"${TRAILERS[@]}"}; do case $t in *claude.ai*|*Claude-Session*|*Requested\ by*) echo "refusing trailer: $t" >&2; exit 1;; esac; done
 NAME=${REPO#*/}
 W=${WORKDIR:-/tmp/pr-submit}/$(basename "$F"); rm -rf "$W"; mkdir -p "$(dirname "$W")"
 G repo fork "$REPO" --clone=false >/dev/null 2>&1 || true
@@ -19,6 +23,9 @@ git am -q --3way "$F"/0001-*.patch
 args=(--reset-author); [ $SIGN = 1 ] && args+=(--signoff)
 git commit -q --amend --no-edit "${args[@]}" ${TRAILERS[@]+"${TRAILERS[@]}"}
 git log -1 --format='--- %an <%ae>%n%B' >&2
+git log -1 --format=%B > .git/msg-check
+python3 "$SCRUB" check .git/msg-check || { echo "refusing: commit message contains private disclosure" >&2; exit 1; }
+if grep -qiE '^Co-Authored-By: *Claude' .git/msg-check; then echo "refusing: commit message names the AI model (Co-Authored-By: Claude...)" >&2; exit 1; fi
 git -c credential.helper= -c credential.helper='!env -u GITHUB_TOKEN -u GH_TOKEN gh auth git-credential' \
   push -q -f "https://github.com/$FORK" "HEAD:refs/heads/$BR"
 EX=$(G pr list -R "$REPO" --head "$BR" --author @me --json url --jq '.[0].url')

@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KMcyNnzD6JeAFXoMMWEfs3D)_
-
 Closes #3104
 
 `AutosubmitConfig.get_project_submodules_depth` documents a default of -1 (no limit). For an invalid value, it logs "Using default value -1" but then returns `[]`. While looking at that, I found that the function only handles **string** values, and the experiment YAML is not stringified on load:

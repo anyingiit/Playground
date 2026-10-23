@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon** · [project thread](https://claude.ai/code/project/chan_01H2rJuKkQ8qneVtVjS5nY5K?thread=cmsg_01H2rJuKkQ8qneVtVjS5nY5KPKpHzfAxy5KoBhHBfd3QVb)_
-
 - [x] Closes #2502
 - [x] Executed `pre-commit run --all-files` or `pixi run lint --all-files` with no errors — ran `taplo fmt --check pyproject.toml` (the only hook relevant to the touched files); passes
 - [x] The change is fully covered by automated unit tests — the existing tests using the `subtests` fixture exercise it

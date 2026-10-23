@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon**_
-
 Before: `f0rc3/barcodebuddy:latest` is built `FROM alpine:3.15` and runs **PHP 8.0.25**. Alpine 3.15 and PHP 8.0 are both end of life, so rebuilding the image no longer picks up PHP security fixes. That leaves the image exposed to PHP2Shell (CVE-2026-109618 / CVE-2026-109619, remote code execution in PHP-FPM), reported in Forceu/barcodebuddy#300.
 
 After: the image is built `FROM alpine:3.24` and runs **PHP 8.3.36**, which contains both fixes. Rebuilding and pushing the image with the existing release workflow is enough to ship it.

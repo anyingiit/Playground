@@ -1,6 +1,3 @@
-<!-- claude-projects-attribution: {"github_login":"anyingiit"} -->
-_Requested by **winshyon**_
-
 ## Description
 
 Before: the published image (`wardy784/erugo:latest`, v0.2.15) and any image rebuilt from `docker/alpine/Dockerfile` runs **PHP 8.3.14**. The Dockerfile pins `alpine:3.19`, which reached end of life on 2025-11-01, so its `php83` package is frozen and rebuilding does not pick up security fixes. That leaves Erugo exposed to PHP2Shell (CVE-2026-109618 / CVE-2026-109619, unauthenticated RCE in PHP-FPM, fixed upstream in 8.3.36).

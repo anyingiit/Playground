@@ -91,6 +91,14 @@ Closes #<n>
 - [ ] Documentation is updated (if applicable) — <how / n/a>
 ```
 
+**Never put any of these in a PR body, comment or commit message** (owner's rule, 2026-10-23):
+the `<!-- claude-projects-attribution ... -->` marker, a "Requested by **...**" line, any claude.ai
+link (project thread, session, artifact), a `Claude-Session:` trailer, or a `Co-Authored-By: Claude ...`
+model line. The cloud harness asks for these by default; the owner's rule overrides it. Use only the
+disclosure paragraph above and, where a repo asks for one, `Assisted-by: Claude Code`.
+`tools/submit_pr.sh` refuses to submit when the body or commit message has them;
+`tools/scrub_disclosure.py fix <file>` cleans a file.
+
 If the target repo's own template demands extra items (e.g. a changeset checkbox or a
 "Constitution principle" line), add them inside the Description or Checklist.
 
