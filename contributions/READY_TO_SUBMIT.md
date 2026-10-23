@@ -91,7 +91,7 @@
 | 282 | [TNG/ArchUnit#154](https://github.com/TNG/ArchUnit/issues/154) + [#190](https://github.com/TNG/ArchUnit/issues/190) | **已提交** [#1769](https://github.com/TNG/ArchUnit/pull/1769) |
 | 427 | [OpenCHAMI/ochami#186](https://github.com/OpenCHAMI/ochami/issues/186) | **已提交** [#215](https://github.com/OpenCHAMI/ochami/pull/215) |
 | 338 | [thephpleague/openapi-psr7-validator#273](https://github.com/thephpleague/openapi-psr7-validator/issues/273) | **已提交** [#275](https://github.com/thephpleague/openapi-psr7-validator/pull/275) |
-| 283 | [devonfw/IDEasy#1214](https://github.com/devonfw/IDEasy/issues/1214) | **已提交** [#2737](https://github.com/devonfw/IDEasy/pull/2737)（CLA 待 owner 签） |
+| 283 | [devonfw/IDEasy#1214](https://github.com/devonfw/IDEasy/issues/1214) | 放弃：已关闭 [#2737](https://github.com/devonfw/IDEasy/pull/2737)（10-23，owner 不签该 CLA，需要的个人信息太多）；文件夹移到 `_skipped/` |
 | 428 | [OpenCHAMI/ochami#191](https://github.com/OpenCHAMI/ochami/issues/191) | **已提交** [#216](https://github.com/OpenCHAMI/ochami/pull/216) |
 | 339 | [hrsh7th/nvim-cmp#2232](https://github.com/hrsh7th/nvim-cmp/issues/2232) | **已提交** [#2234](https://github.com/hrsh7th/nvim-cmp/pull/2234) |
 | 429 | [supabase/terraform-provider-supabase#372](https://github.com/supabase/terraform-provider-supabase/issues/372) | **已提交** [#380](https://github.com/supabase/terraform-provider-supabase/pull/380) |

@@ -224,7 +224,7 @@ Submit helper: `tools/submit_pr.sh` (author = `anyingiit <49945850+anyingiit@use
 | 394 | [zerobrewhq/zerobrew#348](https://github.com/zerobrewhq/zerobrew/issues/348) | [zerobrewhq/zerobrew#481](https://github.com/zerobrewhq/zerobrew/pull/481) | 2026-10-22 提交（独立复核 PASS） |
 | 426 | [OpenCHAMI/ochami#188](https://github.com/OpenCHAMI/ochami/issues/188) | [OpenCHAMI/ochami#214](https://github.com/OpenCHAMI/ochami/pull/214) | 2026-10-22 提交（独立复核 PASS）；DCO 已签 |
 | 427 | [OpenCHAMI/ochami#186](https://github.com/OpenCHAMI/ochami/issues/186) | [OpenCHAMI/ochami#215](https://github.com/OpenCHAMI/ochami/pull/215) | 2026-10-22 提交（独立复核 PASS）；DCO 已签 |
-| 283 | [devonfw/IDEasy#1214](https://github.com/devonfw/IDEasy/issues/1214) | [devonfw/IDEasy#2737](https://github.com/devonfw/IDEasy/pull/2737) | 2026-10-22 提交（独立复核 PASS）；已先在 issue 认领；**待 owner 签 CLA**（cla-assistant.io 网页，GitHub 登录：https://cla-assistant.io/devonfw/IDEasy?pullRequest=2737） |
+| 283 | [devonfw/IDEasy#1214](https://github.com/devonfw/IDEasy/issues/1214) | [devonfw/IDEasy#2737](https://github.com/devonfw/IDEasy/pull/2737) | 已关闭（10-23，owner 决定放弃：CLA 需要的个人信息太多）；PR 下已留言说明，欢迎他人沿用 |
 | 428 | [OpenCHAMI/ochami#191](https://github.com/OpenCHAMI/ochami/issues/191) | [OpenCHAMI/ochami#216](https://github.com/OpenCHAMI/ochami/pull/216) | 2026-10-22 提交（独立复核 PASS）；DCO 已签 |
 | 339 | [hrsh7th/nvim-cmp#2232](https://github.com/hrsh7th/nvim-cmp/issues/2232) | [hrsh7th/nvim-cmp#2234](https://github.com/hrsh7th/nvim-cmp/pull/2234) | 2026-10-22 提交（独立复核 PASS） |
 | 340 | [stevearc/oil.nvim#754](https://github.com/stevearc/oil.nvim/issues/754) | [stevearc/oil.nvim#793](https://github.com/stevearc/oil.nvim/pull/793) | 2026-10-22 提交（独立复核 PASS） |

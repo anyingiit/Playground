@@ -31,3 +31,7 @@ tools/submit_pr.sh contributions/283-devonfw-IDEasy-1214 devonfw/IDEasy main fix
 - PASS：新克隆干净应用；红→绿、spotless/checkstyle 复现；`String.lines()` 与旧 `readAllLines` 行为一致（含空文件）；UTF-8 不变；测试在 Windows CI 也成立（运行时生成文件，不受 autocrlf 影响）；CHANGELOG 段未发布；无 AI 署名。
 - 采纳：末尾只有 `\r` 的文件也保留结尾换行；正文写明"不再强制补末尾换行"；补回模板里的工具/GUI 两段清单（不勾选）；如实说明本地 4 个环境性失败。
 - 未改（超出缩小后的范围）：`EnvironmentVariablesPropertiesFile.save()` 和各 merger 也不保留换行风格。
+
+## 放弃（2026-10-23）
+
+owner 决定放弃：IDEasy 的 CLA 需要提供的个人信息太多。PR #2737 已关闭并留言说明，欢迎维护者或他人沿用此改动。
